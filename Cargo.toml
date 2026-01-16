@@ -1,0 +1,23 @@
+[package]
+name = "ovsy"
+edition = "2024"
+
+[lib]
+name = "root"
+
+[dependencies]
+macron = { version = "^0.1.13", features = ["full"] }
+#atoman = { version = "^0.1.8", features = ["full"] }
+atoman = { path = "../rs-atoman", features = ["full"] }
+axum = "0.8.8"
+reqwest = { version = "0.12.15", features = ["json", "stream"] }
+tokio = { version = "1.48.0", features = ["full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.148"
+toml = "0.9.8"
+fuzzy-cmp = "0.1.0"
+clap = { version = "4.5.53", features = ["derive"] }
+lm-studio-api = "0.1.5"
+chrono = "0.4.42"
+uuid = { version = "1.19.0", features = ["v4"] }
+regex = "1.12.2"
