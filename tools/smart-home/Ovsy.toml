@@ -1,0 +1,11 @@
+[tool]
+enable = false
+name = "home"
+path = "target/release/home.exe"
+
+[actions]
+
+# [actions.power]
+# description = ""
+# [actions.power.arguments]
+# mode = { format = "string", variants = ["off", "sleep"], optional = false }

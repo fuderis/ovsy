@@ -1,0 +1,19 @@
+[tool]
+enable = true
+name = "pc-control"
+exec = "target/release/pc-control"
+
+[server]
+port = 7879
+
+[actions.power]
+descr = "Turns off computer or puts to sleep with timeout in seconds (if you need minutes or hours - calculate. for example, 30 minutes = 1800 sec). Mode 'lock' - do lock pc session. Mode 'cancel' do cancel power operation."
+[actions.power.args]
+mode = { format = "string", variants = ["turnoff", "sleep", "reboot", "lock", "cancel"], optional = false, example = "turnoff" }
+timeout = { format = "integer", optional = true, example = "5" }
+
+[actions.play]
+descr = "Opens playlist folder, where: author - is music author or playlist name, album - subfolder in founded music"
+[actions.play.args]
+author = { format = "string", optional = false, example = "Disturbed" }
+album = { format = "string", optional = true, example = "The Sickness" }
