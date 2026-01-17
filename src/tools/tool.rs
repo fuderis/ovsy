@@ -66,7 +66,7 @@ impl Tool {
                 {
                     let mut args = vec![];
                     for (name, arg) in &action.args {
-                        args.push(fmt!(r#"    * {}: format {}{}{}."#,
+                        args.push(fmt!(r#"    * {}: format {}{}{}, example: {}."#,
                             name,
                             arg.format,
                             if let Some(vars) = &arg.variants { 
@@ -75,6 +75,7 @@ impl Tool {
                                 String::new() 
                             },
                             if arg.optional { ", optional" } else { "" },
+                            arg.example
                         ));
                     }
                     args.join("\n")

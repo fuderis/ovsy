@@ -22,13 +22,13 @@ Use the handlers below. Return in JSON format.
 ## Example 1:
 user query: "play disturbed", your answer:
 ```json
-[{"name":"pc/play","data":{"author":"disturbed"}}]
+[{"name":"pc-control/play","data":{"author":"disturbed"}}]
 ```
 
 ## Example 2:
 user query: "Play the album divisive artists disturbed", your answer:
 ```json
-[{"name":"pc/play","data":{"author":"disturbed","album":"divisive"}}]
+[{"name":"pc-control/play","data":{"author":"disturbed","album":"divisive"}}]
 ```
 
 ## Important:

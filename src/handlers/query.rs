@@ -32,7 +32,7 @@ async fn handle_query(query: String) -> Result<()> {
 
     // read prompt:
     let mut prompt_dir = path!("$/prompt");
-    if !prompt_dir.exists() { prompt_dir = path!("$/../../../prompt"); }
+    if !prompt_dir.exists() { prompt_dir = path!("$/../../prompt"); }
     let prompt = tfs::read_to_string(prompt_dir.join("handle-query.md")).await?;
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
