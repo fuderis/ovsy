@@ -57,7 +57,7 @@ It's liberation for Linux users tired of walled gardens. Fork it, extend it, own
 - **Contacts**:
   [GitHub](https://github.com/fuderis),
   [Behance](https://behance.net/fuderis),
-  [Telegram](https://t.me/fuderis)
+  [Telegram](https://t.me/fuderis),
   [TG Channel](https://t.me/fuderis_club),
   [VKontakte](https://vk.com/fuderis)
 
