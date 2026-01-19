@@ -59,6 +59,6 @@ It's liberation for Linux users tired of walled gardens. Fork it, extend it, own
   [Behance](https://behance.net/fuderis),
   [Telegram](https://t.me/fuderis),
   [TG Channel](https://t.me/fuderis_club),
-  [VKontakte](https://vk.com/fuderis)
+  [VKontakte](https://vk.com/fuderis).
 
 **P.s.**: This software is actively evolving, and your suggestions and feedback are always welcome!
