@@ -36,7 +36,7 @@ cd tools/pc-control && cargo build --release
 3. Add a bash alias to ~/.bashrc for one-word launches:
 
 ```bash
-    alias ovsy="/opt/ovsy/target/release/ovsy"
+alias ovsy="/opt/ovsy/target/release/ovsy"
 ```
 
 4. Fire up the server by command: `ovsy`. It spins the core as local server.
