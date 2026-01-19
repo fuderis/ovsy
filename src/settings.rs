@@ -40,8 +40,8 @@ impl ::std::default::Default for ToolsSettings {
 
 /// The LM-API type
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
 pub enum LMKind {
+    #[serde(rename = "lm-studio")]
     LMStudio,
 }
 
@@ -61,7 +61,7 @@ impl ::std::default::Default for SLMSettings {
             kind: LMKind::LMStudio,
             token: str!(""),
             port: 9090,
-            model: str!("google/gemma-3-4b"),
+            model: str!("qwen2.5-coder-3b-instruct"),
             context: 4096,
         }
     }
