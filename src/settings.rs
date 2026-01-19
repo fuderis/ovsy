@@ -38,27 +38,27 @@ impl ::std::default::Default for ToolsSettings {
     }
 }
 
-/// The LLM type
+/// The LM-API type
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename = "lowercase")]
-pub enum LLMKind {
+#[serde(rename_all = "lowercase")]
+pub enum LMKind {
     LMStudio,
 }
 
 /// The LLM settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LLMSettings {
-    pub kind: LLMKind,
+pub struct SLMSettings {
+    pub kind: LMKind,
     pub token: String,
     pub port: u16,
     pub model: String,
     pub context: u32,
 }
 
-impl ::std::default::Default for LLMSettings {
+impl ::std::default::Default for SLMSettings {
     fn default() -> Self {
         Self {
-            kind: LLMKind::LMStudio,
+            kind: LMKind::LMStudio,
             token: str!(""),
             port: 9090,
             model: str!("google/gemma-3-4b"),
@@ -72,7 +72,7 @@ impl ::std::default::Default for LLMSettings {
 pub struct Settings {
     pub server: ServerSettings,
     pub tools: ToolsSettings,
-    pub llm: LLMSettings,
+    pub slm: SLMSettings,
 }
 
 impl Settings {

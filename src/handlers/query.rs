@@ -1,4 +1,4 @@
-use crate::{ prelude::*, llm };
+use crate::{ prelude::*, LMKind, lms };
 use tokio::fs as tfs;
 
 /// The request POST data
@@ -37,7 +37,10 @@ async fn handle_query(query: String) -> Result<()> {
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
     // handle query by LLM:
-    let json = llm::handle_query(prompt, &cfg.llm.model, cfg.llm.context, &fmt!("\n## User query (handle it):\n{query}")).await?;
+    let query = fmt!("\n## User query (handle it):\n{query}");
+    let json = match &cfg.slm.kind {
+        LMKind::LMStudio => lms::lmstudio::handle_query(prompt, &query, &cfg.slm.model, cfg.slm.context, cfg.slm.port).await?,
+    };
 
     // trim code block:
     let re = re!(r#"^\s*```(?:\S+\b)?|\n```\s*$"#);

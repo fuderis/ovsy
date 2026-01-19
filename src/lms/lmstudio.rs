@@ -20,7 +20,7 @@ impl SystemInfo for SystemPrompt {
 }
 
 /// Handles query to LLM
-pub async fn handle_query<S, S2>(prompt: S, model: S2, context: u32, query: &str) -> Result<String>
+pub async fn handle_query<S, S2>(prompt: S, query: &str, model: S2, context: u32, port: u16) -> Result<String>
 where
     S: Into<String>,
     S2: Into<String>,
@@ -29,7 +29,7 @@ where
     let mut chat = Chat::new(
         Model::Other(model.into()),
         Context::new(SystemPrompt::new(), context),
-        Settings::get().llm.port,
+        port,
     );
 
     // generating request:
