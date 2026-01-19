@@ -55,10 +55,10 @@ It's liberation for Linux users tired of walled gardens. Fork it, extend it, own
 
 - **License**: Distributed under the [*Apache-2.0*](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
 - **Contacts**:
-  - **GitHub**: [@fuderis](https://github.com/fuderis)
-  - **Behance**: [@fuderis](https://behance.net/fuderis)
-  - **Telegram**: [@fuderis](https://t.me/fuderis)
-  - **Telegram Channel**: [@fuderis_club](https://t.me/fuderis_club)
-  - **VKontakte**: [@fuderis](https://vk.com/fuderis)
+  - [GitHub (@fuderis)](https://github.com/fuderis)
+  - [Behance (@fuderis)](https://behance.net/fuderis)
+  - [Telegram (@fuderis)](https://t.me/fuderis)
+  - [TG Channel (@fuderis_club)](https://t.me/fuderis_club)
+  - [VKontakte (@fuderis)](https://vk.com/fuderis)
 
 **P.s.**: This software is actively evolving, and your suggestions and feedback are always welcome!
