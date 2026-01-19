@@ -45,7 +45,7 @@ pub enum LMKind {
     LMStudio,
 }
 
-/// The LLM settings
+/// The Small LM settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SLMSettings {
     pub kind: LMKind,
@@ -67,12 +67,35 @@ impl ::std::default::Default for SLMSettings {
     }
 }
 
+/// The Large LM settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LLMSettings {
+    pub kind: LMKind,
+    pub token: String,
+    pub port: u16,
+    pub model: String,
+    pub context: u32,
+}
+
+impl ::std::default::Default for LLMSettings {
+    fn default() -> Self {
+        Self {
+            kind: LMKind::LMStudio,
+            token: str!(""),
+            port: 9090,
+            model: str!("qwen/qwen3-vl-8b"),
+            context: 8192,
+        }
+    }
+}
+
 /// The settings
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
     pub tools: ToolsSettings,
     pub slm: SLMSettings,
+    pub llm: LLMSettings,
 }
 
 impl Settings {
