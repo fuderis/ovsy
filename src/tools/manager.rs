@@ -19,16 +19,13 @@ impl Tools {
 
     /// Returns a tool instance by name
     pub async fn get(name: &str) -> Option<Tool> {
-        TOOLS.get().await.tools.get(name).map(|tool| tool.clone())
+        TOOLS.get().await.tools.get(name).cloned()
     }
 
     /// Adds a tool to list
     pub async fn add(tool: Tool) {
-        TOOLS
-            .lock()
-            .await
-            .tools
-            .insert(tool.manifest.tool.name.clone(), tool);
+        let mut lock = TOOLS.lock().await;
+        lock.tools.insert(tool.manifest.tool.name.clone(), tool);
     }
 
     /// Stops tool & removes a from list
@@ -64,10 +61,10 @@ impl Tools {
                         checked.push(tool.dir.clone());
 
                         if let Err(e) = tool.check().await {
-                            if let Some(e) = e.downcast_ref::<std::io::Error>() {
-                                if e.raw_os_error() == Some(32) {
-                                    continue;
-                                }
+                            if let Some(e) = e.downcast_ref::<std::io::Error>()
+                                && e.raw_os_error() == Some(32)
+                            {
+                                continue;
                             }
 
                             warn!("Fail with check tool '{name}': {e}");
@@ -78,10 +75,11 @@ impl Tools {
                 // scan tools directory for new tools:
                 for dir in Settings::get().tools.dirs.iter() {
                     let dir: &PathBuf = dir;
-                    if dir.is_dir() && !checked.contains(&dir) {
-                        if let Err(e) = Tool::run(&dir).await {
-                            trace!("Skipped tool dir '{}': {e}", dir.display());
-                        }
+                    if !dir.is_dir() || checked.contains(dir) {
+                        continue;
+                    }
+                    if let Err(e) = Tool::run(&dir).await {
+                        trace!("Skipped tool dir '{}': {e}", dir.display());
                     }
                 }
             }

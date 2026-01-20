@@ -1,2 +1,5 @@
-pub mod tools;  pub use tools::Tools;
-pub mod tool;   pub use tool::Tool;
+pub mod manager;
+pub use manager::Tools;
+
+pub mod tool;
+pub use tool::Tool;

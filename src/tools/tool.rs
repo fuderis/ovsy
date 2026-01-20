@@ -32,7 +32,7 @@ impl Tool {
         let name = &manifest.tool.name;
 
         // check if tool already exists:
-        if Tools::has(&name).await {
+        if Tools::has(name).await {
             trace!("Tool '{name}' already running, skipping..");
             return Ok(None);
         }
@@ -46,12 +46,12 @@ impl Tool {
         // get actual mimetype:
         let exec_path = tool_dir.join(&manifest.tool.exec);
         let mut last_update: Option<SystemTime> = if manifest_path.exists() {
-            Some(fs::metadata(&manifest_path)?.modified()?.into())
+            Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
             None
         };
         if exec_path.exists() {
-            let exec_mtime = fs::metadata(&exec_path)?.modified()?.into();
+            let exec_mtime = fs::metadata(&exec_path)?.modified()?;
             match last_update {
                 Some(current) => last_update = Some(current.max(exec_mtime)),
                 None => last_update = Some(exec_mtime),
@@ -101,7 +101,7 @@ impl Tool {
 
         // check metadata:
         let needs_copy = if ovsy_exec_path.exists() {
-            let ovsy_mtime = fs::metadata(&ovsy_exec_path)?.modified()?.into();
+            let ovsy_mtime = fs::metadata(&ovsy_exec_path)?.modified()?;
             if let Some(orig_mtime) = fs::metadata(&orig_exec)?.modified()?.into() {
                 orig_mtime > ovsy_mtime
             } else {
@@ -187,12 +187,12 @@ impl Tool {
         // get actual mimetype:
         let exec_path = tool_dir.join(&self.manifest.tool.exec);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
-            Some(fs::metadata(&manifest_path)?.modified()?.into())
+            Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
             None
         };
         if exec_path.exists() {
-            let exec_mtime = fs::metadata(&exec_path)?.modified()?.into();
+            let exec_mtime = fs::metadata(&exec_path)?.modified()?;
             match new_update {
                 Some(current) => new_update = Some(current.max(exec_mtime)),
                 None => new_update = Some(exec_mtime),
@@ -271,7 +271,7 @@ impl Tool {
                 {
                     info!("Graceful stop PID {pid}");
                 } else {
-                    let _ = Command::new("kill").args(["-9", &pid_str]).status();
+                    let _ = Command::new("kill").args(["-9", &pid_str]).status().await;
                     info!("Force kill PID {pid}");
                 }
             }
