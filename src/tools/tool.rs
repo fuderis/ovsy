@@ -114,15 +114,24 @@ impl Tool {
         }
 
         // run tool server (if exists):
-        if manifest.server.is_some() {
-            // create run command:
-            let mut cmd = Command::new(ovsy_exec_path);
-                cmd.stdout(Stdio::null());
-                cmd.stderr(Stdio::null());
-                cmd.kill_on_drop(false);
-        
-            // spawn process child:
-            let _ = cmd.spawn()?;
+        if let Some(server) = &manifest.server {
+            use std::net::ToSocketAddrs;
+            use tokio::net::TcpStream;
+
+            // check port for available:
+            let addr = fmt!("127.0.0.1:{}", server.port);
+            match addr.to_socket_addrs()? {
+                _ => if TcpStream::connect(&addr).await.is_err() {
+                    // create tool run command:
+                    let mut cmd = Command::new(ovsy_exec_path);
+                        cmd.stdout(Stdio::null());
+                        cmd.stderr(Stdio::null());
+                        cmd.kill_on_drop(false);
+                
+                    // spawn process child:
+                    let _ = cmd.spawn()?;
+                }
+            }
         }
         
         // register tool instance:
