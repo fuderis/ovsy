@@ -38,7 +38,8 @@ async fn handle_query(query: String) -> Result<()> {
     let query = fmt!("\n## User query (handle it):\n{query}");
     let json = match &cfg.slm.kind {
         LMKind::LMStudio => {
-            lms::lmstudio::handle_query(prompt, &query, &cfg.slm.model, cfg.slm.context).await?
+            lms::lmstudio::handle_query(prompt, &query, &cfg.slm.model, cfg.slm.context, 0.2)
+                .await?
         }
     };
 

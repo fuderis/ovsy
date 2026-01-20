@@ -24,7 +24,13 @@ impl SystemInfo for SystemPrompt {
 }
 
 /// Handles query to LLM
-pub async fn handle_query<S, S2>(prompt: S, query: &str, model: S2, context: u32) -> Result<String>
+pub async fn handle_query<S, S2>(
+    prompt: S,
+    query: &str,
+    model: S2,
+    context: u32,
+    temperature: f32,
+) -> Result<String>
 where
     S: Into<String>,
     S2: Into<String>,
@@ -81,7 +87,7 @@ where
             vec![Schema::array("handlers-list", "handler calls list")],
             false,
         )),
-        temperature: 0.2,
+        temperature,
         ..Default::default()
     };
 
