@@ -35,6 +35,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
             
             #[cfg(unix)]
             {
+                // close audacious processes:
+                let _ = close_audacious().await;
+
+                // open playlist file:
                 let _ = Command::new("sh")
                     .arg("-c")
                     .arg(&fmt!("setsid xdg-open '{}' > /dev/null 2>&1 &", playlist_file.display()))
@@ -59,6 +63,44 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     }
     
     Json(json!({ "status": 200 }))
+}
+
+/// Closes Audacious processes
+#[cfg(unix)]
+async fn close_audacious() -> Result<()> {
+    // find audacious process by port:
+    let output = Command::new("pgrep")
+        .arg("audacious")
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .output()
+        .await?;
+
+    if !output.status.success() { return Ok(()); }
+
+    // parse audacious PIDs: 
+    let pids: Vec<i32> = String::from_utf8_lossy(&output.stdout)
+        .trim()
+        .split('\n')
+        // exclude system ones:
+        .filter_map(|line| line.trim().parse().ok().filter(|&pid| pid > 1))
+        .collect();
+
+    if pids.is_empty() { return Ok(()); }
+    info!("Found {count} audacious processes: {pids:?}", count = pids.len());
+
+    // stop all processes: 
+    for &pid in &pids {
+        let pid_str = pid.to_string();
+        if Command::new("kill").args(["-TERM", &pid_str]).status().await?.success() {
+            info!("Graceful stop PID {pid}");
+        } else {
+            let _ = Command::new("kill").args(["-9", &pid_str]).status();
+            info!("Force kill PID {pid}");
+        }
+    }
+
+    Ok(())
 }
 
 /// Searches playlists in music folders
