@@ -1,4 +1,4 @@
-use crate::{ prelude::*, LMKind, lms };
+use crate::{LMKind, lms, prelude::*};
 use tokio::fs as tfs;
 
 /// The request POST data
@@ -19,11 +19,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
 }
 
 /// The LLM tool call data
-#[derive(Debug, Deserialize)]
-struct ToolCall {
-    name: String,
-    data: HashMap<String, JsonValue>,
-}
+type ToolCall = (String, HashMap<String, JsonValue>);
 
 /// Handles user query
 async fn handle_query(query: String) -> Result<()> {
@@ -32,39 +28,42 @@ async fn handle_query(query: String) -> Result<()> {
 
     // read prompt:
     let mut prompt_dir = path!("$/prompt");
-    if !prompt_dir.exists() { prompt_dir = path!("$/../../prompt"); }
+    if !prompt_dir.exists() {
+        prompt_dir = path!("$/../../prompt");
+    }
     let prompt = tfs::read_to_string(prompt_dir.join("handle-query.md")).await?;
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
     // handle query by LLM:
     let query = fmt!("\n## User query (handle it):\n{query}");
     let json = match &cfg.slm.kind {
-        LMKind::LMStudio => lms::lmstudio::handle_query(prompt, &query, &cfg.slm.model, cfg.slm.context).await?,
+        LMKind::LMStudio => {
+            lms::lmstudio::handle_query(prompt, &query, &cfg.slm.model, cfg.slm.context).await?
+        }
     };
 
     // trim code block:
     let re = re!(r#"^\s*```(?:\S+\b)?|\n```\s*$"#);
     let json = re.replace_all(&json, "").trim().to_string();
-    let calls: Vec<ToolCall> = json::from_str(&json).map_err(|e| fmt!("Invalid LLM response format: {e}"))?;
+    let calls: Vec<ToolCall> =
+        json::from_str(&json).map_err(|e| fmt!("Invalid LM response format: {e}"))?;
 
     // handle tool calls:
-    for call in calls {
-        // parse tool:
-        let (name, action, data) = {
-            let tool_name = &call.name;
-            let mut spl = tool_name.splitn(2, "/");
-    
-            let name = spl.next().ok_or(Error::InvalidToolNameFormat(call.name.clone()))?;
-            let action = spl.next().ok_or(Error::InvalidToolNameFormat(call.name.clone()))?;
-            let data = json::to_value(&call.data)?;
-    
-            (name.to_owned(), action.to_owned(), data)
-        };
-    
+    for (tool_name, tool_data) in calls {
+        // parse tool call:
+        let mut spl = tool_name.splitn(2, "/");
+        let name = spl
+            .next()
+            .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
+            .to_owned();
+        let action = spl
+            .next()
+            .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
+            .to_owned();
+        let data = json::to_value(&tool_data)?;
+
         // do tool call:
-        if let Err(e) = super::tool::handle_tool(name, action, data).await {
-            return Err(e);
-        }
+        super::tool::handle_tool(name, action, data).await?;
     }
 
     Ok(())
