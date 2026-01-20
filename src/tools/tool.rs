@@ -1,6 +1,6 @@
-use crate::{ prelude::*, Manifest };
 use super::Tools;
-use std::{ fs, process::Stdio };
+use crate::{Manifest, prelude::*};
+use std::{fs, process::Stdio};
 use tokio::process::Command;
 
 /// The tool structure
@@ -16,10 +16,10 @@ impl Tool {
     /// Reads a tool server & runs it
     pub(super) async fn run<P>(tool_dir: P) -> Result<Option<()>>
     where
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         let tool_dir = tool_dir.as_ref();
-        
+
         // read manifest:
         let manifest_path = tool_dir.join("Ovsy.toml");
         let manifest = match Config::<Manifest>::new(&manifest_path) {
@@ -43,7 +43,7 @@ impl Tool {
             return Ok(None);
         }
 
-        // get actual mimetype: 
+        // get actual mimetype:
         let exec_path = tool_dir.join(&manifest.tool.exec);
         let mut last_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?.into())
@@ -61,18 +61,20 @@ impl Tool {
         // generate prompt-doc:
         let mut docs = vec![];
         for (action_name, action) in &manifest.actions {
-            let doc = fmt!(r#"* "{name}/{action_name}":\n  * description: {}\n  * arguments: {}"#,
+            let doc = fmt!(
+                r#"* "{name}/{action_name}":\n  * description: {}\n  * arguments: {}"#,
                 &action.descr,
                 {
                     let mut args = vec![];
                     for (name, arg) in &action.args {
-                        args.push(fmt!(r#"    * {}: format {}{}{}, example: {}."#,
+                        args.push(fmt!(
+                            r#"    * {}: format {}{}{}, example: {}."#,
                             name,
                             arg.format,
-                            if let Some(vars) = &arg.variants { 
-                                fmt!(", variants {:?}", vars) 
-                            } else { 
-                                String::new() 
+                            if let Some(vars) = &arg.variants {
+                                fmt!(", variants {:?}", vars)
+                            } else {
+                                String::new()
                             },
                             if arg.optional { ", optional" } else { "" },
                             arg.example
@@ -86,8 +88,12 @@ impl Tool {
 
         // exec file path:
         let orig_exec = exec_path.clone();
-        let ovsy_exec_name = fmt!("ovsy-{}",
-            manifest.tool.exec.file_name()
+        let ovsy_exec_name = fmt!(
+            "ovsy-{}",
+            manifest
+                .tool
+                .exec
+                .file_name()
                 .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
                 .unwrap_or(name.clone())
         );
@@ -115,34 +121,30 @@ impl Tool {
 
         // run tool server (if exists):
         if let Some(server) = &manifest.server {
-            use std::net::ToSocketAddrs;
             use tokio::net::TcpStream;
 
             // check port for available:
             let addr = fmt!("127.0.0.1:{}", server.port);
-            match addr.to_socket_addrs()? {
-                _ => if TcpStream::connect(&addr).await.is_err() {
-                    // create tool run command:
-                    let mut cmd = Command::new(ovsy_exec_path);
-                        cmd.stdout(Stdio::null());
-                        cmd.stderr(Stdio::null());
-                        cmd.kill_on_drop(false);
-                
-                    // spawn process child:
-                    let _ = cmd.spawn()?;
-                }
+            if TcpStream::connect(&addr).await.is_err() {
+                // create tool run command:
+                let mut cmd = Command::new(ovsy_exec_path);
+                cmd.stdout(Stdio::null());
+                cmd.stderr(Stdio::null());
+                cmd.kill_on_drop(false);
+
+                // spawn process child:
+                let _ = cmd.spawn()?;
             }
         }
-        
+
         // register tool instance:
-        Tools::add(
-            Tool {
-                dir: tool_dir.to_path_buf(),
-                manifest,
-                last_update,
-                docs,
-            }
-        ).await;
+        Tools::add(Tool {
+            dir: tool_dir.to_path_buf(),
+            manifest,
+            last_update,
+            docs,
+        })
+        .await;
 
         Ok(Some(()))
     }
@@ -152,10 +154,13 @@ impl Tool {
         let tool_dir = &self.dir;
         let manifest_path = tool_dir.join("Ovsy.toml");
         let name = &self.manifest.tool.name;
-        
+
         // check manifest for exists:
         if !manifest_path.exists() {
-            warn!("Manifest '{}' not found, stopping tool '{name}'..", manifest_path.display());
+            warn!(
+                "Manifest '{}' not found, stopping tool '{name}'..",
+                manifest_path.display()
+            );
             Tools::stop(&self.manifest.tool.name).await?;
             return Ok(());
         }
@@ -170,13 +175,16 @@ impl Tool {
                 }
             }
             Err(e) => {
-                warn!("Fail with read manifest '{}': {e}..", manifest_path.display());
+                warn!(
+                    "Fail with read manifest '{}': {e}..",
+                    manifest_path.display()
+                );
                 Tools::stop(name).await?;
                 return Ok(());
             }
         }
 
-        // get actual mimetype: 
+        // get actual mimetype:
         let exec_path = tool_dir.join(&self.manifest.tool.exec);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?.into())
@@ -213,7 +221,9 @@ impl Tool {
     /// Stops the tool server
     pub(super) async fn stop(self) -> Result<()> {
         // get server port:
-        if self.manifest.server.is_none() { return Ok(()); }
+        if self.manifest.server.is_none() {
+            return Ok(());
+        }
         let server = self.manifest.server.as_ref().unwrap();
         let port = server.port;
         info!("Trying to kill server on {port} port..");
@@ -223,28 +233,23 @@ impl Tool {
         {
             // find server process by port:
             let output = Command::new("lsof")
-                .args([
-                    "-t", 
-                    "-i", &fmt!("TCP:{port}"),
-                    "-i", &fmt!("UDP:{port}")
-                ])
+                .args(["-t", "-i", &fmt!("TCP:{port}"), "-i", &fmt!("UDP:{port}")])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::null())
                 .output()
                 .await?;
-    
+
             if !output.status.success() {
                 info!("Port {port} already is free");
                 return Ok(());
             }
 
-            // parse output PIDs: 
+            // parse output PIDs:
             let pids: Vec<i32> = String::from_utf8_lossy(&output.stdout)
                 .trim()
                 .split('\n')
                 .filter_map(|line| {
-                    line.trim().parse().ok()
-                        .filter(|&pid| pid > 1)  // exclude system ones
+                    line.trim().parse().ok().filter(|&pid| pid > 1) // exclude system ones
                 })
                 .collect();
 
@@ -255,10 +260,15 @@ impl Tool {
 
             info!("Found {} processes on port {port}: {pids:?}", pids.len());
 
-            // stop all PIDs: 
+            // stop all PIDs:
             for &pid in &pids {
                 let pid_str = pid.to_string();
-                if Command::new("kill").args(["-TERM", &pid_str]).status().await?.success() {
+                if Command::new("kill")
+                    .args(["-TERM", &pid_str])
+                    .status()
+                    .await?
+                    .success()
+                {
                     info!("Graceful stop PID {pid}");
                 } else {
                     let _ = Command::new("kill").args(["-9", &pid_str]).status();
@@ -275,10 +285,10 @@ impl Tool {
                 .args(["-ano", &format!("|findstr :{}", port)])
                 .stdout(Stdio::piped())
                 .output()?;
-            
+
             let stdout = String::from_utf8_lossy(&output.stdout);
             let mut pids = Vec::new();
-            
+
             for line in stdout.lines() {
                 if let Some(pid_str) = line.split_whitespace().last() {
                     if let Ok(pid) = pid_str.parse::<u32>() {
@@ -286,13 +296,13 @@ impl Tool {
                     }
                 }
             }
-            
+
             for pid in pids {
                 // taskkill /PID <pid> /F
                 let status = Command::new("taskkill")
                     .args(["/PID", &pid.to_string(), "/F"])
                     .status()?;
-                
+
                 if status.success() {
                     info!("Killed PID {} on port {}", pid, port);
                 }

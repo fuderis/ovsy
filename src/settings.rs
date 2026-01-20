@@ -11,9 +11,7 @@ pub struct ServerSettings {
 
 impl ::std::default::Default for ServerSettings {
     fn default() -> Self {
-        Self {
-            port: 7878,
-        }
+        Self { port: 7878 }
     }
 }
 
@@ -29,11 +27,31 @@ impl ::std::default::Default for ToolsSettings {
         Self {
             dirs: vec![
                 #[cfg(debug_assertions)]
-                { path!("$/../../tools") },
+                {
+                    path!("$/../../tools")
+                },
                 #[cfg(not(debug_assertions))]
-                { path!("$/tools") }
+                {
+                    path!("$/tools")
+                },
             ],
             timeout: 2500,
+        }
+    }
+}
+
+/// The LM Studio settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct LMStudioSettings {
+    pub port: u16,
+    pub exec: PathBuf,
+}
+
+impl ::std::default::Default for LMStudioSettings {
+    fn default() -> Self {
+        Self {
+            port: 9090,
+            exec: path!("/opt/lmstudio/LMStudio.AppImage"),
         }
     }
 }
@@ -50,7 +68,6 @@ pub enum LMKind {
 pub struct SLMSettings {
     pub kind: LMKind,
     pub token: String,
-    pub port: u16,
     pub model: String,
     pub context: u32,
 }
@@ -60,7 +77,6 @@ impl ::std::default::Default for SLMSettings {
         Self {
             kind: LMKind::LMStudio,
             token: str!(""),
-            port: 9090,
             model: str!("qwen2.5-coder-3b-instruct"),
             context: 4096,
         }
@@ -72,7 +88,6 @@ impl ::std::default::Default for SLMSettings {
 pub struct LLMSettings {
     pub kind: LMKind,
     pub token: String,
-    pub port: u16,
     pub model: String,
     pub context: u32,
 }
@@ -82,7 +97,6 @@ impl ::std::default::Default for LLMSettings {
         Self {
             kind: LMKind::LMStudio,
             token: str!(""),
-            port: 9090,
             model: str!("qwen/qwen3-vl-8b"),
             context: 8192,
         }
@@ -94,6 +108,7 @@ impl ::std::default::Default for LLMSettings {
 pub struct Settings {
     pub server: ServerSettings,
     pub tools: ToolsSettings,
+    pub lmstudio: LMStudioSettings,
     pub slm: SLMSettings,
     pub llm: LLMSettings,
 }
@@ -102,18 +117,18 @@ impl Settings {
     /// Reads & initializes the settings
     pub fn init<P>(file_path: P) -> Result<()>
     where
-        P: AsRef<Path>
+        P: AsRef<Path>,
     {
         let cfg = Config::new(file_path.as_ref())?;
         SETTINGS.unsafe_set(cfg);
         Ok(())
     }
- 
+
     /// Returns global settings instance
     pub fn get() -> Arc<Config<Settings>> {
         SETTINGS.unsafe_get()
     }
-   
+
     /// Returns settings state guard
     pub async fn lock() -> StateGuard<Config<Settings>> {
         SETTINGS.lock().await

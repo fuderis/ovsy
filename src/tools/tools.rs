@@ -1,5 +1,5 @@
-use crate::prelude::*;
 use super::Tool;
+use crate::prelude::*;
 use tokio::time;
 
 /// The tools instances
@@ -16,7 +16,7 @@ impl Tools {
     pub async fn has(name: &str) -> bool {
         TOOLS.get().await.tools.contains_key(name)
     }
-    
+
     /// Returns a tool instance by name
     pub async fn get(name: &str) -> Option<Tool> {
         TOOLS.get().await.tools.get(name).map(|tool| tool.clone())
@@ -24,7 +24,11 @@ impl Tools {
 
     /// Adds a tool to list
     pub async fn add(tool: Tool) {
-        TOOLS.lock().await.tools.insert(tool.manifest.tool.name.clone(), tool);
+        TOOLS
+            .lock()
+            .await
+            .tools
+            .insert(tool.manifest.tool.name.clone(), tool);
     }
 
     /// Stops tool & removes a from list
@@ -46,26 +50,26 @@ impl Tools {
     }
 
     /// Periodically manages all tools
-    pub fn manage(timeout: u64) {        
+    pub fn manage(timeout: u64) {
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(timeout));
-            
+
             loop {
                 interval.tick().await;
                 let mut checked = vec![];
-                
+
                 // check & restart existing tools:
                 {
                     for (name, tool) in TOOLS.get().await.tools.iter() {
                         checked.push(tool.dir.clone());
-                        
+
                         if let Err(e) = tool.check().await {
                             if let Some(e) = e.downcast_ref::<std::io::Error>() {
                                 if e.raw_os_error() == Some(32) {
                                     continue;
                                 }
                             }
-                            
+
                             warn!("Fail with check tool '{name}': {e}");
                         }
                     }
@@ -84,4 +88,3 @@ impl Tools {
         });
     }
 }
-
