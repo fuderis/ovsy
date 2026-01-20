@@ -81,6 +81,7 @@ where
             vec![Schema::array("handlers-list", "handler calls list")],
             false,
         )),
+        temperature: 0.2,
         ..Default::default()
     };
 
