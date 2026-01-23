@@ -26,7 +26,7 @@ async fn main() -> Result<()> {
     }
 
     // manage tools:
-    Tools::manage(Settings::get().tools.timeout);
+    Tools::manage();
 
     // create router:
     let router = Router::new()

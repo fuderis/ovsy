@@ -19,6 +19,7 @@ impl ::std::default::Default for ServerSettings {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolsSettings {
     pub dirs: Vec<PathBuf>,
+    pub autocheck: bool,
     pub timeout: u64,
 }
 
@@ -35,6 +36,7 @@ impl ::std::default::Default for ToolsSettings {
                     path!("$/tools")
                 },
             ],
+            autocheck: true,
             timeout: 2500,
         }
     }
@@ -42,63 +44,41 @@ impl ::std::default::Default for ToolsSettings {
 
 /// The LM Studio settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LMStudioSettings {
+pub struct LMStudioAPISettings {
     pub port: u16,
-    pub exec: PathBuf,
+    pub small: (String, u32, f32),
+    pub large: (String, u32, f32),
 }
 
-impl ::std::default::Default for LMStudioSettings {
+impl ::std::default::Default for LMStudioAPISettings {
     fn default() -> Self {
         Self {
             port: 9090,
-            exec: path!("/opt/lmstudio/LMStudio.AppImage"),
+            small: (str!("qwen2.5-coder-3b-instruct"), 4096, 0.2),
+            large: (str!("qwen/qwen3-vl-8b"), 8192, 0.4),
         }
     }
 }
 
-/// The LM-API type
+/// The LM API type
 #[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
 pub enum LMKind {
     #[serde(rename = "lm-studio")]
     LMStudio,
 }
 
-/// The Small LM settings
+/// The LM's settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SLMSettings {
-    pub kind: LMKind,
-    pub token: String,
-    pub model: String,
-    pub context: u32,
+pub struct LMSSettings {
+    pub slm: LMKind,
+    pub llm: LMKind,
 }
 
-impl ::std::default::Default for SLMSettings {
+impl ::std::default::Default for LMSSettings {
     fn default() -> Self {
         Self {
-            kind: LMKind::LMStudio,
-            token: str!(""),
-            model: str!("qwen2.5-coder-3b-instruct"),
-            context: 4096,
-        }
-    }
-}
-
-/// The Large LM settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LLMSettings {
-    pub kind: LMKind,
-    pub token: String,
-    pub model: String,
-    pub context: u32,
-}
-
-impl ::std::default::Default for LLMSettings {
-    fn default() -> Self {
-        Self {
-            kind: LMKind::LMStudio,
-            token: str!(""),
-            model: str!("qwen/qwen3-vl-8b"),
-            context: 8192,
+            slm: LMKind::LMStudio,
+            llm: LMKind::LMStudio,
         }
     }
 }
@@ -108,9 +88,8 @@ impl ::std::default::Default for LLMSettings {
 pub struct Settings {
     pub server: ServerSettings,
     pub tools: ToolsSettings,
-    pub lmstudio: LMStudioSettings,
-    pub slm: SLMSettings,
-    pub llm: LLMSettings,
+    pub lmstudio: LMStudioAPISettings,
+    pub lms: LMSSettings,
 }
 
 impl Settings {

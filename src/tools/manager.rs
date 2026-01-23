@@ -47,7 +47,12 @@ impl Tools {
     }
 
     /// Periodically manages all tools
-    pub fn manage(timeout: u64) {
+    pub fn manage() {
+        let (timeout, autocheck) = {
+            let cfg = &Settings::get().tools;
+            (cfg.timeout, cfg.autocheck)
+        };
+
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(timeout));
 
@@ -72,7 +77,7 @@ impl Tools {
                     }
                 }
 
-                // scan tools directory for new tools:
+                // scan tools directory for a new tools:
                 for dir in Settings::get().tools.dirs.iter() {
                     let dir: &PathBuf = dir;
                     if !dir.is_dir() || checked.contains(dir) {
@@ -81,6 +86,11 @@ impl Tools {
                     if let Err(e) = Tool::run(&dir).await {
                         trace!("Skipped tool dir '{}': {e}", dir.display());
                     }
+                }
+
+                // stop manage if autocheck disabled:
+                if !autocheck {
+                    break;
                 }
             }
         });
