@@ -23,3 +23,9 @@ descr = "Opens playlist, where: author - is author or playlist name, album - sub
 [actions.play.args]
 author = { format = "string", optional = false, example = "Geoxor" }
 album = { format = "string", optional = true, example = "Stardust" }
+
+[actions.volume]
+descr = "Change audio volume by delta [0..100]. Warning: If need to set one concrete volume (not delta change) - set force=true (default: false)."
+[actions.volume.args]
+delta = { format = "integer", optional = false, example = "-20" }
+force = { format = "boolean", optional = true, example = "false" }

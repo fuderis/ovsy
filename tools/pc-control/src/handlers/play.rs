@@ -1,9 +1,6 @@
 use crate::prelude::*;
-use tokio::process::Command;
-use tokio::fs as tfs;
-use std::fs;
-use std::process::Stdio;
-// use tokio::fs as tfs;
+use std::{fs, process::Stdio};
+use tokio::{fs as tfs, process::Command};
 
 const SEARCH_COEF: f32 = 0.5;
 
@@ -31,8 +28,11 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     // create playlist.m3u file:
     match create_playlist(&playlist_dir).await {
         Ok(playlist_file) => {
-            info!("🎵 Play music '{}'.", playlist_dir.to_string_lossy().replace("\\", "/"));
-            
+            info!(
+                "🎵 Play music '{}'.",
+                playlist_dir.to_string_lossy().replace("\\", "/")
+            );
+
             #[cfg(unix)]
             {
                 // close audacious processes:
@@ -41,7 +41,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                 // open playlist file:
                 let _ = Command::new("sh")
                     .arg("-c")
-                    .arg(&fmt!("setsid xdg-open '{}' > /dev/null 2>&1 &", playlist_file.display()))
+                    .arg(fmt!(
+                        "setsid xdg-open '{}' > /dev/null 2>&1 &",
+                        playlist_file.display()
+                    ))
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn();
@@ -54,14 +57,14 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
                     .spawn();
-               }
+            }
         }
         Err(e) => {
             err!("{e}");
             return Json(json!({ "status": 500, "error": fmt!("{e}") }));
         }
     }
-    
+
     Json(json!({ "status": 200 }))
 }
 
@@ -76,9 +79,11 @@ async fn close_audacious() -> Result<()> {
         .output()
         .await?;
 
-    if !output.status.success() { return Ok(()); }
+    if !output.status.success() {
+        return Ok(());
+    }
 
-    // parse audacious PIDs: 
+    // parse audacious PIDs:
     let pids: Vec<i32> = String::from_utf8_lossy(&output.stdout)
         .trim()
         .split('\n')
@@ -86,16 +91,26 @@ async fn close_audacious() -> Result<()> {
         .filter_map(|line| line.trim().parse().ok().filter(|&pid| pid > 1))
         .collect();
 
-    if pids.is_empty() { return Ok(()); }
-    info!("Found {count} audacious processes: {pids:?}", count = pids.len());
+    if pids.is_empty() {
+        return Ok(());
+    }
+    info!(
+        "Found {count} audacious processes: {pids:?}",
+        count = pids.len()
+    );
 
-    // stop all processes: 
+    // stop all processes:
     for &pid in &pids {
         let pid_str = pid.to_string();
-        if Command::new("kill").args(["-TERM", &pid_str]).status().await?.success() {
+        if Command::new("kill")
+            .args(["-TERM", &pid_str])
+            .status()
+            .await?
+            .success()
+        {
             info!("Graceful stop PID {pid}");
         } else {
-            let _ = Command::new("kill").args(["-9", &pid_str]).status();
+            let _ = Command::new("kill").args(["-9", &pid_str]).status().await;
             info!("Force kill PID {pid}");
         }
     }
@@ -104,17 +119,23 @@ async fn close_audacious() -> Result<()> {
 }
 
 /// Searches playlists in music folders
-async fn search_playlist(dirs: Vec<PathBuf>, author: String, album: Option<String>) -> Result<PathBuf> {
+async fn search_playlist(
+    dirs: Vec<PathBuf>,
+    author: String,
+    album: Option<String>,
+) -> Result<PathBuf> {
     // search in dirs:
     let results = scan_dirs(&dirs, &author, SEARCH_COEF, true).await?;
-    let best = results.get(0)
+    let best = results
+        .first()
         .map(|p| p.to_owned())
         .ok_or(Error::PlaylistNotFound(author))?;
 
     // search in subdirs:
     let best = if let Some(album) = album {
         let results = scan_dirs(&[&best], &album, SEARCH_COEF, true).await?;
-        results.get(0)
+        results
+            .first()
             .map(|p| p.to_owned())
             .ok_or(Error::AlbumNotFound(album, str!(best.to_string_lossy())))?
     } else {
@@ -127,11 +148,11 @@ async fn search_playlist(dirs: Vec<PathBuf>, author: String, album: Option<Strin
 /// Create playlist file
 async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
     let playlist_path = dir.as_ref().join("playlist.m3u");
-        
+
     let songs_list = read_song_files(dir)?;
     let mut content = Vec::new();
     content.extend_from_slice(b"#EXTM3U\n");
-    
+
     for song in &songs_list {
         let unix_path = song.replace('\\', "/");
         let filename = std::path::Path::new(&unix_path)
@@ -139,12 +160,12 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
             .unwrap_or_default()
             .to_string_lossy()
             .replace(['—', '–'], "-"); // Audacious не любит em-dash
-    
+
         content.extend_from_slice(format!("#EXTINF:-1,{}\n", filename).as_bytes());
         content.extend_from_slice(unix_path.as_bytes());
         content.extend_from_slice(b"\n");
     }
-                                               
+
     tfs::write(&playlist_path, content)
         .await
         .map_err(|e| fmt!("Failed to create playlist: {e}"))?;
@@ -156,13 +177,17 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
 fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
     let exts = ["mp3", "flac", "wav"];
     let mut songs = vec![];
-    
+
     for entry in fs::read_dir(dir).map_err(|e| fmt!("Failed to read playlist folder: {e}"))? {
         let path = entry?.path();
 
         if path.is_dir() {
             songs.extend(read_song_files(path)?);
-        } else if path.is_file() && path.extension().map_or(false, |ext| exts.contains(&ext.to_str().unwrap_or(""))) {
+        } else if path.is_file()
+            && path
+                .extension()
+                .is_some_and(|ext| exts.contains(&ext.to_str().unwrap_or("")))
+        {
             songs.push(path.to_string_lossy().to_string());
         }
     }
@@ -170,9 +195,13 @@ fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
     Ok(songs)
 }
 
-
 /// Scans dirs and searches folders by Levenshtaine distance
-async fn scan_dirs<P>(dirs: &[P], search: &str, min_coef: f32, only_folders: bool) -> Result<Vec<PathBuf>>
+async fn scan_dirs<P>(
+    dirs: &[P],
+    search: &str,
+    min_coef: f32,
+    only_folders: bool,
+) -> Result<Vec<PathBuf>>
 where
     P: AsRef<Path>,
 {
@@ -190,10 +219,12 @@ where
     }
 
     // matching results:
-    let matches: Vec<_> = fuzzy_cmp::search_filter(&entries, search, min_coef, true, |s| s.file_name().map(|s| s.to_str().unwrap_or("")).unwrap_or(""));
-    let results: Vec<PathBuf> = matches.iter()
-        .map(|(_, entry)| entry.clone())
-        .collect();
+    let matches: Vec<_> = fuzzy_cmp::search_filter(&entries, search, min_coef, true, |s| {
+        s.file_name()
+            .map(|s| s.to_str().unwrap_or(""))
+            .unwrap_or("")
+    });
+    let results: Vec<PathBuf> = matches.iter().map(|(_, entry)| entry.clone()).collect();
 
     Ok(results)
 }
