@@ -16,7 +16,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     let dirs = Settings::get().music.dirs.clone();
 
     // search playlist path:
-    info!("🔎 Search for playlist '{}'..", &data.author);
+    info!("Search for playlist '{}'..", &data.author);
     let playlist_dir = match search_playlist(dirs, data.author, data.album).await {
         Ok(r) => r,
         Err(e) => {
@@ -29,7 +29,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     match create_playlist(&playlist_dir).await {
         Ok(playlist_file) => {
             info!(
-                "🎵 Play music '{}'.",
+                "Playing music '{}'..",
                 playlist_dir.to_string_lossy().replace("\\", "/")
             );
 
