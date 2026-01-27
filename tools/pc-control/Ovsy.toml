@@ -2,6 +2,7 @@
 enable = true
 name = "pc"
 exec = "target/release/pc-control"
+logs = "pc-control/logs"
 
 [server]
 port = 7879

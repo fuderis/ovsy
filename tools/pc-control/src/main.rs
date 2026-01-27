@@ -3,7 +3,7 @@ use root::{handlers, prelude::*};
 #[tokio::main]
 async fn main() -> Result<()> {
     Logger::init(app_data().join("logs"), 20)?;
-    Settings::init(app_data().join("settings.toml"))?;
+    Settings::init(app_data().join("config.toml"))?;
 
     // create router:
     let router = Router::new()
