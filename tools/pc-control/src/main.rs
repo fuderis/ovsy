@@ -1,20 +1,20 @@
-use root::{ prelude::*, handlers };
+use root::{handlers, prelude::*};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     Logger::init(app_data().join("logs"), 20)?;
     Settings::init(app_data().join("settings.toml"))?;
-    
+
     // create router:
     let router = Router::new()
-        // .route("/", get(async || Html("Hello, World!")))
-        .route("/play", post(handlers::play::handle))
+        .route("/", get(async || Html("")))
         .route("/power", post(handlers::power::handle))
-    ;
+        .route("/play", post(handlers::play::handle))
+        .route("/volume", post(handlers::volume::handle));
 
     // init listenner:
     let port = Settings::get().server.port;
-    let address = SocketAddr::from(([127,0,0,1], port));
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
     info!("🚀 Serve tool 'pc-control' on 'http://{address}'..");
 
     let listener = loop {
