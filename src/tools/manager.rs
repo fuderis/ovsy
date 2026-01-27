@@ -48,11 +48,32 @@ impl Tools {
 
     /// Periodically manages all tools
     pub fn manage() {
+        // run tool logs tracing:
+        let timeout = {
+            let cfg = &Settings::get().tools;
+            cfg.trace_timeout
+        };
+        tokio::spawn(async move {
+            let mut interval = time::interval(Duration::from_millis(timeout));
+
+            loop {
+                interval.tick().await;
+
+                for (_, tool) in TOOLS.unsafe_get().tools.iter() {
+                    if let Some(trace) = &tool.trace
+                        && let Some(line) = trace.next_line().await
+                    {
+                        println!("TRACE: {line}");
+                    }
+                }
+            }
+        });
+
+        // run tools check:
         let (timeout, autocheck) = {
             let cfg = &Settings::get().tools;
-            (cfg.timeout, cfg.autocheck)
+            (cfg.check_timeout, cfg.autocheck)
         };
-
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(timeout));
 

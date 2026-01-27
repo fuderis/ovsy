@@ -1,7 +1,10 @@
 use super::Tools;
 use crate::{Manifest, prelude::*};
 use std::{fs, process::Stdio};
-use tokio::process::Command;
+use tokio::{fs as tfs, process::Command};
+
+/// Time range to find recent file
+const RECENT_FILE_TIME_RANGE: u64 = 120;
 
 /// The tool structure
 #[derive(Default, Clone, Debug)]
@@ -10,6 +13,7 @@ pub struct Tool {
     pub manifest: Config<Manifest>,
     pub docs: Vec<String>,
     pub last_update: Option<SystemTime>,
+    pub trace: Option<Trace>,
 }
 
 impl Tool {
@@ -44,7 +48,7 @@ impl Tool {
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&manifest.tool.exec);
+        let exec_path = tool_dir.join(&manifest.tool.exec_file);
         let mut last_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
@@ -92,7 +96,7 @@ impl Tool {
             "ovsy-{}",
             manifest
                 .tool
-                .exec
+                .exec_file
                 .file_name()
                 .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
                 .unwrap_or(name.clone())
@@ -137,16 +141,71 @@ impl Tool {
             }
         }
 
+        sleep(Duration::from_millis(100)).await;
+
+        // read new log file:
+        let trace = {
+            let logs_dir = app_data().join(&manifest.tool.logs_dir);
+
+            if let Some(log_file) =
+                Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
+            {
+                let timeout = Settings::get().tools.trace_timeout;
+                Some(Trace::open(log_file, Duration::from_millis(timeout)).await?)
+            } else {
+                None
+            }
+        };
+
         // register tool instance:
         Tools::add(Tool {
             dir: tool_dir.to_path_buf(),
             manifest,
             last_update,
             docs,
+            trace,
         })
         .await;
 
         Ok(Some(()))
+    }
+
+    /// Finds and returns the most recent file in dir
+    async fn find_recent_file<P>(dir: &P, time_range: u64) -> Result<Option<PathBuf>>
+    where
+        P: AsRef<Path>,
+    {
+        let dir = dir.as_ref();
+        // time range:
+        let now = SystemTime::now();
+        let time_start = now.checked_sub(Duration::from_secs(time_range)).unwrap();
+        let time_end = now.checked_add(Duration::from_secs(time_range)).unwrap();
+
+        let mut newest_file: Option<(PathBuf, SystemTime)> = None;
+        let mut reader = tfs::read_dir(dir).await?;
+
+        // read dir files:
+        while let Some(entry) = reader.next_entry().await? {
+            let path = entry.path();
+            if path.is_file() {
+                let metadata = tfs::metadata(&path).await?;
+                if let Ok(created) = metadata.created()
+                    && created >= time_start
+                    && created <= time_end
+                {
+                    // compare with last recent file:
+                    if let Some((_, ref newest_time)) = newest_file {
+                        if created > *newest_time {
+                            newest_file = Some((path, created));
+                        }
+                    } else {
+                        newest_file = Some((path, created));
+                    }
+                }
+            }
+        }
+
+        Ok(newest_file.map(|(path, _)| path))
     }
 
     /// Checks & reruns tool if needs
@@ -185,7 +244,7 @@ impl Tool {
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&self.manifest.tool.exec);
+        let exec_path = tool_dir.join(&self.manifest.tool.exec_file);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {

@@ -1,0 +1,7 @@
+[tool]
+enable = false
+name = ""
+exec_file = ""
+logs_dir = ""
+
+[actions]

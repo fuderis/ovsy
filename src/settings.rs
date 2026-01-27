@@ -20,24 +20,17 @@ impl ::std::default::Default for ServerSettings {
 pub struct ToolsSettings {
     pub dirs: Vec<PathBuf>,
     pub autocheck: bool,
-    pub timeout: u64,
+    pub check_timeout: u64,
+    pub trace_timeout: u64,
 }
 
 impl ::std::default::Default for ToolsSettings {
     fn default() -> Self {
         Self {
-            dirs: vec![
-                #[cfg(debug_assertions)]
-                {
-                    path!("$/../../tools")
-                },
-                #[cfg(not(debug_assertions))]
-                {
-                    path!("$/tools")
-                },
-            ],
+            dirs: vec![path!("$/../../tools/pc-control")],
             autocheck: true,
-            timeout: 2500,
+            check_timeout: 2000,
+            trace_timeout: 50,
         }
     }
 }

@@ -18,7 +18,10 @@ pub async fn handle(
 
 /// Handles user tool
 pub async fn handle_tool(name: String, action: String, data: JsonValue) -> Result<()> {
-    info!("⏳ Call tool '{name}/{action}'..");
+    info!(
+        "Call tool '{name}/{action}', POST data: {}",
+        json::to_string(&data).unwrap_or_default()
+    );
 
     // search tool by name:
     let tool = Tools::get(&name)
@@ -43,7 +46,7 @@ pub async fn handle_tool(name: String, action: String, data: JsonValue) -> Resul
     }
     // do exec run:
     else {
-        let exec_path = &tool.manifest.tool.exec;
+        let exec_path = &tool.manifest.tool.exec_file;
         let mut cmd = Command::new(exec_path);
         cmd.kill_on_drop(true);
 
@@ -51,7 +54,7 @@ pub async fn handle_tool(name: String, action: String, data: JsonValue) -> Resul
         if let JsonValue::Object(map) = data {
             for (key, value) in map {
                 // key=value или просто value.to_string()
-                let arg = format!("{}={}", key, to_cmd_arg(&value));
+                let arg = fmt!("{}={}", key, to_cmd_arg(&value));
                 cmd.arg(&arg);
             }
         }
