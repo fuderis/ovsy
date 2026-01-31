@@ -35,7 +35,7 @@ async fn handle_query(query: String) -> Result<()> {
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
     // handle query by LLM:
-    let json = match &cfg.lms.slm {
+    let json = match &cfg.lms.slm_kind {
         LMKind::LMStudio => {
             let small = Settings::get().lmstudio.small.clone();
             lms::lmstudio::handle_query(prompt, &query, small).await?

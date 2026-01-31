@@ -15,6 +15,22 @@ impl ::std::default::Default for ServerSettings {
     }
 }
 
+/// The AI context settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextSettings {
+    pub ai_character: bool,
+    pub user_character: bool,
+}
+
+impl ::std::default::Default for ContextSettings {
+    fn default() -> Self {
+        Self {
+            ai_character: true,
+            user_character: true,
+        }
+    }
+}
+
 /// The tools settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ToolsSettings {
@@ -63,15 +79,15 @@ pub enum LMKind {
 /// The LM's settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LMSSettings {
-    pub slm: LMKind,
-    pub llm: LMKind,
+    pub slm_kind: LMKind,
+    pub llm_kind: LMKind,
 }
 
 impl ::std::default::Default for LMSSettings {
     fn default() -> Self {
         Self {
-            slm: LMKind::LMStudio,
-            llm: LMKind::LMStudio,
+            slm_kind: LMKind::LMStudio,
+            llm_kind: LMKind::LMStudio,
         }
     }
 }
@@ -80,6 +96,7 @@ impl ::std::default::Default for LMSSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
+    pub context: ContextSettings,
     pub tools: ToolsSettings,
     pub lmstudio: LMStudioAPISettings,
     pub lms: LMSSettings,
