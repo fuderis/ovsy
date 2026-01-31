@@ -8,25 +8,55 @@ logs_dir = "pc-control/logs"
 port = 7879
 
 [actions.power]
-descr = "Turns off computer or sleep it with timeout in seconds (if you need minutes or hours - calculate. for example, 30 minutes = 1800 sec). Mode 'cancel' do cancel power operation."
-[actions.power.args]
+description = "Turns off computer or sleep it with timeout in seconds (if you need minutes or hours - calculate. for example, 30 minutes = 1800 sec). Mode 'cancel' do cancel power operation."
+examples = [
+  [
+    "power off pc",
+    { mode = "turnoff" },
+  ],
+  [
+    "turn off pc after 30 seconds",
+    { mode = "turnoff", timeout = 30 },
+  ],
+]
+[actions.power.arguments]
 mode = { format = "string", variants = [
   "turnoff",
   "sleep",
   "reboot",
   "lock",
   "cancel",
-], optional = false, example = "turnoff" }
-timeout = { format = "integer", optional = true, example = "5" }
+], optional = false }
+timeout = { format = "integer", optional = true }
 
 [actions.play]
-descr = "Opens playlist, where: author - is author or playlist name, album - subfolder in founded music"
-[actions.play.args]
-author = { format = "string", optional = false, example = "Geoxor" }
-album = { format = "string", optional = true, example = "Stardust" }
+description = "Opens playlist, where: author - is author or playlist name, album - subfolder in founded music"
+examples = [
+  [
+    "play Disturbed",
+    { author = "Disturbed" },
+  ],
+  [
+    "play album 'The Sickness' of author Disturbed",
+    { author = "Disturbed", album = "The Sickness" },
+  ],
+]
+[actions.play.arguments]
+author = { format = "string", optional = false }
+album = { format = "string", optional = true }
 
 [actions.volume]
-descr = "Change audio volume by delta [0..100]. Warning: If need to set one concrete volume (not delta change) - set force=true (default: false)."
-[actions.volume.args]
-delta = { format = "integer", optional = false, example = "-20" }
-force = { format = "boolean", optional = true, example = "false" }
+description = "Change audio volume by delta [0..100]. Warning: If need to set one concrete volume (not delta change) - set force=true (default: false)."
+examples = [
+  [
+    "increase volume by 20 percents",
+    { delta = 20 },
+  ],
+  [
+    "set volume to 50 percents",
+    { delta = 50, force = true },
+  ],
+]
+[actions.volume.arguments]
+delta = { format = "integer", optional = false }
+force = { format = "boolean", optional = true }

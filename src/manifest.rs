@@ -18,8 +18,9 @@ pub struct ManifestServer {
 /// The manifest tool handler options
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestToolAction {
-    pub descr: String,
-    pub args: HashMap<String, ManifestToolArgument>,
+    pub description: String,
+    pub arguments: HashMap<String, ManifestToolArgument>,
+    pub examples: Vec<(String, HashMap<String, JsonValue>)>,
 }
 
 /// The manifest tool argument structure
@@ -28,7 +29,6 @@ pub struct ManifestToolArgument {
     pub format: String,
     pub variants: Option<Vec<String>>,
     pub optional: bool,
-    pub example: String,
 }
 
 /// The manifest data structure

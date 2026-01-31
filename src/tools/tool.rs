@@ -33,17 +33,17 @@ impl Tool {
                 return Ok(None);
             }
         };
-        let name = &manifest.tool.name;
+        let tool_name = &manifest.tool.name;
 
         // check if tool already exists:
-        if Tools::has(name).await {
-            trace!("Tool '{name}' already running, skipping..");
+        if Tools::has(tool_name).await {
+            trace!("Tool '{tool_name}' already running, skipping..");
             return Ok(None);
         }
 
         // remove tool if disabled:
         if !manifest.tool.enable {
-            Tools::stop(name).await?;
+            Tools::stop(tool_name).await?;
             return Ok(None);
         }
 
@@ -66,13 +66,13 @@ impl Tool {
         let mut docs = vec![];
         for (action_name, action) in &manifest.actions {
             let doc = fmt!(
-                r#"* "{name}/{action_name}":\n  * description: {}\n  * arguments: {}"#,
-                &action.descr,
-                {
+                r#"* "{tool_name}/{action_name}":\n  * description: {descr}\n  * arguments: {args}\n  * examples: {exls}"#,
+                descr = &action.description,
+                args = {
                     let mut args = vec![];
-                    for (name, arg) in &action.args {
+                    for (name, arg) in &action.arguments {
                         args.push(fmt!(
-                            r#"    * {}: format {}{}{}, example: {}."#,
+                            r#"    * {}: format {}{}{}"#,
                             name,
                             arg.format,
                             if let Some(vars) = &arg.variants {
@@ -81,10 +81,18 @@ impl Tool {
                                 String::new()
                             },
                             if arg.optional { ", optional" } else { "" },
-                            arg.example
                         ));
                     }
                     args.join("\n")
+                },
+                exls = {
+                    let mut exls = vec![];
+                    for (query, data) in &action.examples {
+                        exls.push(fmt!(
+                            r#"    * query: "{query}", tool call: [{tool_name}/{action_name}, {data:?}]"#
+                        ))
+                    }
+                    exls.join("\n")
                 }
             );
             docs.push(doc);
@@ -99,7 +107,7 @@ impl Tool {
                 .exec_file
                 .file_name()
                 .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
-                .unwrap_or(name.clone())
+                .unwrap_or(tool_name.clone())
         );
         let ovsy_exec_path = tool_dir.join(&ovsy_exec_name);
 

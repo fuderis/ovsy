@@ -5,6 +5,7 @@ pub mod prelude;
 use prelude::{PathBuf, path};
 pub mod settings;
 pub use settings::Settings;
+pub mod utils;
 
 pub mod handlers;
 

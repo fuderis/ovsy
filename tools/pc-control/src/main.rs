@@ -9,6 +9,7 @@ async fn main() -> Result<()> {
     let router = Router::new()
         .route("/", get(async || Html("")))
         .route("/power", post(handlers::power::handle))
+        .route("/app", post(handlers::app::handle))
         .route("/play", post(handlers::play::handle))
         .route("/volume", post(handlers::volume::handle));
 

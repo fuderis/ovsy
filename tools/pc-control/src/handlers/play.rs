@@ -125,7 +125,7 @@ async fn search_playlist(
     album: Option<String>,
 ) -> Result<PathBuf> {
     // search in dirs:
-    let results = scan_dirs(&dirs, &author, SEARCH_COEF, true).await?;
+    let results = utils::scan_dirs(&dirs, &author, SEARCH_COEF, true).await?;
     let best = results
         .first()
         .map(|p| p.to_owned())
@@ -133,7 +133,7 @@ async fn search_playlist(
 
     // search in subdirs:
     let best = if let Some(album) = album {
-        let results = scan_dirs(&[&best], &album, SEARCH_COEF, true).await?;
+        let results = utils::scan_dirs(&[&best], &album, SEARCH_COEF, true).await?;
         results
             .first()
             .map(|p| p.to_owned())
@@ -193,38 +193,4 @@ fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
     }
 
     Ok(songs)
-}
-
-/// Scans dirs and searches folders by Levenshtaine distance
-async fn scan_dirs<P>(
-    dirs: &[P],
-    search: &str,
-    min_coef: f32,
-    only_folders: bool,
-) -> Result<Vec<PathBuf>>
-where
-    P: AsRef<Path>,
-{
-    // read dir entries:
-    let mut entries = vec![];
-
-    for dir in dirs {
-        for entry in fs::read_dir(dir.as_ref())? {
-            let entry = entry?;
-
-            if !only_folders || entry.path().is_dir() {
-                entries.push(entry.path().to_path_buf())
-            }
-        }
-    }
-
-    // matching results:
-    let matches: Vec<_> = fuzzy_cmp::search_filter(&entries, search, min_coef, true, |s| {
-        s.file_name()
-            .map(|s| s.to_str().unwrap_or(""))
-            .unwrap_or("")
-    });
-    let results: Vec<PathBuf> = matches.iter().map(|(_, entry)| entry.clone()).collect();
-
-    Ok(results)
 }
