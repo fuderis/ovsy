@@ -17,17 +17,11 @@ impl ::std::default::Default for ServerSettings {
 
 /// The AI context settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContextSettings {
-    pub ai_character: bool,
-    pub user_character: bool,
-}
+pub struct ContextSettings {}
 
 impl ::std::default::Default for ContextSettings {
     fn default() -> Self {
-        Self {
-            ai_character: true,
-            user_character: true,
-        }
+        Self {}
     }
 }
 

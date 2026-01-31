@@ -5,7 +5,6 @@ Analyze the user request and recognize the needs tools which need to be called.
 
 ## Important:
 * You can't skip non optional arguments
-* For example, in handler 'pc/play' you can't skip "author" argument, which is specified as non optional
 * Skip optional arguments if not needed
 * No explanations — JSON only
 

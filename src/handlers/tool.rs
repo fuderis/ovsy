@@ -46,7 +46,7 @@ pub async fn handle_tool(name: String, action: String, data: JsonValue) -> Resul
     }
     // do exec run:
     else {
-        let exec_path = &tool.manifest.tool.exec_file;
+        let exec_path = &tool.manifest.tool.exec;
         let mut cmd = Command::new(exec_path);
         cmd.kill_on_drop(true);
 

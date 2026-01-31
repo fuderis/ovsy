@@ -1254,23 +1254,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "pc-control"
-version = "0.0.0"
-dependencies = [
- "atoman",
- "axum",
- "chrono",
- "fuzzy-cmp",
- "macron",
- "pc-remote",
- "reqwest",
- "serde",
- "serde_json",
- "tokio",
- "toml",
-]
-
-[[package]]
 name = "pc-remote"
 version = "0.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1805,6 +1788,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn",
+]
+
+[[package]]
+name = "system"
+version = "0.0.0"
+dependencies = [
+ "atoman",
+ "axum",
+ "chrono",
+ "fuzzy-cmp",
+ "macron",
+ "pc-remote",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "tokio",
+ "toml",
 ]
 
 [[package]]

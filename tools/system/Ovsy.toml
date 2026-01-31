@@ -1,11 +1,10 @@
 [tool]
 enable = true
-name = "pc"
-exec_file = "target/release/pc-control"
-logs_dir = "pc-control/logs"
+name = "sys"
+exec = "target/release/system"
 
 [server]
-port = 7879
+port = 7880
 
 [actions.power]
 description = "Turns off computer or sleep it with timeout in seconds (if you need minutes or hours - calculate. for example, 30 minutes = 1800 sec). Mode 'cancel' do cancel power operation."

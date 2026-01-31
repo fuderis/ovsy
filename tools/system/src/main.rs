@@ -16,7 +16,7 @@ async fn main() -> Result<()> {
     // init listenner:
     let port = Settings::get().server.port;
     let address = SocketAddr::from(([127, 0, 0, 1], port));
-    info!("🚀 Serve tool 'pc-control' on 'http://{address}'..");
+    info!("🚀 Serve 'system' tool on 'http://{address}'..");
 
     let listener = loop {
         match TcpListener::bind(address).await {

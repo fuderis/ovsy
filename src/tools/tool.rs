@@ -48,7 +48,7 @@ impl Tool {
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&manifest.tool.exec_file);
+        let exec_path = tool_dir.join(&manifest.tool.exec);
         let mut last_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
@@ -89,7 +89,8 @@ impl Tool {
                     let mut exls = vec![];
                     for (query, data) in &action.examples {
                         exls.push(fmt!(
-                            r#"    * query: "{query}", tool call: [{tool_name}/{action_name}, {data:?}]"#
+                            r#"    * query: "{query}", tool call: ["{tool_name}/{action_name}", {data}]"#,
+                            data = json::to_string(&data)?
                         ))
                     }
                     exls.join("\n")
@@ -104,7 +105,7 @@ impl Tool {
             "ovsy-{}",
             manifest
                 .tool
-                .exec_file
+                .exec
                 .file_name()
                 .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
                 .unwrap_or(tool_name.clone())
@@ -153,7 +154,7 @@ impl Tool {
 
         // read new log file:
         let trace = {
-            let logs_dir = app_data().join(&manifest.tool.logs_dir);
+            let logs_dir = app_data().join(&manifest.tool.name).join("logs");
 
             if let Some(log_file) =
                 Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
@@ -252,7 +253,7 @@ impl Tool {
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&self.manifest.tool.exec_file);
+        let exec_path = tool_dir.join(&self.manifest.tool.exec);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {

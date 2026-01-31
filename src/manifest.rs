@@ -5,8 +5,7 @@ use crate::prelude::*;
 pub struct ManifestTool {
     pub enable: bool,
     pub name: String,
-    pub exec_file: PathBuf,
-    pub logs_dir: PathBuf,
+    pub exec: PathBuf,
 }
 
 /// The manifest server configuration
