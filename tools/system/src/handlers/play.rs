@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use std::process::Stdio;
-use tokio::{fs as tfs, process::Command};
+use tokio::{fs, process::Command};
 
 /// Levenshtein distance coefficient
 const SEARCH_COEF: f32 = 0.5;
@@ -13,7 +13,7 @@ pub struct QueryData {
 }
 
 /// Api '/play' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
+pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     let dirs = Settings::get().music.dirs.clone();
 
     // close audacious processes:
@@ -28,49 +28,63 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
         Ok(r) => r,
         Err(e) => {
             error!("{e}");
-            return Json(json!({ "status": 500, "error": fmt!("{e}") }));
+            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
         }
     };
 
     // create playlist.m3u file:
     match create_playlist(&playlist_dir).await {
         Ok(playlist_file) => {
-            info!(
-                "Playing music '{}'..",
-                playlist_dir.to_string_lossy().replace("\\", "/")
-            );
+            let play_dir = playlist_dir.to_string_lossy().replace("\\", "/");
+            info!("Trying to play music on {play_dir}..");
 
             // open playlist file:
-            #[cfg(unix)]
-            {
-                Command::new("sh")
-                    .arg("-c")
-                    .arg(fmt!(
-                        "setsid xdg-open '{}' > /dev/null 2>&1 &",
-                        playlist_file.display()
-                    ))
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .ok();
-            }
-            #[cfg(windows)]
-            {
-                Command::new("cmd")
-                    .args(["/C", "start", "", &str!(playlist_file.to_string_lossy())])
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .spawn()
-                    .ok();
+            let status = {
+                #[cfg(unix)]
+                {
+                    Command::new("sh")
+                        .arg("-c")
+                        .arg(fmt!(
+                            "setsid xdg-open '{}' > /dev/null 2>&1 &",
+                            playlist_file.display()
+                        ))
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                }
+                #[cfg(windows)]
+                {
+                    Command::new("cmd")
+                        .args(["/C", "start", "", &str!(playlist_file.to_string_lossy())])
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .spawn()
+                }
+            };
+
+            match status {
+                Ok(_) => {
+                    info!("Playing music on {play_dir}");
+                    (
+                        StatusCode::OK,
+                        HeaderMap::from_iter(map! {
+                            header::CONTENT_TYPE => "text/plain".parse().unwrap()
+                        }),
+                        Body::new(fmt!("Playing music on {play_dir}")),
+                    )
+                        .into_response()
+                }
+                Err(e) => {
+                    error!("{e}");
+                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                }
             }
         }
         Err(e) => {
             error!("{e}");
-            return Json(json!({ "status": 500, "error": fmt!("{e}") }));
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }
-
-    Json(json!({ "status": 200 }))
 }
 
 /// Closes Audacious processes
@@ -171,7 +185,7 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
         content.extend_from_slice(b"\n");
     }
 
-    tfs::write(&playlist_path, content)
+    fs::write(&playlist_path, content)
         .await
         .map_err(|e| fmt!("Failed to create playlist: {e}"))?;
 
@@ -181,13 +195,13 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
 /// Reads song files in dir
 async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
     let mut songs = Vec::new();
-    let mut stack = vec![tfs::read_dir(dir).await?];
+    let mut stack = vec![fs::read_dir(dir).await?];
 
     while let Some(mut entries) = stack.pop() {
         while let Ok(Some(entry)) = entries.next_entry().await {
             let path = entry.path();
             if path.is_dir() {
-                stack.push(tfs::read_dir(path).await?);
+                stack.push(fs::read_dir(path).await?);
             } else if is_music_file(&path) {
                 songs.push(path.to_string_lossy().to_string());
             }

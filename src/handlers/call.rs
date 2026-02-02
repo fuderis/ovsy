@@ -15,13 +15,15 @@ pub async fn handle(
                     .map(|bytes| (Ok::<_, std::convert::Infallible>(bytes), rx))
             });
 
-            let mut headers = HeaderMap::new();
-            headers.insert(
-                header::CONTENT_TYPE,
-                "application/octet-stream".parse().unwrap(),
-            );
-
-            (StatusCode::OK, headers, Body::from_stream(stream)).into_response()
+            (
+                StatusCode::OK,
+                HeaderMap::from_iter(map!(
+                    header::CONTENT_TYPE =>
+                    "application/octet-stream".parse().unwrap(),
+                )),
+                Body::from_stream(stream),
+            )
+                .into_response()
         }
         Err(e) => {
             error!("{e}");

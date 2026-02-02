@@ -1,12 +1,13 @@
 use crate::prelude::*;
 use tokio::process::Command;
-// use tokio::fs as tfs;
 
-static CANCEL_OPERATION: Flag = Flag::new();
+/// The active operation type
+static POWER_OPERATION: State<Option<(PowerMode, &'static str)>> = State::new();
+/// Default timeout before power off
 const DEFAULT_TIMEOUT: u64 = 3;
 
 /// The power mode
-#[derive(Display, Serialize, Deserialize)]
+#[derive(Clone, Copy, Display, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PowerMode {
     #[serde(rename = "turnoff")]
@@ -37,40 +38,59 @@ impl QueryData {
 }
 
 /// Api '/power' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
-    if let PowerMode::Cancel = &data.mode {
-        CANCEL_OPERATION.set(true);
-        return Json(json!({ "status": 200 }));
-    } else {
-        CANCEL_OPERATION.set(false);
+pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
+    // cancel previews operation:
+    if let Some((_mode, oper_name)) = POWER_OPERATION.lock().await.take() {
+        sleep(Duration::from_secs(1)).await;
 
-        match &data.mode {
-            PowerMode::TurnOff => warn!("Turn off after {} sec..", data.timeout),
-            PowerMode::Sleep => warn!("Sleep after {} sec..", data.timeout),
-            PowerMode::Reboot => warn!("Reboot after {} sec..", data.timeout),
-            PowerMode::Lock => warn!("Lock after {} sec..", data.timeout),
-            _ => {}
+        if let PowerMode::Cancel = &data.mode {
+            return (
+                StatusCode::OK,
+                HeaderMap::from_iter(map!(
+                    header::CONTENT_TYPE =>
+                    "text/plain".parse().unwrap(),
+                )),
+                Body::new(str!("{oper_name} is canceled")),
+            )
+                .into_response();
         }
     }
+
+    // planning new operation:
+    let oper_name = match data.mode {
+        PowerMode::TurnOff => "Turn off",
+        PowerMode::Sleep => "Sleep",
+        PowerMode::Reboot => "Reboot",
+        PowerMode::Lock => "Lock session",
+        _ => unreachable!(),
+    };
+    POWER_OPERATION.set(Some((data.mode, oper_name))).await;
 
     tokio::spawn(async move {
         // init timer:
         let timer = Instant::now();
         let timeout = Duration::from_secs(data.timeout);
+        let mut interval = interval(Duration::from_secs(1));
 
         // wait timer:
         loop {
-            if CANCEL_OPERATION.is_true() {
-                warn!("Power operation '{}' canceled", data.mode);
-                return;
-            }
+            tokio::select! {
+                _ = interval.tick() => {
+                    let elapsed = timer.elapsed();
+                    if elapsed >= timeout {
+                        break;
+                    }
 
-            // check timer:
-            if timer.elapsed() >= timeout {
-                break;
+                    // Безопасная проверка состояния
+                    match POWER_OPERATION.lock().await.as_ref() {
+                        Some((mode, _)) if *mode == data.mode => continue,
+                        _ => {
+                            warn!("{oper_name} canceled");
+                            return;
+                        }
+                    }
+                }
             }
-
-            sleep(Duration::from_millis(1000)).await;
         }
 
         // do action:
@@ -83,14 +103,13 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .await
                         .map_err(|e| error!("Fail with turn off PC: {e}"));
                 }
-
                 #[cfg(windows)]
                 {
                     let _ = Command::new("shutdown")
                         .args(&["/s"])
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with turn off PC: {e}"));
+                        .map_err(|e| error!("Fail with turn off PC: {e}"));
                 }
             }
 
@@ -103,14 +122,13 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .await
                         .map_err(|e| error!("Fail with suspend PC: {e}"));
                 }
-
                 #[cfg(windows)]
                 {
                     let _ = Command::new("rundll32.exe")
                         .args(&["powrprof.dll,SetSuspendState", "0,1,0"])
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with sleep PC: {e}"));
+                        .map_err(|e| error!("Fail with sleep PC: {e}"));
                 }
             }
 
@@ -122,14 +140,13 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .await
                         .map_err(|e| error!("Fail with reboot PC: {e}"));
                 }
-
                 #[cfg(windows)]
                 {
                     let _ = Command::new("shutdown")
                         .args(&["/r"])
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with reboot PC: {e}"));
+                        .map_err(|e| error!("Fail with reboot PC: {e}"));
                 }
             }
 
@@ -149,7 +166,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .args(&["user32.dll,LockWorkStation"])
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with lock PC session: {e}"));
+                        .map_err(|e| error!("Fail with lock PC session: {e}"));
                 }
             }
 
@@ -157,5 +174,15 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
         }
     });
 
-    Json(json!({ "status": 200 }))
+    // return OK:
+    let msg = fmt!("{oper_name} is planned after {} seconds", data.timeout);
+    warn!("{msg}");
+    (
+        StatusCode::OK,
+        HeaderMap::from_iter(map! {
+            header::CONTENT_TYPE => "text/plain".parse().unwrap()
+        }),
+        Body::new(msg),
+    )
+        .into_response()
 }

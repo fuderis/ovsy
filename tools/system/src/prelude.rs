@@ -29,7 +29,7 @@ pub(crate) use tokio::{
     io::AsyncReadExt,
     sync::Mutex,
     sync::mpsc::{self, UnboundedReceiver, UnboundedSender},
-    time::{Duration, Instant, sleep},
+    time::{Duration, Instant, interval, sleep},
 };
 
 // Serde:
