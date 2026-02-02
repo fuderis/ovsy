@@ -1,27 +1,42 @@
 use root::{handlers, prelude::*};
+use serde_json::json;
+use std::net::SocketAddr;
+use tokio::{
+    net::TcpListener,
+    time::{Duration, sleep},
+};
 
 #[tokio::main]
 async fn main() -> Result<()> {
     Logger::init(app_data().join("logs"), 20)?;
     Settings::init(app_data().join("settings.toml"))?;
 
-    // check arguments:
     let port = Settings::get().server.port;
+
+    // check arguments:
     let query = std::env::args().collect::<Vec<_>>()[1..]
         .join(" ")
         .trim()
         .to_owned();
     if !query.is_empty() {
-        let client = reqwest::Client::new();
-        let result = client
-            .post(fmt!("http://localhost:{port}/query"))
+        use futures_util::StreamExt;
+
+        // send response:
+        let response = reqwest::Client::new()
+            .post(format!("http://localhost:{port}/query"))
             .json(&json!({ "query": query }))
             .send()
             .await?;
 
-        if result.status() != 200 {
-            err!("{}", result.text().await?);
+        // stream response:
+        let mut stream = response.bytes_stream();
+        while let Some(chunk) = stream.next().await {
+            let bytes = chunk?;
+            let text = String::from_utf8_lossy(&bytes);
+
+            eprint!("{text}");
         }
+        println!();
         return Ok(());
     }
 
@@ -31,10 +46,10 @@ async fn main() -> Result<()> {
     // create router:
     let router = Router::new()
         .route("/query", post(handlers::query::handle))
-        .route("/{name}/{action}", post(handlers::tool::handle));
+        .route("/call/{name}/{action}", post(handlers::call::handle));
 
-    // init listenner:
-    let address = SocketAddr::from(([127, 0, 0, 1], Settings::get().server.port));
+    // init listener:
+    let address = SocketAddr::from(([127, 0, 0, 1], port));
     info!("🚀 Running on 'http://{address}'..");
 
     let listener = loop {

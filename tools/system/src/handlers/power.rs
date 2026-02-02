@@ -37,7 +37,7 @@ impl QueryData {
 }
 
 /// Api '/power' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {    
+pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     if let PowerMode::Cancel = &data.mode {
         CANCEL_OPERATION.set(true);
         return Json(json!({ "status": 200 }));
@@ -46,9 +46,9 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
 
         match &data.mode {
             PowerMode::TurnOff => warn!("Turn off after {} sec..", data.timeout),
-            PowerMode::Sleep   => warn!("Sleep after {} sec..", data.timeout),
-            PowerMode::Reboot  => warn!("Reboot after {} sec..", data.timeout),
-            PowerMode::Lock    => warn!("Lock after {} sec..", data.timeout),
+            PowerMode::Sleep => warn!("Sleep after {} sec..", data.timeout),
+            PowerMode::Reboot => warn!("Reboot after {} sec..", data.timeout),
+            PowerMode::Lock => warn!("Lock after {} sec..", data.timeout),
             _ => {}
         }
     }
@@ -57,22 +57,22 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
         // init timer:
         let timer = Instant::now();
         let timeout = Duration::from_secs(data.timeout);
-        
+
         // wait timer:
         loop {
             if CANCEL_OPERATION.is_true() {
                 warn!("Power operation '{}' canceled", data.mode);
                 return;
             }
-    
+
             // check timer:
             if timer.elapsed() >= timeout {
                 break;
             }
-    
+
             sleep(Duration::from_millis(1000)).await;
         }
-        
+
         // do action:
         match data.mode {
             PowerMode::TurnOff => {
@@ -81,7 +81,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                     let _ = Command::new("shutdown")
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with turn off PC: {e}"));
+                        .map_err(|e| error!("Fail with turn off PC: {e}"));
                 }
 
                 #[cfg(windows)]
@@ -93,15 +93,15 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .map_err(|e| err!("Fail with turn off PC: {e}"));
                 }
             }
-    
+
             PowerMode::Sleep => {
                 #[cfg(unix)]
                 {
-                     let _ = Command::new("systemctl")
+                    let _ = Command::new("systemctl")
                         .arg("suspend")
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with suspend PC: {e}"));
+                        .map_err(|e| error!("Fail with suspend PC: {e}"));
                 }
 
                 #[cfg(windows)]
@@ -113,25 +113,26 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .map_err(|e| err!("Fail with sleep PC: {e}"));
                 }
             }
-    
+
             PowerMode::Reboot => {
                 #[cfg(unix)]
                 {
-                     let _ = Command::new("reboot")
+                    let _ = Command::new("reboot")
+                        .status()
+                        .await
+                        .map_err(|e| error!("Fail with reboot PC: {e}"));
+                }
+
+                #[cfg(windows)]
+                {
+                    let _ = Command::new("shutdown")
+                        .args(&["/r"])
                         .status()
                         .await
                         .map_err(|e| err!("Fail with reboot PC: {e}"));
                 }
-
-                #[cfg(windows)]
-                {              let _ = Command::new("shutdown")
-                    .args(&["/r"])
-                    .status()
-                    .await
-                    .map_err(|e| err!("Fail with reboot PC: {e}"));
-                }
             }
-    
+
             PowerMode::Lock => {
                 #[cfg(unix)]
                 {
@@ -139,7 +140,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .arg("lock-session")
                         .status()
                         .await
-                        .map_err(|e| err!("Fail with lock PC session: {e}"));
+                        .map_err(|e| error!("Fail with lock PC session: {e}"));
                 }
 
                 #[cfg(windows)]
@@ -151,10 +152,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                         .map_err(|e| err!("Fail with lock PC session: {e}"));
                 }
             }
-    
+
             _ => {}
         }
     });
-    
+
     Json(json!({ "status": 200 }))
 }

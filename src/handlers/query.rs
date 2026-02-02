@@ -1,5 +1,9 @@
 use crate::{LMKind, lms, prelude::*};
-use tokio::fs as tfs;
+use reqwest::Client;
+use tokio::fs;
+
+/// The tool call data
+type ToolCall = (String, HashMap<String, JsonValue>);
 
 /// The request POST data
 #[derive(Deserialize)]
@@ -8,21 +12,44 @@ pub struct QueryData {
 }
 
 /// Api '/query' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
+pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     match handle_query(data.query).await {
-        Ok(_) => Json(json!({ "status": 200 })),
+        Ok(calls) => {
+            let (tx, rx) = mpsc::unbounded_channel();
+
+            tokio::spawn(async move {
+                for call in calls {
+                    if let Err(e) = handle_tool(call, &tx).await {
+                        tx.send(Bytes::from(fmt!("\nError: {e}").as_bytes().to_vec()))
+                            .ok();
+                        break;
+                    }
+                }
+            });
+
+            let stream = futures::stream::unfold(rx, |mut rx| async move {
+                rx.recv()
+                    .await
+                    .map(|bytes| (Ok::<_, std::convert::Infallible>(bytes), rx))
+            });
+
+            let mut headers = HeaderMap::new();
+            headers.insert(
+                header::CONTENT_TYPE,
+                "application/octet-stream".parse().unwrap(),
+            );
+
+            (StatusCode::OK, headers, Body::from_stream(stream)).into_response()
+        }
         Err(e) => {
-            err!("{e}");
-            Json(json!({ "status": 500, "error": fmt!("{e}") }))
+            error!("{e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }
 }
 
-/// The LLM tool call data
-type ToolCall = (String, HashMap<String, JsonValue>);
-
 /// Handles user query
-async fn handle_query(query: String) -> Result<()> {
+async fn handle_query(query: String) -> Result<Vec<ToolCall>> {
     let cfg = Settings::read()?;
     info!("⏳ Handle query '{:.100}'..", query.replace("\n", "\\n"));
 
@@ -31,7 +58,7 @@ async fn handle_query(query: String) -> Result<()> {
     if !prompt_dir.exists() {
         prompt_dir = path!("$/../../prompt");
     }
-    let prompt = tfs::read_to_string(prompt_dir.join("handle-query.md")).await?;
+    let prompt = fs::read_to_string(prompt_dir.join("handle-query.md")).await?;
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
     // handle query by LLM:
@@ -48,22 +75,39 @@ async fn handle_query(query: String) -> Result<()> {
     let calls: Vec<ToolCall> =
         json::from_str(&json).map_err(|e| fmt!("Invalid LM response format: {e}"))?;
 
-    // handle tool calls:
-    for (tool_name, tool_data) in calls {
-        // parse tool call:
-        let mut spl = tool_name.splitn(2, "/");
-        let name = spl
-            .next()
-            .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
-            .to_owned();
-        let action = spl
-            .next()
-            .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
-            .to_owned();
-        let data = json::to_value(&tool_data)?;
+    Ok(calls)
+}
 
-        // do tool call:
-        super::tool::handle_tool(name, action, data).await?;
+/// Handles tool call
+async fn handle_tool(call: ToolCall, tx: &UnboundedSender<Bytes>) -> Result<()> {
+    let (tool_name, tool_data) = call;
+
+    // parse tool call:
+    let mut spl = tool_name.splitn(2, "/");
+    let name = spl
+        .next()
+        .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
+        .to_owned();
+    let action = spl
+        .next()
+        .ok_or(Error::InvalidToolNameFormat(tool_name.clone()))?
+        .to_owned();
+    let data = json::to_value(&tool_data)?;
+
+    // do tool call:
+    let port = Settings::get().server.port;
+    let response = Client::new()
+        .post(fmt!("http://127.0.0.1:{port}/call/{name}/{action}"))
+        .json(&data)
+        .send()
+        .await?;
+
+    // streaming response:
+    let mut stream = response.bytes_stream();
+    while let Some(chunk) = stream.next().await {
+        if let Ok(bytes) = chunk {
+            let _ = tx.send(bytes);
+        }
     }
 
     Ok(())

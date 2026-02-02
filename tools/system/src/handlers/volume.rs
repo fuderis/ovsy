@@ -10,7 +10,7 @@ pub struct QueryData {
 }
 
 /// Api '/volume' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
+pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     let vol = if !data.force {
         Audio::get_volume() as i32 + data.delta
     } else {
@@ -18,12 +18,21 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     }
     .clamp(0, 100) as u8;
 
-    info!("Set volume to '{vol}%'");
+    info!("Set volume to {vol}%");
     match Audio::set_volume(vol) {
-        Ok(_) => Json(json!({ "status": 200 })),
+        Ok(_) => {
+            let mut headers = HeaderMap::new();
+            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
+            (
+                StatusCode::OK,
+                headers,
+                Body::new(fmt!("Set volume to {vol}%")),
+            )
+                .into_response()
+        }
         Err(e) => {
-            err!("Failed to set volume: {e}");
-            Json(json!({ "status": 500, "error": fmt!("{e}") }))
+            error!("Failed to set volume: {e}");
+            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }
 }

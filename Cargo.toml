@@ -18,5 +18,8 @@ fuzzy-cmp = "0.1.0"
 clap = { version = "4.5.53", features = ["derive"] }
 lm-studio-api = "0.1.5"
 chrono = "0.4.42"
-uuid = { version = "1.19.0", features = ["v4"] }
 regex = "1.12.2"
+futures-util = "0.3.31"
+futures-core = "0.3.31"
+bytes = "1.11.0"
+futures = "0.3.31"

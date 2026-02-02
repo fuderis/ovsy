@@ -75,7 +75,7 @@ where
                     response.push_str(text);
                 }
             }
-            Err(e) => err!("{e}"),
+            Err(e) => error!("{e}"),
         }
     }
 

@@ -1,7 +1,8 @@
 use crate::prelude::*;
-use std::{fs, process::Stdio};
+use std::process::Stdio;
 use tokio::{fs as tfs, process::Command};
 
+/// Levenshtein distance coefficient
 const SEARCH_COEF: f32 = 0.5;
 
 /// The request POST data
@@ -15,12 +16,18 @@ pub struct QueryData {
 pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
     let dirs = Settings::get().music.dirs.clone();
 
+    // close audacious processes:
+    #[cfg(unix)]
+    {
+        close_audacious().await.ok();
+    }
+
     // search playlist path:
     info!("Search for playlist '{}'..", &data.author);
     let playlist_dir = match search_playlist(dirs, data.author, data.album).await {
         Ok(r) => r,
         Err(e) => {
-            err!("{e}");
+            error!("{e}");
             return Json(json!({ "status": 500, "error": fmt!("{e}") }));
         }
     };
@@ -33,13 +40,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                 playlist_dir.to_string_lossy().replace("\\", "/")
             );
 
+            // open playlist file:
             #[cfg(unix)]
             {
-                // close audacious processes:
-                let _ = close_audacious().await;
-
-                // open playlist file:
-                let _ = Command::new("sh")
+                Command::new("sh")
                     .arg("-c")
                     .arg(fmt!(
                         "setsid xdg-open '{}' > /dev/null 2>&1 &",
@@ -47,20 +51,21 @@ pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
                     ))
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .spawn();
+                    .spawn()
+                    .ok();
             }
-
             #[cfg(windows)]
             {
-                let _ = Command::new("cmd")
+                Command::new("cmd")
                     .args(["/C", "start", "", &str!(playlist_file.to_string_lossy())])
                     .stdout(Stdio::null())
                     .stderr(Stdio::null())
-                    .spawn();
+                    .spawn()
+                    .ok();
             }
         }
         Err(e) => {
-            err!("{e}");
+            error!("{e}");
             return Json(json!({ "status": 500, "error": fmt!("{e}") }));
         }
     }
@@ -149,7 +154,7 @@ async fn search_playlist(
 async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
     let playlist_path = dir.as_ref().join("playlist.m3u");
 
-    let songs_list = read_song_files(dir)?;
+    let songs_list = read_song_files(dir).await?;
     let mut content = Vec::new();
     content.extend_from_slice(b"#EXTM3U\n");
 
@@ -174,23 +179,31 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
 }
 
 /// Reads song files in dir
-fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
-    let exts = ["mp3", "flac", "wav"];
-    let mut songs = vec![];
+async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
+    let mut songs = Vec::new();
+    let mut stack = vec![tfs::read_dir(dir).await?];
 
-    for entry in fs::read_dir(dir).map_err(|e| fmt!("Failed to read playlist folder: {e}"))? {
-        let path = entry?.path();
-
-        if path.is_dir() {
-            songs.extend(read_song_files(path)?);
-        } else if path.is_file()
-            && path
-                .extension()
-                .is_some_and(|ext| exts.contains(&ext.to_str().unwrap_or("")))
-        {
-            songs.push(path.to_string_lossy().to_string());
+    while let Some(mut entries) = stack.pop() {
+        while let Ok(Some(entry)) = entries.next_entry().await {
+            let path = entry.path();
+            if path.is_dir() {
+                stack.push(tfs::read_dir(path).await?);
+            } else if is_music_file(&path) {
+                songs.push(path.to_string_lossy().to_string());
+            }
         }
     }
-
     Ok(songs)
+}
+
+/// Checks file extension for song format
+fn is_music_file<P>(path: P) -> bool
+where
+    P: AsRef<Path>,
+{
+    const EXTS: &[&str] = &["mp3", "flac", "wav", "ogg", "m4a"];
+    path.as_ref()
+        .extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| EXTS.contains(&ext.to_lowercase().as_str()))
 }
