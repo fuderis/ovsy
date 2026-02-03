@@ -4,11 +4,11 @@ In a world dominated by proprietary voice assistants like Alice or Siri, imagine
 Enter Ovsy, an open-source AI orchestrator that's rewriting the rules for personal assistants.<br><br>
 
 Developed as a lightweight core for custom AI agents, `Ovsy` handles user queries by intelligently dispatching tools 
-you build yourself—turning your system into a seamless command center.<br><br>
+you build yourself—turning your system into a seamless command center.<br>
 
 Ovsy processes natural language requests and routes them to modular tools, which you develop yourself to suit your needs.<br>
 But don't worry, I'm already developing a powerful `system` tool for you that will help you manage your computer, 
-search the internet, and plan your schedule.<br><br>
+search the internet, and plan your schedule.<br>
 
 > Stay tuned, it'll be ready soon; I never give up on what I start! ;)
 
@@ -78,11 +78,11 @@ followed by `ovsy "cancel power off"`.
 ## Add your custom tools:
 
 1. Just add the path to the tool dir in the `settings.toml` in the `[tools.dirs]` parameter.
-2. Put the `Ovsy.toml` manifest in the root of the tool (for an example of filling, see [https://github.com/fuderis/ovsy/blob/main/tools/system/Ovsy.toml])
+2. Put the `Ovsy.toml` manifest in the root of the tool (for an example of filling, see https://github.com/fuderis/ovsy/blob/main/tools/system/Ovsy.toml)
 
 ## Ovsy isn't just software:
 
-It's liberation for users who tired of walled gardens and the who value their anonymity.<br><br>
+It's liberation for users who tired of walled gardens and the who value their anonymity.<br>
 
 Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic.
 Lightning-Fast Setup on your system.
@@ -98,5 +98,5 @@ Lightning-Fast Setup on your system.
   [*Telegram Channel*](https://t.me/fuderis_club),
   [*VKontakte*](https://vk.com/fuderis).
 
-> Thank you for your support, friends!
+> Thank you for your support, friends!<br>
 **P.s.**: This software is actively evolving, and your suggestions and feedback are always welcome!
