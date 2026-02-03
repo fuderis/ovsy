@@ -72,16 +72,31 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         let timeout = Duration::from_secs(data.timeout);
         let mut interval = interval(Duration::from_secs(1));
 
+        let warn30 = Duration::from_secs(31);
+        let warn5 = Duration::from_secs(6);
+        let mut already_warned = false;
+
         // wait timer:
         loop {
             tokio::select! {
                 _ = interval.tick() => {
                     let elapsed = timer.elapsed();
+                    let remaining = timeout.saturating_sub(elapsed);
+
+                    // check how many time left:
+                    if remaining <= warn5 {
+                        warn!("{oper_name} after {:.0} seconds..", remaining.as_secs());
+                    }
+                    else if !already_warned && remaining <= warn30 {
+                        already_warned = true;
+                        warn!("Before {} less than 30 seconds left!", oper_name.to_lowercase());
+                    }
+
                     if elapsed >= timeout {
                         break;
                     }
 
-                    // Безопасная проверка состояния
+                    // check for canceled:
                     match POWER_OPERATION.lock().await.as_ref() {
                         Some((mode, _)) if *mode == data.mode => continue,
                         _ => {
@@ -93,7 +108,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
             }
         }
 
-        // do action:
+        // do power action:
         match data.mode {
             PowerMode::TurnOff => {
                 #[cfg(unix)]
