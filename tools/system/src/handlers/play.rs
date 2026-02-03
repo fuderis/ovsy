@@ -113,10 +113,8 @@ async fn close_audacious() -> Result<()> {
     if pids.is_empty() {
         return Ok(());
     }
-    info!(
-        "Found {count} audacious processes: {pids:?}",
-        count = pids.len()
-    );
+    let count = pids.len();
+    info!("Found {count} audacious processes: {pids:?}",);
 
     // stop all processes:
     for &pid in &pids {
@@ -132,6 +130,11 @@ async fn close_audacious() -> Result<()> {
             let _ = Command::new("kill").args(["-9", &pid_str]).status().await;
             info!("Force kill PID {pid}");
         }
+    }
+
+    // wait for close audacious:
+    if count > 0 {
+        sleep(Duration::from_millis(100)).await;
     }
 
     Ok(())
