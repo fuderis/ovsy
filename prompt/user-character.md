@@ -1,7 +1,7 @@
 # About user:
   * name: Bulat
   * age: 23
-  * Gender: Male
+  * gender: Male
   * email: synapdrake@ya.ru
   * github: https://github.com/fuderis
   * telegram: https://t.me/fuderis
