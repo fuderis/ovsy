@@ -84,13 +84,25 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                     let remaining = timeout.saturating_sub(elapsed);
 
                     // check how many time left:
-                    if remaining <= warn5 {
-                        warn!("{oper_name} after {:.0} seconds..", remaining.as_secs());
-                    }
-                    else if !already_warned && remaining <= warn30 {
-                        already_warned = true;
-                        warn!("Before {} less than 30 seconds left!", oper_name.to_lowercase());
-                    }
+                    if let Some((msg, time)) = match remaining {
+                        r if r <= warn5 => Some((fmt!("{oper_name} after {:.0} seconds..", remaining.as_secs()), 800)),
+                        r if !already_warned && remaining <= warn30 => {
+                            already_warned = true;
+                            Some((fmt!("Before {} less than 30 seconds left!", oper_name.to_lowercase()), 10000))
+                        }
+                        _ => None
+                    }{
+                        warn!("{msg}");
+
+                        #[cfg(unix)]
+                        {
+                            Command::new("notify-send")
+                                .args(["-u", "normal", "-t", &time.to_string(), "System notification", &msg])
+                                .status()
+                                .await
+                                .ok();
+                        }
+                    };
 
                     if elapsed >= timeout {
                         break;
