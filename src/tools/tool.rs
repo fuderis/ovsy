@@ -160,7 +160,8 @@ impl Tool {
                 Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
             {
                 let timeout = Settings::get().tools.trace_timeout;
-                Some(Trace::open(log_file, Duration::from_millis(timeout)).await?)
+                let trace = Trace::open(log_file, Duration::from_millis(timeout), false).await?;
+                Some(trace)
             } else {
                 None
             }

@@ -50,7 +50,7 @@ async fn main() -> Result<()> {
 
     // init listener:
     let address = SocketAddr::from(([127, 0, 0, 1], port));
-    info!("🚀 Running on 'http://{address}'..");
+    info!("🚀 Running Ovsy on http://{address}..");
 
     let listener = loop {
         match TcpListener::bind(address).await {
