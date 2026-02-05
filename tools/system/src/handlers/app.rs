@@ -5,7 +5,7 @@ use crate::prelude::*;
 pub struct QueryData {}
 
 /// Api '/app' handler
-pub async fn handle(Json(data): Json<QueryData>) -> Json<JsonValue> {
+pub async fn handle(Json(_data): Json<QueryData>) -> Json<JsonValue> {
     // TODO: ..
 
     /*let vol = if !data.force {

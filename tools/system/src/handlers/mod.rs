@@ -1,4 +1,4 @@
 pub mod app;
-pub mod play;
+pub mod music;
 pub mod power;
 pub mod volume;

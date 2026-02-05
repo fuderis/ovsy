@@ -17,6 +17,7 @@ pub struct ManifestServer {
 /// The manifest tool handler options
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestToolAction {
+    pub enable: bool,
     pub description: String,
     pub arguments: HashMap<String, ManifestToolArgument>,
     pub examples: Vec<(String, HashMap<String, JsonValue>)>,

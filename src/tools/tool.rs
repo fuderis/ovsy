@@ -65,6 +65,12 @@ impl Tool {
         // generate prompt-doc:
         let mut docs = vec![];
         for (action_name, action) in &manifest.actions {
+            // skip disabled actions:
+            if !action.enable {
+                continue;
+            }
+
+            // gen prompt-doc:
             let doc = fmt!(
                 r#"* "{tool_name}/{action_name}":\n  * description: {descr}\n  * arguments: {args}\n  * examples: {exls}"#,
                 descr = &action.description,

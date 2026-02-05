@@ -15,15 +15,17 @@ impl ::std::default::Default for ServerSettings {
     }
 }
 
-/// The AI context settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContextSettings {}
+/// TODO: The AI context settings
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+pub struct ContextSettings;
 
+/*
 impl ::std::default::Default for ContextSettings {
     fn default() -> Self {
         Self {}
     }
 }
+*/
 
 /// The tools settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
