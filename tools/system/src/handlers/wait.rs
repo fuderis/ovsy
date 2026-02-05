@@ -11,16 +11,14 @@ pub struct QueryData {
 
 /// Api '/wait' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
-    let total_millis = data.millis.unwrap_or(0)
-        + data.secs.unwrap_or(0) * 1000
-        + data.mins.unwrap_or(0) * 60 * 1000
-        + data.hours.unwrap_or(0) * 60 * 60 * 1000;
+    let total_secs = data.millis.unwrap_or(0) / 1000
+        + data.secs.unwrap_or(0)
+        + data.mins.unwrap_or(0) * 60
+        + data.hours.unwrap_or(0) * 60 * 60;
 
-    if total_millis == 0 {
+    if total_secs == 0 {
         return (StatusCode::BAD_REQUEST, "No time specified").into_response();
     }
-
-    let total_secs = total_millis / 1000;
 
     // create receiver:
     let (tx, rx) = mpsc::channel::<Bytes>(32);
@@ -28,11 +26,24 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     // send message:
     let tx_clone = tx.clone();
     tokio::spawn(async move {
+        // display time:
+        let mut parts: Vec<String> = Vec::new();
+
+        if let Some(h) = data.hours {
+            parts.push(format!("{} hour{}", h, if h == 1 { "" } else { "s" }));
+        }
+        if let Some(m) = data.mins {
+            parts.push(format!("{} minute{}", m, if m == 1 { "" } else { "s" }));
+        }
+        if let Some(s) = data.secs {
+            parts.push(format!("{} second{}", s, if s == 1 { "" } else { "s" }));
+        }
+        if let Some(ms) = data.millis {
+            parts.push(format!("{} ms", ms));
+        }
+
         let _ = tx_clone
-            .send(Bytes::from(format!(
-                "Total wait time: {} seconds\n",
-                total_secs
-            )))
+            .send(Bytes::from(fmt!("Total wait time: {}\n", parts.join(", "))))
             .await;
     });
 
@@ -53,7 +64,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 continue;
             }
             let _ = tx2
-                .send(Bytes::from(format!("{} seconds remaining\n", r)))
+                .send(Bytes::from(fmt!("{} seconds remaining\n", r)))
                 .await;
         }
 
