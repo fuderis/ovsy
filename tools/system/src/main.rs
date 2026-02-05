@@ -1,9 +1,6 @@
 use root::{handlers, prelude::*};
 use std::net::SocketAddr;
-use tokio::{
-    net::TcpListener,
-    time::{Duration, sleep},
-};
+use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -13,6 +10,7 @@ async fn main() -> Result<()> {
     // create router:
     let router = Router::new()
         .route("/", get(async || Html("")))
+        .route("/wait", post(handlers::wait::handle))
         .route("/power", post(handlers::power::handle))
         .route("/app", post(handlers::app::handle))
         .route("/music", post(handlers::music::handle))

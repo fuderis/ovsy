@@ -1,70 +1,90 @@
 [tool]
 enable = true
-name = "sys"
+name = "system"
 exec = "target/release/system"
 
 [server]
-port = 7880
+port = 7879
 
-[actions.power]
+# Wait some time before next task
+[actions.wait]
 enable = true
-description = "Turns off computer or sleep it with timeout in seconds (if you need minutes or hours - calculate. for example, 30 minutes = 1800 sec). Mode 'cancel' do cancel power operation."
+description = "Freezes ALL following tasks until time passes. IMPORTANT: Call it before task."
 examples = [
   [
-    "power off pc",
-    { mode = "turnoff" },
-  ],
-  [
-    "turn off pc after 30 seconds",
-    { mode = "turnoff", timeout = 30 },
+    "do ... after 1.5 hours 15 seconds",
+    { hours = 1, mins = 30, secs = 15 },
   ],
 ]
+[actions.wait.arguments]
+hours = { format = "integer", optional = true }
+mins = { format = "integer", optional = true }
+secs = { format = "integer", optional = true }
+millis = { format = "integer", optional = true }
+
+# System power operations
+[actions.power]
+enable = true
+description = "Power operations: turnoff, sleep, reboot, lock."
+examples = [["turn off pc", { mode = "turnoff" }]]
 [actions.power.arguments]
 mode = { format = "string", variants = [
   "turnoff",
   "sleep",
   "reboot",
   "lock",
-  "cancel",
 ], optional = false }
-timeout = { format = "integer", optional = true }
 
+# TODO: Launch/Kill applications 
 [actions.app]
 enable = false
 description = ""
 examples = [["", {}]]
 [actions.app.arguments]
 
+# Search+Play local music
 [actions.music]
 enable = true
-description = "Opens playlist, where: author - is author or playlist name, album - subfolder in founded music"
+description = "Search/Play local music. With search=true - it returns matches without play."
 examples = [
+  [
+    "play any rock",
+    { jenre = "rock" },
+  ],
   [
     "play Disturbed",
     { author = "Disturbed" },
   ],
   [
-    "play album 'The Sickness' of author Disturbed",
+    "play Disturbed - The Sickness",
     { author = "Disturbed", album = "The Sickness" },
+  ],
+  [
+    "search rock compositions",
+    { jenre = "rock", search = true },
   ],
 ]
 [actions.music.arguments]
-author = { format = "string", optional = false }
+jenre = { format = "string", optional = true }
+author = { format = "string", optional = true }
 album = { format = "string", optional = true }
+song = { format = "string", optional = true }
+search = { format = "boolean", optional = true }
 
+# Set system audio-volume
 [actions.volume]
 enable = true
-description = "Change audio volume by delta [0..100]. Warning: If need to set one concrete volume (not delta change) - set force=true (default: false)."
+description = "Set audio volume (or change by delta). Value 1.0 = 100% of volume."
 examples = [
   [
-    "increase volume by 20 percents",
-    { delta = 20 },
+    "decrease volume by 20%",
+    { delta = -0.2 },
   ],
   [
-    "set volume to 50 percents",
-    { delta = 50, force = true },
+    "set volume to 50%",
+    { volume = 0.5 },
   ],
 ]
 [actions.volume.arguments]
-delta = { format = "integer", optional = false }
-force = { format = "boolean", optional = true }
+delta = { format = "float", optional = true }
+volume = { format = "float", optional = true }

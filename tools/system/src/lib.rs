@@ -11,5 +11,5 @@ pub mod handlers;
 
 /// Returns path to app data dir
 pub fn app_data() -> PathBuf {
-    path!("~/.config/ovsy/sys")
+    path!("~/.config/ovsy/system")
 }

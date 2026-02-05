@@ -18,9 +18,10 @@ pub use macron::{Display, From, hash_map as map, path, re, str};
 
 // Basic:
 pub(crate) use bytes::Bytes;
-pub(crate) use futures_util::StreamExt;
+pub(crate) use futures::{StreamExt, stream};
 pub(crate) use std::{
     collections::HashMap,
+    convert::Infallible,
     format as fmt,
     path::{Path, PathBuf},
     sync::{Arc, Mutex as StdMutex},
