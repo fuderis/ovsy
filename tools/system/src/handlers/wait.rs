@@ -20,7 +20,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         return (StatusCode::BAD_REQUEST, "No time specified").into_response();
     }
 
-    let mut total_secs = total_millis / 1000;
+    let total_secs = total_millis / 1000;
 
     // create receiver:
     let (tx, rx) = mpsc::channel::<Bytes>(32);
