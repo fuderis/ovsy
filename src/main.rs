@@ -19,7 +19,7 @@ async fn main() -> Result<()> {
         .trim()
         .to_owned();
     if !query.is_empty() {
-        use futures_util::StreamExt;
+        use futures::StreamExt;
 
         // send response:
         let response = reqwest::Client::new()

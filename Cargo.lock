@@ -1291,7 +1291,6 @@ dependencies = [
  "clap",
  "futures",
  "futures-core",
- "futures-util",
  "fuzzy-cmp",
  "lm-studio-api",
  "macron",

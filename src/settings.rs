@@ -15,11 +15,11 @@ impl ::std::default::Default for ServerSettings {
     }
 }
 
-/// TODO: The AI context settings
+/*  TODO: AI context
+///The AI context settings
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ContextSettings;
 
-/*
 impl ::std::default::Default for ContextSettings {
     fn default() -> Self {
         Self {}
@@ -92,7 +92,7 @@ impl ::std::default::Default for LMSSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
-    pub context: ContextSettings,
+    // pub context: ContextSettings,
     pub tools: ToolsSettings,
     pub lmstudio: LMStudioAPISettings,
     pub lms: LMSSettings,

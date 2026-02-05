@@ -15,6 +15,7 @@ pub struct QueryData {
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     match handle_query(data.query).await {
         Ok(calls) => {
+            info!("Call tools order: {calls:?}");
             let (tx, rx) = mpsc::unbounded_channel();
 
             tokio::spawn(async move {
@@ -27,10 +28,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 }
             });
 
-            let stream = futures::stream::unfold(rx, |mut rx| async move {
+            let stream = stream::unfold(rx, |mut rx| async move {
                 rx.recv()
                     .await
-                    .map(|bytes| (Ok::<_, std::convert::Infallible>(bytes), rx))
+                    .map(|bytes| (Ok::<_, Infallible>(bytes), rx))
             });
 
             (

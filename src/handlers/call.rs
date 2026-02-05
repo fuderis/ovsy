@@ -9,7 +9,7 @@ pub async fn handle(
 ) -> impl IntoResponse {
     match handle_tool(name, action, data).await {
         Ok(rx) => {
-            let stream = futures::stream::unfold(rx, |mut rx| async move {
+            let stream = stream::unfold(rx, |mut rx| async move {
                 rx.recv()
                     .await
                     .map(|bytes| (Ok::<_, std::convert::Infallible>(bytes), rx))
