@@ -1,4 +1,4 @@
-use macron::{ Display, From, Error };
+use macron::{Display, Error, From};
 
 /// Std Result alias
 pub type StdResult<T, E> = std::result::Result<T, E>;
@@ -15,9 +15,7 @@ pub enum Error {
 
     #[display = "Expected server '--port' argument."]
     ExpectedPortArg,
-    
+
     #[display = "Playlist '{0}' is not found."]
     PlaylistNotFound(String),
-    #[display = "Album '{0}' is not found in '{1}'."]
-    AlbumNotFound(String, String),
 }

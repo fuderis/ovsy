@@ -45,28 +45,28 @@ examples = [["", {}]]
 # Search+Play local music
 [actions.music]
 enable = true
-description = "Search/Play local music. With search=true - it returns matches without play."
+description = "Search/Play local music. With search=true - returns matches without play."
 examples = [
   [
     "play any rock",
-    { jenre = "rock" },
+    { genre = "rock" },
   ],
   [
     "play Disturbed",
-    { author = "Disturbed" },
+    { artist = "Disturbed" },
   ],
   [
     "play Disturbed - The Sickness",
-    { author = "Disturbed", album = "The Sickness" },
+    { artist = "Disturbed", album = "The Sickness" },
   ],
   [
     "search rock compositions",
-    { jenre = "rock", search = true },
+    { genre = "rock", search = true },
   ],
 ]
 [actions.music.arguments]
-jenre = { format = "string", optional = true }
-author = { format = "string", optional = true }
+genre = { format = "string", optional = true }
+artist = { format = "string", optional = true }
 album = { format = "string", optional = true }
 song = { format = "string", optional = true }
 search = { format = "boolean", optional = true }

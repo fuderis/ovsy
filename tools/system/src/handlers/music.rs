@@ -8,13 +8,33 @@ const SEARCH_COEF: f32 = 0.5;
 /// The request POST data
 #[derive(Deserialize)]
 pub struct QueryData {
-    author: String,
+    genre: Option<String>,
+    artist: Option<String>,
     album: Option<String>,
+    song: Option<String>,
+    _search: Option<bool>,
 }
 
-/// Api '/play' handler
+/// Api '/music' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
-    let dirs = Settings::get().music.dirs.clone();
+    let name = [&data.genre, &data.artist, &data.album, &data.song]
+        .iter()
+        .filter_map(|&opt| opt.clone())
+        .collect::<Vec<_>>()
+        .join(" / ");
+
+    // search playlist path:
+    info!("Search for playlist '{name}'..");
+    let playlist_dir = match search_playlist(data, name).await {
+        Ok(r) => {
+            info!("Found: {r:?}");
+            r
+        }
+        Err(e) => {
+            error!("{e}");
+            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("{e}")).into_response();
+        }
+    };
 
     // close audacious processes:
     #[cfg(unix)]
@@ -22,18 +42,8 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         close_audacious().await.ok();
     }
 
-    // search playlist path:
-    info!("Search for playlist '{}'..", &data.author);
-    let playlist_dir = match search_playlist(dirs, data.author, data.album).await {
-        Ok(r) => r,
-        Err(e) => {
-            error!("{e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response();
-        }
-    };
-
-    // create playlist.m3u file:
-    match create_playlist(&playlist_dir).await {
+    // create playlist file & run it:
+    match create_playlist(&playlist_dir, path!("$/Playlist.m3u")).await {
         Ok(playlist_file) => {
             let play_dir = playlist_dir.to_string_lossy().replace("\\", "/");
             info!("Trying to play music on {play_dir}..");
@@ -85,6 +95,45 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }
+}
+
+/// Smart search playlist
+async fn search_playlist(data: QueryData, name: String) -> Result<PathBuf> {
+    let mut search_dirs = vec![Settings::get().music.dirs.clone()];
+    let stages = [&data.genre, &data.artist, &data.album];
+
+    // search folders:
+    for param in stages {
+        if let Some(pattern) = param {
+            let results = utils::smart_scan(&search_dirs, pattern, SEARCH_COEF, true).await?;
+            search_dirs = search_dirs[1..].to_vec();
+
+            if !results.is_empty() {
+                search_dirs.push(results);
+            } else {
+                return Err(Error::PlaylistNotFound(name).into());
+            }
+        } else {
+            let new_level = utils::flatten_subdirs(search_dirs.last().unwrap())
+                .await
+                .unwrap_or_default();
+            search_dirs.push(new_level);
+        }
+    }
+
+    // search song:
+    let playlist_path = if let Some(song) = &data.song {
+        let results = utils::smart_scan(&search_dirs, song, SEARCH_COEF, false).await?;
+        if !results.is_empty() {
+            results[0].clone()
+        } else {
+            return Err(Error::PlaylistNotFound(name).into());
+        }
+    } else {
+        search_dirs.get(search_dirs.len() - 2).unwrap()[0].clone()
+    };
+
+    Ok(playlist_path)
 }
 
 /// Closes Audacious processes
@@ -140,36 +189,13 @@ async fn close_audacious() -> Result<()> {
     Ok(())
 }
 
-/// Searches playlists in music folders
-async fn search_playlist(
-    dirs: Vec<PathBuf>,
-    author: String,
-    album: Option<String>,
-) -> Result<PathBuf> {
-    // search in dirs:
-    let results = utils::scan_dirs(&dirs, &author, SEARCH_COEF, true).await?;
-    let best = results
-        .first()
-        .map(|p| p.to_owned())
-        .ok_or(Error::PlaylistNotFound(author))?;
-
-    // search in subdirs:
-    let best = if let Some(album) = album {
-        let results = utils::scan_dirs(&[&best], &album, SEARCH_COEF, true).await?;
-        results
-            .first()
-            .map(|p| p.to_owned())
-            .ok_or(Error::AlbumNotFound(album, str!(best.to_string_lossy())))?
-    } else {
-        best
-    };
-
-    Ok(best)
-}
-
 /// Create playlist file
-async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
-    let playlist_path = dir.as_ref().join("playlist.m3u");
+async fn create_playlist<P, P2>(dir: P, file: P2) -> Result<PathBuf>
+where
+    P: AsRef<Path>,
+    P2: Into<PathBuf>,
+{
+    let playlist_path = file.into();
 
     let songs_list = read_song_files(dir).await?;
     let mut content = Vec::new();
@@ -180,8 +206,7 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
         let filename = std::path::Path::new(&unix_path)
             .file_name()
             .unwrap_or_default()
-            .to_string_lossy()
-            .replace(['—', '–'], "-"); // Audacious не любит em-dash
+            .to_string_lossy();
 
         content.extend_from_slice(format!("#EXTINF:-1,{}\n", filename).as_bytes());
         content.extend_from_slice(unix_path.as_bytes());
@@ -197,6 +222,11 @@ async fn create_playlist<P: AsRef<Path>>(dir: P) -> Result<PathBuf> {
 
 /// Reads song files in dir
 async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
+    let dir = dir.as_ref();
+    if dir.is_file() {
+        return Ok(vec![str!(dir.to_string_lossy())]);
+    }
+
     let mut songs = Vec::new();
     let mut stack = vec![fs::read_dir(dir).await?];
 
@@ -206,10 +236,11 @@ async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
             if path.is_dir() {
                 stack.push(fs::read_dir(path).await?);
             } else if is_music_file(&path) {
-                songs.push(path.to_string_lossy().to_string());
+                songs.push(str!(path.to_string_lossy()));
             }
         }
     }
+
     Ok(songs)
 }
 

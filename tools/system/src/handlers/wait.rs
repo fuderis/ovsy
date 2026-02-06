@@ -52,7 +52,6 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     tokio::spawn(async move {
         let remaining = if total_secs > 10 {
             tokio::time::sleep(Duration::from_secs(total_secs - 10)).await;
-            let _ = tx2.send(Bytes::from("waiting...\n")).await;
             10
         } else {
             10 - total_secs
