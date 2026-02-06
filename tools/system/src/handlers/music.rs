@@ -43,7 +43,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     }
 
     // create playlist file & run it:
-    match create_playlist(&playlist_dir, path!("$/Playlist.m3u")).await {
+    match create_playlist(&playlist_dir, path!("$/playlist.m3u")).await {
         Ok(playlist_file) => {
             let play_dir = playlist_dir.to_string_lossy().replace("\\", "/");
             info!("Trying to play music on {play_dir}..");
