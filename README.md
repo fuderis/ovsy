@@ -14,8 +14,8 @@ search the internet, and plan your schedule.<br>
 
 ## About `system` tool:
 
-* **Power Management (Ready)**: Issue commands like poweroff, sleep, lock, or cancel poweroff, complete with customizable timeouts. Perfect for "shut down in 30 minutes" workflows.
-* **Music Search+Play (Ready)**: Pinpoint tracks with fuzzy, "half-word" precision (e.g., "play Disturbed"), then fire them up in your default audio player. Includes a clean "stop music" command.
+* **Power Management (Ready)**: Issue commands like poweroff, reboot, sleep, or lock session.
+* **Music Search+Play (Ready)**: Pinpoint tracks with fuzzy, "half-word" precision (e.g., "play Disturbed"), then fire them up in your default audio player.
 * **Volume Precision (Ready)**: Dial in exact levels (e.g., 75%) for audio tweaks without fumbling through menus.
 * **App Launcher/Killer (Soon)**: Hunt down and launch or terminate programs by name.
 * **Tasks Management (Soon)**: Set reminders/alarms, AI-powered scheduling assistance.
@@ -72,8 +72,7 @@ alias ovsy="/opt/ovsy/target/release/ovsy"
 5. Edit the auto-generated `~/.config/ovsy/settings.toml` for ports, 
 AI APIs (e.g., your LM of choice), tool paths, and more. Restart `Ovsy` server to apply.
 
-6. Now query away: `ovsy "play music disturbed and turn off pc after 30 minutes"`, 
-followed by `ovsy "cancel power off"`. 
+6. Now query away: `ovsy "play music disturbed and turn off pc after 30 minutes"`. 
 
 ## Add your custom tools:
 
@@ -90,7 +89,7 @@ Lightning-Fast Setup on your system.
 ## License & Credits:
 
 * **License**: Distributed under the [*Apache-2.0*](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
-* **Donation**: [TON] `UQB_r6IFgMYTJUKkhZNgjXcgp4aIJYwB6Gfiiukzg2lIC_Kc`
+* **Donation**: [**TON**] `UQB_r6IFgMYTJUKkhZNgjXcgp4aIJYwB6Gfiiukzg2lIC_Kc`
 * **Contacts**:
   [*GitHub*](https://github.com/fuderis),
   [*Behance*](https://behance.net/fuderis),
