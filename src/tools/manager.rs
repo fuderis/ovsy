@@ -30,7 +30,8 @@ impl Tools {
 
     /// Stops tool & removes a from list
     pub async fn stop(name: &str) -> Result<bool> {
-        if let Some(tool) = TOOLS.lock().await.tools.remove(name) {
+        let tool = TOOLS.lock().await.tools.remove(name);
+        if let Some(tool) = tool {
             tool.stop().await?;
             return Ok(true);
         }
@@ -59,11 +60,13 @@ impl Tools {
             loop {
                 interval.tick().await;
 
-                for (_, tool) in TOOLS.unsafe_get().tools.iter() {
+                for (_, tool) in TOOLS.get().await.tools.iter() {
                     if let Some(trace) = &tool.trace
-                        && let Some(line) = trace.next_line().await
+                        && let Some(lines) = trace.check().await
                     {
-                        println!("TRACE: {line}");
+                        for line in lines {
+                            println!("TRACE: {line}");
+                        }
                     }
                 }
             }

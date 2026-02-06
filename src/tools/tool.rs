@@ -4,7 +4,7 @@ use std::{fs, process::Stdio, time::SystemTime};
 use tokio::{fs as tfs, process::Command};
 
 /// Time range to find recent file
-const RECENT_FILE_TIME_RANGE: u64 = 120;
+const RECENT_FILE_TIME_RANGE: u64 = 5;
 
 /// The tool structure
 #[derive(Default, Clone, Debug)]
@@ -152,26 +152,38 @@ impl Tool {
                 cmd.kill_on_drop(false);
 
                 // spawn process child:
-                let _ = cmd.spawn()?;
+                if let Err(e) = cmd.spawn() {
+                    error!("Failed start '{}' tool server: {e}", manifest.tool.name);
+                    return Err(Error::FailedRunTool(manifest.tool.name.clone(), e).into());
+                };
             }
         }
 
-        sleep(Duration::from_millis(100)).await;
+        // wait for run server:
+        sleep(Duration::from_millis(500)).await;
 
-        // read new log file:
-        let trace = {
+        // trace a new created log file:
+        let mut retryes = RECENT_FILE_TIME_RANGE * 2;
+        let mut trace = None;
+        while retryes > 0 {
             let logs_dir = app_data().join(&manifest.tool.name).join("logs");
 
             if let Some(log_file) =
                 Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
             {
                 let timeout = Settings::get().tools.trace_timeout;
-                let trace = Trace::open(log_file, Duration::from_millis(timeout), false).await?;
-                Some(trace)
-            } else {
-                None
+                trace.replace(Trace::open(log_file, Duration::from_millis(timeout), false).await?);
+                break;
             }
-        };
+
+            retryes -= 1;
+            sleep(Duration::from_millis(500)).await;
+        }
+
+        // check trace status:
+        if trace.is_none() {
+            warn!("Failed to catch log file for tracing");
+        }
 
         // register tool instance:
         Tools::add(Tool {
@@ -278,8 +290,11 @@ impl Tool {
         match (self.last_update, new_update) {
             (Some(old), Some(new)) if new > old => {
                 info!("Tool '{name}' outdated, restarting..");
+
+                // stop server:
                 Tools::stop(name).await?;
 
+                // re-run server:
                 if let Some(()) = Self::run(tool_dir).await? {
                     info!("Tool '{name}' successfully restarted");
                 }
@@ -295,12 +310,11 @@ impl Tool {
 
     /// Stops the tool server
     pub(super) async fn stop(self) -> Result<()> {
-        // get server port:
-        if self.manifest.server.is_none() {
+        let port = if let Some(server) = &self.manifest.server {
+            server.port
+        } else {
             return Ok(());
-        }
-        let server = self.manifest.server.as_ref().unwrap();
-        let port = server.port;
+        };
         info!("Trying to kill server on {port} port..");
 
         // kill tool server by port:
@@ -308,35 +322,46 @@ impl Tool {
         {
             // find server process by port:
             let output = Command::new("lsof")
-                .args(["-t", "-i", &fmt!("TCP:{port}"), "-i", &fmt!("UDP:{port}")])
+                .args(["-i", &fmt!("TCP:{port}"), "-i", &fmt!("UDP:{port}")])
                 .stdout(Stdio::piped())
-                .stderr(Stdio::null())
+                .stderr(Stdio::piped())
                 .output()
                 .await?;
 
-            if !output.status.success() {
+            // parse output:
+            let s = String::from_utf8_lossy(&output.stdout);
+            let mut lines = s.lines();
+            if lines.next().is_none() {
                 info!("Port {port} already is free");
                 return Ok(());
             }
 
-            // parse output PIDs:
-            let pids: Vec<i32> = String::from_utf8_lossy(&output.stdout)
-                .trim()
-                .split('\n')
-                .filter_map(|line| {
-                    line.trim().parse().ok().filter(|&pid| pid > 1) // exclude system ones
+            // parse PIDs:
+            let pids: Vec<i32> = lines
+                .map(|l| {
+                    let mut spl = l.split_whitespace();
+                    (spl.next(), spl.next())
                 })
+                .filter_map(
+                    |(name, pid)| {
+                        if name.unwrap_or("").starts_with("ovsy-") {
+                            pid.unwrap_or("").trim().parse().ok().filter(|&pid| pid > 1)
+                        } else {
+                            None
+                        }
+                    }, // exclude system ones
+                )
                 .collect();
 
-            if pids.is_empty() {
+            if !pids.is_empty() {
+                info!("Found {} processes on port {port}: {pids:?}", pids.len());
+            } else {
                 info!("No processes found on port {port}");
                 return Ok(());
             }
 
-            info!("Found {} processes on port {port}: {pids:?}", pids.len());
-
             // stop all PIDs:
-            for &pid in &pids {
+            for pid in pids {
                 let pid_str = pid.to_string();
                 if Command::new("kill")
                     .args(["-TERM", &pid_str])
@@ -384,6 +409,9 @@ impl Tool {
             }
         }
         */
+
+        // wait for stop server:
+        sleep(Duration::from_millis(1000)).await;
 
         Ok(())
     }

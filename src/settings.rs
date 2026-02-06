@@ -42,7 +42,7 @@ impl ::std::default::Default for ToolsSettings {
             dirs: vec![path!("$/../../tools/pc-control")],
             autocheck: true,
             check_timeout: 2000,
-            trace_timeout: 50,
+            trace_timeout: 200,
         }
     }
 }

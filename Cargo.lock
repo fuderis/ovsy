@@ -87,9 +87,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.3"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "90a578e3b0183ad9a7b517cabda90df2c7ca4ea7ed767d472b1dd5efbc7d5820"
+checksum = "19a1e4b9c874bd4b7690f24c2eca7c429544d0d2629d6d0bb5dc38707e95e0ae"
 dependencies = [
  "arc-swap",
  "chrono",

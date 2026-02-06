@@ -15,15 +15,20 @@ pub struct QueryData {
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     match handle_query(data.query).await {
         Ok(calls) => {
-            info!("Call tools order: {calls:?}");
+            info!("Call tools order: {}", json::to_string(&calls).unwrap());
             let (tx, rx) = mpsc::unbounded_channel();
 
             tokio::spawn(async move {
                 for call in calls {
+                    if tx.is_closed() {
+                        error!("{}", Error::ClientDisconnected);
+                        return;
+                    }
                     if let Err(e) = handle_tool(call, &tx).await {
+                        error!("{e}");
                         tx.send(Bytes::from(fmt!("\nError: {e}").as_bytes().to_vec()))
                             .ok();
-                        break;
+                        return;
                     }
                 }
             });
@@ -107,9 +112,17 @@ async fn handle_tool(call: ToolCall, tx: &UnboundedSender<Bytes>) -> Result<()> 
 
     // streaming response:
     let mut stream = response.bytes_stream();
-    while let Some(chunk) = stream.next().await {
-        if let Ok(bytes) = chunk {
-            let _ = tx.send(bytes);
+    loop {
+        if tx.is_closed() {
+            return Err(Error::ClientDisconnected.into());
+        }
+
+        if let Some(chunk) = stream.next().await {
+            if let Ok(bytes) = chunk {
+                let _ = tx.send(bytes);
+            }
+        } else {
+            break;
         }
     }
 
