@@ -89,7 +89,7 @@ Lightning-Fast Setup on your system.
 ## License & Credits:
 
 * **License**: Distributed under the [*Apache-2.0*](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
-* **Donation**: [**TON**] `UQB_r6IFgMYTJUKkhZNgjXcgp4aIJYwB6Gfiiukzg2lIC_Kc`
+* **Donation**: `TON: UQB_r6IFgMYTJUKkhZNgjXcgp4aIJYwB6Gfiiukzg2lIC_Kc`
 * **Contacts**:
   [*GitHub*](https://github.com/fuderis),
   [*Behance*](https://behance.net/fuderis),
