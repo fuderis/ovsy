@@ -18,12 +18,16 @@ impl SessionLog {
     {
         let session_id = session_id.into();
         let session_dir = app_data().join("sessions").join(&session_id);
-        fs::create_dir_all(&session_dir).await?;
+        let session_logs_dir = session_dir.join("logs");
+        fs::create_dir_all(&session_logs_dir).await?;
 
         // create file:
         let timestamp = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
-        let file_name = fmt!("{timestamp}.log");
-        let file_path = session_dir.join(file_name);
+        let mut file_name = fmt!("{timestamp}.log");
+        for (f, t) in [("T", "_"), ("Z", ""), (":", "-")] {
+            file_name = file_name.replace(f, t);
+        }
+        let file_path = session_logs_dir.join(file_name);
 
         // open file:
         let mut f = OpenOptions::new()
@@ -34,7 +38,7 @@ impl SessionLog {
             .await?;
 
         // write header:
-        f.write_all(fmt!("Timestamp: {}", timestamp).as_bytes())
+        f.write_all(fmt!("Timestamp: {timestamp}").as_bytes())
             .await?;
         f.write_all(fmt!("\nQuery: {}", query.replace("\n", "\\n")).as_bytes())
             .await?;
