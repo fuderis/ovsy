@@ -12,11 +12,13 @@ pub struct QueryData {
     artist: Option<String>,
     album: Option<String>,
     song: Option<String>,
-    _search: Option<bool>,
+    #[serde(default)]
+    search: bool,
 }
 
 /// Api '/music' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
+    let search = data.search;
     let name = [&data.genre, &data.artist, &data.album, &data.song]
         .iter()
         .filter_map(|&opt| opt.clone())
@@ -24,10 +26,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         .join(" / ");
 
     // search playlist path:
-    info!("Search for playlist '{name}'..");
-    let playlist_dir = match search_playlist(data, name).await {
+    info!("Search for music '{name}'..");
+    let playlists = match search_playlists(data, name).await {
         Ok(r) => {
-            info!("Found: {r:?}");
+            info!("Found music: {r:?}");
             r
         }
         Err(e) => {
@@ -36,6 +38,21 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         }
     };
 
+    // return results (if need):
+    if search {
+        return (
+            StatusCode::OK,
+            HeaderMap::from_iter(map! {
+                header::CONTENT_TYPE => "text/plain".parse().unwrap()
+            }),
+            Body::new(fmt!(
+                "Found music: {}",
+                json::to_string_pretty(&playlists).unwrap()
+            )),
+        )
+            .into_response();
+    }
+
     // close audacious processes:
     #[cfg(unix)]
     {
@@ -43,10 +60,9 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     }
 
     // create playlist file & run it:
-    match create_playlist(&playlist_dir, path!("$/playlist.m3u")).await {
+    match create_playlist(&playlists, path!("$/playlist.m3u")).await {
         Ok(playlist_file) => {
-            let play_dir = playlist_dir.to_string_lossy().replace("\\", "/");
-            info!("Trying to play music on {play_dir}..");
+            info!("Trying to play music..");
 
             // open playlist file:
             let status = {
@@ -74,13 +90,13 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
 
             match status {
                 Ok(_) => {
-                    info!("Playing music on {play_dir}");
+                    info!("Play music success");
                     (
                         StatusCode::OK,
                         HeaderMap::from_iter(map! {
                             header::CONTENT_TYPE => "text/plain".parse().unwrap()
                         }),
-                        Body::new(fmt!("Playing music on {play_dir}")),
+                        Body::new(fmt!("Playing music dirs: {playlists:#?}")),
                     )
                         .into_response()
                 }
@@ -97,8 +113,8 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     }
 }
 
-/// Smart search playlist
-async fn search_playlist(data: QueryData, name: String) -> Result<PathBuf> {
+/// Smart search playlists
+async fn search_playlists(data: QueryData, name: String) -> Result<Vec<PathBuf>> {
     let mut search_dirs = vec![Settings::get().music.dirs.clone()];
     let stages = [&data.genre, &data.artist, &data.album];
 
@@ -122,18 +138,18 @@ async fn search_playlist(data: QueryData, name: String) -> Result<PathBuf> {
     }
 
     // search song:
-    let playlist_path = if let Some(song) = &data.song {
+    let playlists = if let Some(song) = &data.song {
         let results = utils::smart_scan(&search_dirs, song, SEARCH_COEF, false).await?;
         if !results.is_empty() {
-            results[0].clone()
+            results
         } else {
             return Err(Error::PlaylistNotFound(name).into());
         }
     } else {
-        search_dirs.get(search_dirs.len() - 2).unwrap()[0].clone()
+        search_dirs.get(search_dirs.len() - 2).unwrap().clone()
     };
 
-    Ok(playlist_path)
+    Ok(playlists)
 }
 
 /// Closes Audacious processes
@@ -190,17 +206,23 @@ async fn close_audacious() -> Result<()> {
 }
 
 /// Create playlist file
-async fn create_playlist<P, P2>(dir: P, file: P2) -> Result<PathBuf>
+async fn create_playlist<P, P2>(dirs: &[P], file: P2) -> Result<PathBuf>
 where
     P: AsRef<Path>,
     P2: Into<PathBuf>,
 {
     let playlist_path = file.into();
 
-    let songs_list = read_song_files(dir).await?;
+    // read song files:
+    let mut songs_list = vec![];
+    for dir in dirs {
+        songs_list.extend(read_song_files(dir).await?);
+    }
+
     let mut content = Vec::new();
     content.extend_from_slice(b"#EXTM3U\n");
 
+    // add songs to playlist:
     for song in &songs_list {
         let unix_path = song.replace('\\', "/");
         let filename = std::path::Path::new(&unix_path)
