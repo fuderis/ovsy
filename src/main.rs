@@ -14,21 +14,24 @@ async fn main() -> Result<()> {
     let port = Settings::get().server.port;
 
     // check arguments:
-    let query = std::env::args().collect::<Vec<_>>()[1..]
-        .join(" ")
-        .trim()
-        .to_owned();
-    if !query.is_empty() {
-        use futures::StreamExt;
+    let mut args = std::env::args();
+    let _current_dir = args.next();
+    if let Some(mut session_id) = args.next() {
+        let query = args.next().unwrap_or_else(|| {
+            let id = session_id.clone();
+            session_id = str!("root");
+            id
+        });
 
         // send response:
         let response = reqwest::Client::new()
             .post(format!("http://localhost:{port}/query"))
-            .json(&json!({ "query": query }))
+            .json(&json!({ "query": query, "session_id": session_id }))
             .send()
             .await?;
 
         // stream response:
+        use futures::StreamExt;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
             let bytes = chunk?;

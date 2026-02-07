@@ -8,8 +8,10 @@ pub use settings::{LMKind, Settings};
 pub mod manifest;
 pub use manifest::Manifest;
 
+pub mod session;
+pub use session::SessionLog;
 pub mod tools;
-pub use tools::{Tool, Tools};
+pub use tools::{Tool, ToolCall, Tools};
 pub mod handlers;
 pub mod lms;
 

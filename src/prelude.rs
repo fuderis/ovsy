@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-pub use crate::{Error, Result, Settings, StdResult, Tools, app_data};
+pub use crate::{Error, Result, Settings, StdResult, ToolCall, Tools, app_data};
 pub use axum::{
     Json, Router,
     body::Body,

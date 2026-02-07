@@ -1,36 +1,55 @@
-use crate::{LMKind, lms, prelude::*};
+use crate::{LMKind, SessionLog, lms, prelude::*};
 use reqwest::Client;
 use tokio::fs;
-
-/// The tool call data
-type ToolCall = (String, HashMap<String, JsonValue>);
 
 /// The request POST data
 #[derive(Deserialize)]
 pub struct QueryData {
     query: String,
+    session_id: String,
 }
 
 /// Api '/query' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
+    let session = Arc::new(Mutex::new(
+        SessionLog::new(data.session_id, &data.query)
+            .await
+            .map_err(|e| fmt!("Failed to create session: {e}"))
+            .unwrap(),
+    ));
+
+    macro_rules! logerr {
+        ($session: expr, $($args:tt)*) => {{
+            let msg = fmt!($($args)*);
+            $session.lock().await.write(&msg).await.ok();
+            error!("{msg}");
+            }};
+    }
+
     match handle_query(data.query).await {
         Ok(calls) => {
-            info!("Call tools order: {}", json::to_string(&calls).unwrap());
+            info!(
+                "Call tools order: {}",
+                json::to_string(&calls).unwrap().replace("\n", "\\n")
+            );
+            session.lock().await.write_tool_calls(&calls).await.ok();
             let (tx, rx) = mpsc::unbounded_channel();
 
             tokio::spawn(async move {
                 for call in calls {
                     if tx.is_closed() {
-                        error!("{}", Error::ClientDisconnected);
+                        logerr!(&session, "{}", Error::ClientDisconnected);
                         return;
                     }
-                    if let Err(e) = handle_tool(call, &tx).await {
-                        error!("{e}");
+                    if let Err(e) = handle_tool(session.clone(), call, &tx).await {
+                        logerr!(&session, "{}", Error::ClientDisconnected);
                         tx.send(Bytes::from(fmt!("\nError: {e}").as_bytes().to_vec()))
                             .ok();
                         return;
                     }
                 }
+
+                session.lock().await.finish().await.ok();
             });
 
             let stream = stream::unfold(rx, |mut rx| async move {
@@ -50,7 +69,8 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 .into_response()
         }
         Err(e) => {
-            error!("{e}");
+            session.lock().await.write_tool_calls(&[]).await.ok();
+            logerr!(session, "{e}");
             (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
         }
     }
@@ -61,12 +81,20 @@ async fn handle_query(query: String) -> Result<Vec<ToolCall>> {
     let cfg = Settings::read()?;
     info!("⏳ Handle query '{:.100}'..", query.replace("\n", "\\n"));
 
-    // read prompt:
-    let mut prompt_dir = path!("$/prompt");
-    if !prompt_dir.exists() {
-        prompt_dir = path!("$/../../prompt");
+    // read prompt or create default:
+    let prompt_dir = app_data().join("prompts");
+    let prompt_file = prompt_dir.join("handle-query.md");
+
+    if !prompt_file.exists() {
+        fs::create_dir(prompt_dir).await?;
+        fs::write(
+            &prompt_file,
+            fs::read(path!("$/../../default/prompts/handle-query.md")).await?,
+        )
+        .await?;
     }
-    let prompt = fs::read_to_string(prompt_dir.join("handle-query.md")).await?;
+
+    let prompt = fs::read_to_string(prompt_file).await?;
     let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
 
     // handle query by LLM:
@@ -87,7 +115,11 @@ async fn handle_query(query: String) -> Result<Vec<ToolCall>> {
 }
 
 /// Handles tool call
-async fn handle_tool(call: ToolCall, tx: &UnboundedSender<Bytes>) -> Result<()> {
+async fn handle_tool(
+    session: Arc<Mutex<SessionLog>>,
+    call: ToolCall,
+    tx: &UnboundedSender<Bytes>,
+) -> Result<()> {
     let (tool_name, tool_data) = call;
 
     // parse tool call:
@@ -119,7 +151,13 @@ async fn handle_tool(call: ToolCall, tx: &UnboundedSender<Bytes>) -> Result<()> 
 
         if let Some(chunk) = stream.next().await {
             if let Ok(bytes) = chunk {
-                let _ = tx.send(bytes);
+                session
+                    .lock()
+                    .await
+                    .write(&String::from_utf8_lossy(&bytes))
+                    .await
+                    .ok();
+                tx.send(bytes).ok();
             }
         } else {
             break;
