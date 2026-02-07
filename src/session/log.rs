@@ -73,7 +73,6 @@ impl SessionLog {
 
         let chunk_bytes = chunk.as_bytes().to_vec();
         f.write_all(&chunk_bytes).await?;
-        f.write_all(b"\n").await?;
         f.flush().await?;
 
         Ok(())
