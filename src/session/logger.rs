@@ -2,7 +2,7 @@ use crate::prelude::*;
 use tokio::fs::{self, File, OpenOptions};
 use tokio::io::AsyncWriteExt;
 
-/// The user-query session log
+/// The user-query session logger
 #[derive(Debug)]
 pub struct SessionLogger {
     session_id: String,
@@ -11,7 +11,7 @@ pub struct SessionLogger {
 }
 
 impl SessionLogger {
-    /// Create a new instance of session log
+    /// Create a new instance of session logger
     pub async fn new<S>(session_id: S, query: &str) -> Result<Self>
     where
         S: Into<String>,
@@ -82,7 +82,7 @@ impl SessionLogger {
         Ok(())
     }
 
-    /// Finishes the query session & writes duration
+    /// Finishes the query session & writes eof
     pub async fn finish(&mut self) -> Result<()> {
         let mut f = self.file.take().expect("File not initialized");
         let duration_ms = self.start_time.unwrap().elapsed().as_millis();
