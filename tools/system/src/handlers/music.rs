@@ -145,8 +145,10 @@ async fn search_playlists(data: QueryData, name: String) -> Result<Vec<PathBuf>>
         } else {
             return Err(Error::PlaylistNotFound(name).into());
         }
-    } else {
+    } else if data.genre.is_some() && data.artist.is_none() {
         search_dirs.get(search_dirs.len() - 2).unwrap().clone()
+    } else {
+        vec![search_dirs.get(search_dirs.len() - 2).unwrap()[0].clone()]
     };
 
     Ok(playlists)
