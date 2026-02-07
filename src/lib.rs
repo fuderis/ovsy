@@ -9,7 +9,7 @@ pub mod manifest;
 pub use manifest::Manifest;
 
 pub mod session;
-pub use session::SessionLog;
+pub use session::SessionLogger;
 pub mod tools;
 pub use tools::{Tool, ToolCall, Tools};
 pub mod handlers;

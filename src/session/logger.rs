@@ -4,13 +4,13 @@ use tokio::io::AsyncWriteExt;
 
 /// The user-query session log
 #[derive(Debug)]
-pub struct SessionLog {
+pub struct SessionLogger {
     session_id: String,
     start_time: Option<Instant>,
     file: Option<File>,
 }
 
-impl SessionLog {
+impl SessionLogger {
     /// Create a new instance of session log
     pub async fn new<S>(session_id: S, query: &str) -> Result<Self>
     where

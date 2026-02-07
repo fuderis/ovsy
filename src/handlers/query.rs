@@ -1,4 +1,4 @@
-use crate::{LMKind, SessionLog, lms, prelude::*};
+use crate::{LMKind, SessionLogger, lms, prelude::*};
 use reqwest::Client;
 use tokio::fs;
 
@@ -12,7 +12,7 @@ pub struct QueryData {
 /// Api '/query' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     let session = Arc::new(Mutex::new(
-        SessionLog::new(data.session_id, &data.query)
+        SessionLogger::new(data.session_id, &data.query)
             .await
             .map_err(|e| fmt!("Failed to create session: {e}"))
             .unwrap(),
@@ -116,7 +116,7 @@ async fn handle_query(query: String) -> Result<Vec<ToolCall>> {
 
 /// Handles tool call
 async fn handle_tool(
-    session: Arc<Mutex<SessionLog>>,
+    session: Arc<Mutex<SessionLogger>>,
     call: ToolCall,
     tx: &UnboundedSender<Bytes>,
 ) -> Result<()> {
