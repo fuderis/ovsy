@@ -14,6 +14,13 @@ pub struct ManifestServer {
     pub port: u16,
 }
 
+/// The manifest tool use example struct
+#[derive(Default, Clone, Debug, Serialize, Deserialize)]
+pub struct ManifestExample {
+    pub query: String,
+    pub calls: Vec<(String, HashMap<String, JsonValue>)>,
+}
+
 /// The manifest tool handler options
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestToolAction {
@@ -35,6 +42,7 @@ pub struct ManifestToolArgument {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub tool: ManifestTool,
+    pub examples: Vec<ManifestExample>,
     pub server: Option<ManifestServer>,
     pub actions: HashMap<String, ManifestToolAction>,
 }

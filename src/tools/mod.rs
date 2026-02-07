@@ -52,6 +52,15 @@ impl Tools {
         docs
     }
 
+    /// Returns tool examples list
+    pub async fn exmpls() -> Vec<String> {
+        let mut exmpls = vec![];
+        for (_, tool) in TOOLS.get().await.tools.iter() {
+            exmpls.extend(tool.examples.clone());
+        }
+        exmpls
+    }
+
     /// Periodically manages all tools
     pub fn manage() {
         // run tool logs tracing:

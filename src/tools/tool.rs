@@ -12,6 +12,7 @@ pub struct Tool {
     pub dir: PathBuf,
     pub manifest: Config<Manifest>,
     pub docs: Vec<String>,
+    pub examples: Vec<String>,
     pub last_update: Option<SystemTime>,
     pub trace: Option<Trace>,
 }
@@ -72,7 +73,7 @@ impl Tool {
 
             // gen prompt-doc:
             let doc = fmt!(
-                r#"* "{tool_name}/{action_name}":\n  * description: {descr}\n  * arguments: {args}\n  * examples: {exls}"#,
+                r#"* "{tool_name}/{action_name}":\n  * description: {descr}\n  * arguments: {args}\n  * examples: {exmpls}"#,
                 descr = &action.description,
                 args = {
                     let mut args = vec![];
@@ -91,18 +92,36 @@ impl Tool {
                     }
                     args.join("\n")
                 },
-                exls = {
-                    let mut exls = vec![];
+                exmpls = {
+                    let mut exmpls = vec![];
                     for (query, data) in &action.examples {
-                        exls.push(fmt!(
-                            r#"    * query: "{query}", tool call: ["{tool_name}/{action_name}", {data}]"#,
+                        exmpls.push(fmt!(
+                            r#"    * query: "{query}", result: [["{tool_name}/{action_name}", {data}]]"#,
                             data = json::to_string(&data)?
                         ))
                     }
-                    exls.join("\n")
+                    exmpls.join("\n")
                 }
             );
             docs.push(doc);
+        }
+
+        // collect global examples:
+        let mut examples = vec![];
+        for exmpl in manifest.examples.iter() {
+            examples.push(fmt!(
+                r#"* query: "{query}", result: {calls:?}"#,
+                query = exmpl.query,
+                calls = exmpl
+                    .calls
+                    .clone()
+                    .into_iter()
+                    .map(|mut c| {
+                        c.0 = fmt!("{tool_name}/{}", c.0);
+                        c
+                    })
+                    .collect::<Vec<_>>()
+            ))
         }
 
         // exec file path:
@@ -191,6 +210,7 @@ impl Tool {
             manifest,
             last_update,
             docs,
+            examples,
             trace,
         })
         .await;

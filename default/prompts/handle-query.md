@@ -3,6 +3,9 @@ Analyze the user request and recognize the needs tools which need to be called.
 ## Tools available:
 {DOCS}
 
+## More examples:
+{EXMPLS}
+
 ## Important:
 * You can't skip non optional arguments
 * Skip optional arguments if not needed

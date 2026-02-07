@@ -94,8 +94,10 @@ async fn handle_query(query: String) -> Result<Vec<ToolCall>> {
         .await?;
     }
 
-    let prompt = fs::read_to_string(prompt_file).await?;
-    let prompt = prompt.replace("{DOCS}", &Tools::docs().await.join("\n\n"));
+    let prompt = fs::read_to_string(prompt_file)
+        .await?
+        .replace("{DOCS}", &Tools::docs().await.join("\n\n"))
+        .replace("{EXMPLS}", &Tools::exmpls().await.join("\n"));
 
     // handle query by LLM:
     let json = match &cfg.lms.slm_kind {

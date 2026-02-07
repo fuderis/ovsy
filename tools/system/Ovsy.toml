@@ -6,13 +6,17 @@ exec = "target/release/system"
 [server]
 port = 7879
 
+[[examples]]
+query = "turn off pc after 30 minutes"
+calls = [["wait", { mins = 30 }], ["power", { mode = "turnoff" }]]
+
 # Wait some time before next task
 [actions.wait]
 enable = true
 description = "Freezes ALL following tasks until time passes. IMPORTANT: Call it before task."
 examples = [
   [
-    "do ... after 1.5 hours 15 seconds",
+    "... after 1.5 hours 15 seconds",
     { hours = 1, mins = 30, secs = 15 },
   ],
 ]
