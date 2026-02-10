@@ -88,7 +88,7 @@ async fn stream(
     }
 
     // handle user/ai query:
-    let response = match handle_query(tx.clone(), &query).await {
+    let response = match handle_query(tx.clone(), session.clone(), &query).await {
         Ok(res) => res,
         Err(e) => {
             let _ = tx.send(Err(Bytes::from(format!("LM error: {e}")))).ok();
@@ -113,6 +113,10 @@ async fn stream(
 
     // handle next query:
     if let Some(next_query) = response.query {
+        if next_query.trim().is_empty() {
+            return;
+        }
+
         tx.send(Ok(Bytes::from("\n"))).ok();
         Box::pin(stream(tx, session, next_query)).await;
     } else {
@@ -128,8 +132,10 @@ async fn stream(
 /// Handles user query
 async fn handle_query(
     tx: Arc<UnboundedSender<StdResult<Bytes, Bytes>>>,
+    session: Arc<Mutex<SessionLogger>>,
     query: &str,
 ) -> Result<LmResponse> {
+    let past_results = session.lock().await.results().join("\n");
     let cfg = Settings::read()?;
     {
         info!("⏳ Processing query: {:.100}", query.replace('\n', "\\n"));
@@ -152,7 +158,11 @@ async fn handle_query(
     let prompt = fs::read_to_string(&prompt_file)
         .await?
         .replace("{DOCS}", &Tools::docs().await.join("\\n\\n"))
-        .replace("{EXMPLS}", &Tools::exmpls().await.join("\\n"));
+        .replace("{EXMPLS}", &Tools::exmpls().await.join("\\n"))
+        .replace("{RESLTS}", &past_results);
+
+    // DEBUG: past results
+    dbg!(past_results);
 
     let json = match &cfg.lms.slm_kind {
         LMKind::LMStudio => {
@@ -161,13 +171,14 @@ async fn handle_query(
         }
     };
 
-    // dbg!(&json);
-
+    // parse response:
     let re = regex::Regex::new(r"^\s*```(?:\S+\b)?|\n```\s*$")?;
     let json = re.replace_all(&json, "").trim().to_string();
-    let response: LmResponse = serde_json::from_str(&json)?;
 
-    Ok(response)
+    // DEBUG: LM response
+    dbg!(&json);
+
+    Ok(serde_json::from_str(&json)?)
 }
 
 /// Handles tool call
@@ -212,6 +223,8 @@ async fn handle_tool(
         let bytes = chunk?;
         let _ = tx.send(Ok(bytes)).ok();
     }
+
+    tx.send(Ok(Bytes::from("\n"))).ok();
 
     Ok(())
 }

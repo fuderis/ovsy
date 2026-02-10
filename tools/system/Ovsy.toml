@@ -7,15 +7,15 @@ exec = "target/release/system"
 port = 7879
 
 [[examples]]
-query = "turn off pc after 30 minutes"
+query = "lock pc after 30 minutes"
 action = "wait"
 data = { mins = 30 }
-next = "turn off pc"
+next = "lock pc"
 
 # Wait some time before next task
 [actions.wait]
 enable = true
-description = "Waits some time."
+description = "Waits some time. Call it before those tasks that need to be frozen."
 examples = [
   [
     "... after 1.5 hours 15 seconds",
@@ -51,7 +51,7 @@ examples = [["", {}]]
 # Search+Play local music
 [actions.music]
 enable = true
-description = "Search/Play local music. With search=true - returns matches without play."
+description = "Search/Play local music."
 examples = [
   [
     "play any rock",
@@ -66,8 +66,8 @@ examples = [
     { artist = "Disturbed", album = "The Sickness" },
   ],
   [
-    "search rock compositions",
-    { genre = "rock", search = true },
+    "search rock artists without playing",
+    { genre = "rock", noplay = true },
   ],
 ]
 [actions.music.arguments]
@@ -75,7 +75,7 @@ genre = { format = "string", optional = true }
 artist = { format = "string", optional = true }
 album = { format = "string", optional = true }
 song = { format = "string", optional = true }
-search = { format = "boolean", optional = true }
+noplay = { format = "boolean", optional = true }
 
 # Set system audio-volume
 [actions.volume]

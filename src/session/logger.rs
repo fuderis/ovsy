@@ -7,6 +7,7 @@ use tokio::io::AsyncWriteExt;
 pub struct SessionLogger {
     start_time: Option<Instant>,
     file: Option<File>,
+    results: Vec<String>,
 }
 
 impl SessionLogger {
@@ -48,6 +49,7 @@ impl SessionLogger {
         Ok(Self {
             start_time: Some(Instant::now()),
             file: Some(f),
+            results: vec![],
         })
     }
 
@@ -59,10 +61,18 @@ impl SessionLogger {
         f.write_all(&chunk_bytes).await?;
         f.flush().await?;
 
+        let s = String::from_utf8_lossy(&chunk_bytes);
+        self.results.push(str!(s));
+
         Ok(())
     }
 
-    /// Finishes the query session & writes eof
+    /// Returns past tools handling results
+    pub fn results(&self) -> &Vec<String> {
+        &self.results
+    }
+
+    /// Returns execution time
     pub fn exec_time(&self) -> u128 {
         self.start_time.unwrap().elapsed().as_millis()
     }

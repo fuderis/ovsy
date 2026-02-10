@@ -13,12 +13,12 @@ pub struct QueryData {
     album: Option<String>,
     song: Option<String>,
     #[serde(default)]
-    search: bool,
+    noplay: bool,
 }
 
 /// Api '/music' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
-    let search = data.search;
+    let noplay = data.noplay;
     let name = [&data.genre, &data.artist, &data.album, &data.song]
         .iter()
         .filter_map(|&opt| opt.clone())
@@ -38,8 +38,8 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         }
     };
 
-    // return results (if need):
-    if search {
+    // return results without playing:
+    if noplay {
         return (
             StatusCode::OK,
             HeaderMap::from_iter(map! {
@@ -232,7 +232,7 @@ where
             .unwrap_or_default()
             .to_string_lossy();
 
-        content.extend_from_slice(format!("#EXTINF:-1,{}\n", filename).as_bytes());
+        content.extend_from_slice(fmt!("#EXTINF:-1,{}\n", filename).as_bytes());
         content.extend_from_slice(unix_path.as_bytes());
         content.extend_from_slice(b"\n");
     }

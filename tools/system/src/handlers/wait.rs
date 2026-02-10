@@ -50,8 +50,8 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     // send messages on last 10 seconds:
     let tx2 = tx.clone();
     tokio::spawn(async move {
-        let remaining = if total_secs > 10 {
-            tokio::time::sleep(Duration::from_secs(total_secs - 10)).await;
+        let remaining = if total_secs >= 10 {
+            sleep(Duration::from_secs(total_secs - 10)).await;
             10
         } else {
             10 - total_secs
@@ -67,7 +67,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 .await;
         }
 
-        let _ = tx2.send(Bytes::from("wait completed\n")).await;
+        let _ = tx2.send(Bytes::from("Wait completed.")).await;
     });
 
     // create stream:
