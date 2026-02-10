@@ -5,7 +5,6 @@ use tokio::io::AsyncWriteExt;
 /// The user-query session logger
 #[derive(Debug)]
 pub struct SessionLogger {
-    session_id: String,
     start_time: Option<Instant>,
     file: Option<File>,
 }
@@ -47,28 +46,9 @@ impl SessionLogger {
         info!("Initialized session log on {file_path:?}");
 
         Ok(Self {
-            session_id,
             start_time: Some(Instant::now()),
             file: Some(f),
         })
-    }
-
-    /// Writes 'tool calls' section
-    pub async fn write_tool_calls(&mut self, tool_calls: &[ToolCall]) -> Result<()> {
-        let f = self.file.as_mut().expect("File not initialized");
-
-        f.write_all(
-            fmt!(
-                "\nTool calls: {}",
-                json::to_string(&tool_calls).unwrap().replace("\n", "\\n")
-            )
-            .as_bytes(),
-        )
-        .await?;
-        f.write_all(b"\n\n").await?;
-        f.flush().await?;
-
-        Ok(())
     }
 
     /// Add line to response output
@@ -83,19 +63,7 @@ impl SessionLogger {
     }
 
     /// Finishes the query session & writes eof
-    pub async fn finish(&mut self) -> Result<()> {
-        let mut f = self.file.take().expect("File not initialized");
-        let duration_ms = self.start_time.unwrap().elapsed().as_millis();
-
-        f.write_all(fmt!("\n\nDuration: {duration_ms} ms").as_bytes())
-            .await?;
-        f.write_all("\n[EOF]".as_bytes()).await?;
-        f.flush().await?;
-
-        info!(
-            "Session '{}' query finished by {duration_ms} ms",
-            self.session_id
-        );
-        Ok(())
+    pub fn exec_time(&self) -> u128 {
+        self.start_time.unwrap().elapsed().as_millis()
     }
 }

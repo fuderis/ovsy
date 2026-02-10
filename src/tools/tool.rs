@@ -96,7 +96,7 @@ impl Tool {
                     let mut exmpls = vec![];
                     for (query, data) in &action.examples {
                         exmpls.push(fmt!(
-                            r#"    * query: "{query}", result: [["{tool_name}/{action_name}", {data}]]"#,
+                            r#"    * query: "{query}", result: {{"tool": "{tool_name}/{action_name}", data: {data}}}"#,
                             data = json::to_string(&data)?
                         ))
                     }
@@ -110,19 +110,19 @@ impl Tool {
         let mut examples = vec![];
         for exmpl in manifest.examples.iter() {
             examples.push(fmt!(
-                r#"* query: "{query}", result: {calls:?}"#,
+                r#"* query: "{query}", result: {{"tool": "{tool_name}/{action_name}", "data": {data}{next}}}"#,
                 query = exmpl.query,
-                calls = exmpl
-                    .calls
-                    .clone()
-                    .into_iter()
-                    .map(|mut c| {
-                        c.0 = fmt!("{tool_name}/{}", c.0);
-                        c
-                    })
-                    .collect::<Vec<_>>()
+                action_name = exmpl.action,
+                data = json::to_string(&exmpl.data).unwrap(),
+                next = if let Some(q) = &exmpl.next {
+                    fmt!(r#", "query": "{q}""#)
+                } else {
+                    str!("")
+                }
             ))
         }
+
+        // dbg!(&docs, &examples);
 
         // exec file path:
         let orig_exec = exec_path.clone();

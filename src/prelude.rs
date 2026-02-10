@@ -24,6 +24,7 @@ pub(crate) use std::{
     convert::Infallible,
     format as fmt,
     path::{Path, PathBuf},
+    pin::Pin,
     sync::{Arc, Mutex as StdMutex},
 };
 pub(crate) use tokio::{

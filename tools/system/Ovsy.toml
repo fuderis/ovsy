@@ -8,12 +8,14 @@ port = 7879
 
 [[examples]]
 query = "turn off pc after 30 minutes"
-calls = [["wait", { mins = 30 }], ["power", { mode = "turnoff" }]]
+action = "wait"
+data = { mins = 30 }
+next = "turn off pc"
 
 # Wait some time before next task
 [actions.wait]
 enable = true
-description = "Freezes ALL following tasks until time passes. IMPORTANT: Call it before task."
+description = "Waits some time."
 examples = [
   [
     "... after 1.5 hours 15 seconds",

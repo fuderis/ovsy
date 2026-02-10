@@ -12,12 +12,16 @@ Analyze the user request and recognize the needs tools which need to be called.
 * No explanations — JSON only
 
 ## Output format:
-* Do only those tool calls that are needed to perform the user's current task
+* Perform only the first task from your query, and write the rest to the query (if exists).
 * If there are no necessary tools, return an empty array
 * Output JSON in a minimalistic way without spaces and \n
 * Optional arguments can be skipped if they are not specified by user
 ```json
-[["tool/action",{"arg":"value"}]]
+{
+"tool": "tool/action",
+"data": {"arg":"value"},
+"query": "next task query (if exists)"
+}
 ```
 
 ## Next the user's request:

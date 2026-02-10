@@ -1,7 +1,5 @@
 use crate::prelude::*;
-use lm_studio_api::{
-    Chat, Content, Context, Format, Message, Messages, Model, Role, Schema, SystemInfo,
-};
+use lm_studio_api::{Chat, Content, Context, Message, Messages, Model, Role, SystemInfo};
 
 /// The system prompt
 struct SystemPrompt;
@@ -54,11 +52,21 @@ where
         ],
         context: false,
         stream: true,
+        /*
         format: Some(Format::json(
-            "handlers",
-            vec![Schema::array("handlers-list", "handler calls list")],
+            "response",
+            vec![Schema::object(
+                "tool call",
+                "",
+                map! {
+                    "tool": Schema::string("tool name", None),
+                    "data": Schema::object("tool data", "", map! {}),
+                    "query": Schema::string("next task query", None),
+                },
+            )],
             false,
         )),
+        */
         temperature,
         ..Default::default()
     };
