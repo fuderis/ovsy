@@ -35,6 +35,7 @@ pub struct ToolsSettings {
     pub check_timeout: u64,
     pub trace_timeout: u64,
     pub recurs_limit: usize,
+    pub history_limit: usize,
 }
 
 impl ::std::default::Default for ToolsSettings {
@@ -45,6 +46,7 @@ impl ::std::default::Default for ToolsSettings {
             check_timeout: 2000,
             trace_timeout: 200,
             recurs_limit: 10,
+            history_limit: 8192,
         }
     }
 }

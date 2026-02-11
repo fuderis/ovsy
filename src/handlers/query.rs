@@ -169,7 +169,10 @@ async fn handle_query(
     session: Arc<Mutex<SessionLogger>>,
     query: &str,
 ) -> Result<LmResponse> {
-    let past_results = session.lock().await.results().join("\n");
+    let results = session.lock().await.results().clone();
+    let history = utils::cut_context_lines(&results[..], Settings::get().tools.history_limit);
+
+    // log info:
     let cfg = Settings::read()?;
     {
         info!("⏳ Processing query: {:.100}", query.replace('\n', "\\n"));
@@ -191,12 +194,12 @@ async fn handle_query(
 
     let prompt = fs::read_to_string(&prompt_file)
         .await?
-        .replace("{HISTORY}", &past_results)
+        .replace("{HISTORY}", &history)
         .replace("{DOCS}", &Tools::docs().await.join("\\n\\n"))
         .replace("{EXAMPLES}", &Tools::exmpls().await.join("\\n"));
 
     // DEBUG: past results
-    dbg!(past_results);
+    dbg!(history);
 
     let json = match &cfg.lms.slm_kind {
         LMKind::LMStudio => {
@@ -206,7 +209,7 @@ async fn handle_query(
     };
 
     // parse response:
-    let re = regex::Regex::new(r"^\s*```(?:\S+\b)?|\n```\s*$")?;
+    let re = re!(r"^\s*```(?:\S+\b)?|\n```\s*$");
     let json = re.replace_all(&json, "").trim().to_string();
 
     // DEBUG: LM response

@@ -14,6 +14,7 @@ pub mod tools;
 pub use tools::{Tool, ToolCall, Tools};
 pub mod handlers;
 pub mod lms;
+pub mod utils;
 
 /// Returns path to app data dir
 pub fn app_data() -> PathBuf {
