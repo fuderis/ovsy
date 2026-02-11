@@ -170,7 +170,7 @@ async fn handle_query(
     query: &str,
 ) -> Result<LmResponse> {
     let results = session.lock().await.results().clone();
-    let history = utils::cut_context_lines(&results[..], Settings::get().tools.history_limit);
+    let history = utils::cut_context_lines(&results[..], Settings::get().context.tokens_limit);
 
     // log info:
     let cfg = Settings::read()?;
@@ -203,7 +203,7 @@ async fn handle_query(
 
     let json = match &cfg.lms.slm_kind {
         LMKind::LMStudio => {
-            let small = Settings::get().lmstudio.small.clone();
+            let small = Settings::get().lmstudio.small_model.clone();
             lms::lmstudio::handle_query(prompt, query, small).await?
         }
     };

@@ -15,17 +15,17 @@ impl ::std::default::Default for ServerSettings {
     }
 }
 
-/*  TODO: AI context
 ///The AI context settings
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ContextSettings;
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ContextSettings {
+    pub tokens_limit: usize,
+}
 
 impl ::std::default::Default for ContextSettings {
     fn default() -> Self {
-        Self {}
+        Self { tokens_limit: 8192 }
     }
 }
-*/
 
 /// The tools settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -35,7 +35,6 @@ pub struct ToolsSettings {
     pub check_timeout: u64,
     pub trace_timeout: u64,
     pub recurs_limit: usize,
-    pub history_limit: usize,
 }
 
 impl ::std::default::Default for ToolsSettings {
@@ -46,7 +45,6 @@ impl ::std::default::Default for ToolsSettings {
             check_timeout: 2000,
             trace_timeout: 200,
             recurs_limit: 10,
-            history_limit: 8192,
         }
     }
 }
@@ -55,16 +53,16 @@ impl ::std::default::Default for ToolsSettings {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LMStudioAPISettings {
     pub port: u16,
-    pub small: (String, u32, f32),
-    pub large: (String, u32, f32),
+    pub small_model: (String, u32, f32),
+    pub large_model: (String, u32, f32),
 }
 
 impl ::std::default::Default for LMStudioAPISettings {
     fn default() -> Self {
         Self {
             port: 9090,
-            small: (str!("qwen2.5-coder-3b-instruct"), 4096, 0.2),
-            large: (str!("qwen/qwen3-vl-8b"), 8192, 0.4),
+            small_model: (str!("qwen2.5-coder-3b-instruct"), 4096, 0.2),
+            large_model: (str!("qwen/qwen3-vl-8b"), 8192, 0.4),
         }
     }
 }
@@ -96,7 +94,7 @@ impl ::std::default::Default for LMSSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
-    // pub context: ContextSettings,
+    pub context: ContextSettings,
     pub tools: ToolsSettings,
     pub lmstudio: LMStudioAPISettings,
     pub lms: LMSSettings,
