@@ -40,8 +40,9 @@ impl SessionLogger {
         // write header:
         f.write_all(fmt!("Timestamp: {timestamp}").as_bytes())
             .await?;
-        f.write_all(fmt!("\nQuery: {}", query.replace("\n", "\\n")).as_bytes())
+        f.write_all(fmt!("\nUser query: {}", query.replace("\n", "\\n")).as_bytes())
             .await?;
+        f.write_all(b"\n\n").await?;
         f.flush().await?;
 
         info!("Initialized session log on {file_path:?}");

@@ -14,19 +14,12 @@ async fn main() -> Result<()> {
     let port = Settings::get().server.port;
 
     // check arguments:
-    let mut args = std::env::args();
-    let _current_dir = args.next();
-    if let Some(mut session_id) = args.next() {
-        let query = args.next().unwrap_or_else(|| {
-            let id = session_id.clone();
-            session_id = str!("root");
-            id
-        });
-
+    let query = std::env::args().collect::<Vec<_>>()[1..].join(" ");
+    if !query.is_empty() {
         // send response:
         let response = reqwest::Client::new()
             .post(format!("http://localhost:{port}/query"))
-            .json(&json!({ "query": query, "session_id": session_id }))
+            .json(&json!({ "query": query, "session_id": "root" }))
             .send()
             .await?;
 
