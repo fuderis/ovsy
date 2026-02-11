@@ -38,22 +38,27 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 let msg = rx.recv().await?;
                 match msg {
                     Ok(bytes) => {
-                        session
-                            .lock()
-                            .await
-                            .write(&String::from_utf8_lossy(&bytes))
-                            .await
-                            .ok();
+                        // write output:
+                        let mut guard = session.lock().await;
+                        guard.write(&String::from_utf8_lossy(&bytes)).await.ok();
+
                         Some((Ok::<_, Infallible>(bytes), rx))
                     }
                     Err(bytes) => {
-                        error!("{}", String::from_utf8_lossy(&bytes));
-                        session
-                            .lock()
-                            .await
-                            .write(&fmt!("[Error]: {}", String::from_utf8_lossy(&bytes)))
+                        let bytes_str = String::from_utf8_lossy(&bytes);
+                        error!("{bytes_str}");
+
+                        // write error:
+                        let mut guard = session.lock().await;
+                        guard.write(&fmt!("[Error]: {bytes_str}")).await.ok();
+
+                        // write EOF:
+                        let dur_ms = guard.exec_time();
+                        guard
+                            .write(&fmt!("\n[Duration]: {dur_ms} ms\n[EOF]",))
                             .await
                             .ok();
+
                         Some((Ok::<_, Infallible>(bytes), rx))
                     }
                 }
@@ -62,7 +67,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     });
 
     // spawn stream handler:
-    tokio::spawn(stream(Arc::new(tx), session.clone(), data.query));
+    tokio::spawn(stream(Arc::new(tx), session.clone(), data.query, 0));
 
     (
         StatusCode::OK,
@@ -79,8 +84,15 @@ async fn stream(
     tx: Arc<UnboundedSender<StdResult<Bytes, Bytes>>>,
     session: Arc<Mutex<SessionLogger>>,
     query: String,
+    mut recurs: usize,
 ) {
-    if tx.is_closed() {
+    recurs += 1;
+    if recurs > Settings::get().tools.recurs_limit {
+        let _ = tx
+            .send(Err(Bytes::from(Error::RecursionLimit.to_string())))
+            .ok();
+        return;
+    } else if tx.is_closed() {
         let _ = tx
             .send(Err(Bytes::from(Error::ClientDisconnected.to_string())))
             .ok();
@@ -89,9 +101,18 @@ async fn stream(
 
     // handle user/ai query:
     let response = match handle_query(tx.clone(), session.clone(), &query).await {
-        Ok(res) => res,
+        Ok(res) => {
+            // check client status:
+            if tx.is_closed() {
+                let _ = tx
+                    .send(Err(Bytes::from(Error::ClientDisconnected.to_string())))
+                    .ok();
+                return;
+            }
+            res
+        }
         Err(e) => {
-            let _ = tx.send(Err(Bytes::from(format!("LM error: {e}")))).ok();
+            let _ = tx.send(Err(Bytes::from(fmt!("LM error: {e}")))).ok();
             return;
         }
     };
@@ -112,13 +133,19 @@ async fn stream(
     }
 
     // handle next query:
-    if let Some(next_query) = response.query {
-        if next_query.trim().is_empty() {
+    if let Some(next_query) = response.query
+        && !next_query.trim().is_empty()
+    {
+        // check client status:
+        if tx.is_closed() {
+            let _ = tx
+                .send(Err(Bytes::from(Error::ClientDisconnected.to_string())))
+                .ok();
             return;
         }
 
         tx.send(Ok(Bytes::from("\n"))).ok();
-        Box::pin(stream(tx, session, next_query)).await;
+        Box::pin(stream(tx, session, next_query, recurs)).await;
     } else {
         tx.send(Ok(Bytes::from(fmt!(
             "\n[Duration]: {} ms",
@@ -157,9 +184,9 @@ async fn handle_query(
 
     let prompt = fs::read_to_string(&prompt_file)
         .await?
+        .replace("{HISTORY}", &past_results)
         .replace("{DOCS}", &Tools::docs().await.join("\\n\\n"))
-        .replace("{EXMPLS}", &Tools::exmpls().await.join("\\n"))
-        .replace("{RESLTS}", &past_results);
+        .replace("{EXAMPLES}", &Tools::exmpls().await.join("\\n"));
 
     // DEBUG: past results
     dbg!(past_results);

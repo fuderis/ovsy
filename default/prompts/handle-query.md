@@ -1,12 +1,10 @@
-Analyze the user's request and follow it step by step:
-1. Identify the tool that needs to be called first
-2. And generate a new query prompt for the remaining tasks
+# 1. Study the query history:
+{HISTORY}
 
-## Tools available:
-{DOCS}
 
-## More examples:
-{EXMPLS}
+# 2. Read the rules: 
+
+Analyze the user's request and follow it step by step.
 
 ## Important:
 * CALL EXACTLY ONE TOOL PER RESPONSE. 
@@ -22,11 +20,16 @@ Analyze the user's request and follow it step by step:
 {"tool":"tool/action","data":{"arg":"value"},"query":"next tasks query (if exists)"}
 ```
 
-## History of already handled requests:
-[
-{RESLTS}
-]
+
+# 3. Explore the available commands:
+{DOCS}
+
+## More examples:
+{EXAMPLES}
 
 
+# 4. Handle user query by next steps:
 
-## Active task request:
+## 1. Study the user's request below
+## 2. Identify the tool that needs to be called now
+## 3. Generate a new query for the remaining tasks (just as text prompt)

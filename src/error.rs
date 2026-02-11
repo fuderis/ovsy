@@ -35,4 +35,6 @@ pub enum Error {
 
     #[display = "Client disconnected, aborting tool chain"]
     ClientDisconnected,
+    #[display = "Recursion limit, interrupting handling"]
+    RecursionLimit,
 }
