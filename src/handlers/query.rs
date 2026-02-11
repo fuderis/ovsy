@@ -28,12 +28,15 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     ));
 
     let (tx, rx) = mpsc::unbounded_channel::<StdResult<Bytes, Bytes>>();
+    let tx = Arc::new(tx);
 
     // create stream body:
+    let tx_clone = tx.clone();
     let body = stream::unfold(rx, {
         let session = session.clone();
         move |mut rx| {
             let session = session.clone();
+            let tx_clone = tx_clone.clone();
             async move {
                 let msg = rx.recv().await?;
                 match msg {
@@ -53,13 +56,17 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                         guard.write(&fmt!("[Error]: {bytes_str}")).await.ok();
 
                         // write EOF:
-                        let dur_ms = guard.exec_time();
-                        guard
-                            .write(&fmt!("\n[Duration]: {dur_ms} ms\n[EOF]",))
-                            .await
+                        tx_clone
+                            .send(Ok(Bytes::from(fmt!(
+                                "\n\n[Duration]: {} ms\n[EOF]",
+                                guard.exec_time()
+                            ))))
                             .ok();
 
-                        Some((Ok::<_, Infallible>(bytes), rx))
+                        Some((
+                            Ok::<_, Infallible>(Bytes::from(str!("[Error]: ") + &bytes_str)),
+                            rx,
+                        ))
                     }
                 }
             }
@@ -67,7 +74,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     });
 
     // spawn stream handler:
-    tokio::spawn(stream(Arc::new(tx), session.clone(), data.query, 0));
+    tokio::spawn(stream(tx, session.clone(), data.query, 0));
 
     (
         StatusCode::OK,
@@ -87,7 +94,8 @@ async fn stream(
     mut recurs: usize,
 ) {
     recurs += 1;
-    if recurs > Settings::get().tools.recurs_limit {
+    let limit = Settings::get().tools.recurs_limit;
+    if limit > 0 && recurs > limit {
         let _ = tx
             .send(Err(Bytes::from(Error::RecursionLimit.to_string())))
             .ok();
@@ -148,11 +156,10 @@ async fn stream(
         Box::pin(stream(tx, session, next_query, recurs)).await;
     } else {
         tx.send(Ok(Bytes::from(fmt!(
-            "\n[Duration]: {} ms",
+            "\n[Duration]: {} ms\n[EOF]",
             session.lock().await.exec_time()
         ))))
         .ok();
-        tx.send(Ok(Bytes::from("\n[EOF]"))).ok();
     }
 }
 
