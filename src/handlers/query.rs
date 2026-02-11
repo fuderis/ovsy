@@ -31,12 +31,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     let tx = Arc::new(tx);
 
     // create stream body:
-    let tx_clone = tx.clone();
     let body = stream::unfold(rx, {
         let session = session.clone();
         move |mut rx| {
             let session = session.clone();
-            let tx_clone = tx_clone.clone();
             async move {
                 let msg = rx.recv().await?;
                 match msg {
@@ -56,17 +54,9 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                         guard.write(&fmt!("[Error]: {bytes_str}")).await.ok();
 
                         // write EOF:
-                        tx_clone
-                            .send(Ok(Bytes::from(fmt!(
-                                "\n\n[Duration]: {} ms\n[EOF]",
-                                guard.exec_time()
-                            ))))
-                            .ok();
+                        let eof = fmt!("\n\n[Duration]: {} ms\n[EOF]", guard.exec_time());
 
-                        Some((
-                            Ok::<_, Infallible>(Bytes::from(str!("[Error]: ") + &bytes_str)),
-                            rx,
-                        ))
+                        Some((Ok(Bytes::from(str!("[Error]: ") + &bytes_str + &eof)), rx))
                     }
                 }
             }
@@ -128,7 +118,7 @@ async fn stream(
     // handle tool call:
     if let Some(tool) = response.tool {
         if let Err(e) = handle_tool(tx.clone(), tool, response.data).await {
-            let _ = tx.send(Err(Bytes::from(fmt!("Tool error: {}", e)))).ok();
+            tx.send(Err(Bytes::from(fmt!("Tool error: {}", e)))).ok();
             return;
         }
     } else {
