@@ -24,7 +24,6 @@ async fn main() -> Result<()> {
             .await?;
 
         // stream response:
-        use futures::StreamExt;
         let mut stream = response.bytes_stream();
         while let Some(chunk) = stream.next().await {
             let bytes = chunk?;
