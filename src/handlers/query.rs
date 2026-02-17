@@ -1,5 +1,7 @@
-use crate::{LMKind, SessionLogger, lms, prelude::*};
-use reqwest::Client;
+use crate::{SessionLogger, prelude::*, settings::LMSSettings};
+use anylm::{Chunk, Completions};
+use reqwest::{Client, Proxy};
+use std::env;
 use tokio::fs;
 
 /// The request POST data
@@ -140,9 +142,6 @@ async fn handle_query(
     session: Arc<Mutex<SessionLogger>>,
     query: &str,
 ) -> Result<LmResponse> {
-    let results = session.lock().await.results().clone();
-    let history = utils::cut_context_lines(&results[..], Settings::get().context.tokens_limit);
-
     // log info:
     let cfg = Settings::read()?;
     {
@@ -163,25 +162,60 @@ async fn handle_query(
         .await?;
     }
 
+    // read & edit extend prompt:
     let prompt = fs::read_to_string(&prompt_file)
         .await?
-        .replace("{HISTORY}", &history)
         .replace("{DOCS}", &Tools::docs().await.join("\\n\\n"))
         .replace("{EXAMPLES}", &Tools::exmpls().await.join("\\n"));
 
-    // DEBUG: past results
-    dbg!(history);
+    // read LM settings:
+    let LMSSettings {
+        api_kind,
+        env_var,
+        model,
+        server,
+        proxy,
+        max_tokens,
+        temperature,
+    } = cfg.lms.clone();
 
-    let json = match &cfg.lms.slm_kind {
-        LMKind::LMStudio => {
-            let small = Settings::get().lmstudio.small_model.clone();
-            lms::lmstudio::handle_query(prompt, query, small).await?
-        }
+    // read API key:
+    let api_key = if !env_var.is_empty() {
+        env::var(&env_var)?
+    } else {
+        str!()
     };
+
+    // create query:
+    let history = session.lock().await.results().clone();
+    let mut request = Completions::new(api_kind, api_key, model)
+        .assistant_message(history.into_iter().map(|item| item.into()).collect())
+        .system_message(vec![prompt.into()])
+        .user_message(vec![query.into()])
+        .max_tokens(max_tokens)
+        .temperature(temperature);
+
+    if !server.trim().is_empty() {
+        request.set_server(server);
+    }
+    if !proxy.trim().is_empty() {
+        request.set_proxy(Proxy::all(&proxy)?);
+    }
+
+    // read response:
+    let mut response = request.send().await?;
+    let mut buffer = str!();
+
+    while let Some(chunk) = response.next().await {
+        match chunk {
+            Ok(Chunk { text }) => buffer.push_str(&text),
+            Err(e) => return Err(e),
+        }
+    }
 
     // parse response:
     let re = re!(r"^\s*```(?:\S+\b)?|\n```\s*$");
-    let json = re.replace_all(&json, "").trim().to_string();
+    let json = re.replace_all(&buffer, "").trim().to_string();
 
     // DEBUG: LM response
     dbg!(&json);

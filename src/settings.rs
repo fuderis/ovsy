@@ -1,4 +1,5 @@
 use crate::prelude::*;
+use anylm::ApiKind;
 
 /// The settings instance
 static SETTINGS: State<Config<Settings>> = State::new();
@@ -12,18 +13,6 @@ pub struct ServerSettings {
 impl ::std::default::Default for ServerSettings {
     fn default() -> Self {
         Self { port: 7878 }
-    }
-}
-
-///The AI context settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ContextSettings {
-    pub tokens_limit: usize,
-}
-
-impl ::std::default::Default for ContextSettings {
-    fn default() -> Self {
-        Self { tokens_limit: 8192 }
     }
 }
 
@@ -49,43 +38,28 @@ impl ::std::default::Default for ToolsSettings {
     }
 }
 
-/// The LM Studio settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LMStudioAPISettings {
-    pub port: u16,
-    pub small_model: (String, u32, f32),
-    pub large_model: (String, u32, f32),
-}
-
-impl ::std::default::Default for LMStudioAPISettings {
-    fn default() -> Self {
-        Self {
-            port: 9090,
-            small_model: (str!("qwen2.5-coder-3b-instruct"), 4096, 0.2),
-            large_model: (str!("qwen/qwen3-vl-8b"), 8192, 0.4),
-        }
-    }
-}
-
-/// The LM API type
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-pub enum LMKind {
-    #[serde(rename = "lm-studio")]
-    LMStudio,
-}
-
 /// The LM's settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct LMSSettings {
-    pub slm_kind: LMKind,
-    pub llm_kind: LMKind,
+    pub api_kind: ApiKind,
+    pub env_var: String,
+    pub server: String,
+    pub proxy: String,
+    pub model: String,
+    pub max_tokens: i32,
+    pub temperature: f32,
 }
 
 impl ::std::default::Default for LMSSettings {
     fn default() -> Self {
         Self {
-            slm_kind: LMKind::LMStudio,
-            llm_kind: LMKind::LMStudio,
+            api_kind: ApiKind::LmStudio,
+            env_var: str!(),
+            server: str!(),
+            proxy: str!(),
+            model: str!("qwen/qwen3-vl-8b"),
+            max_tokens: 8192,
+            temperature: 0.4,
         }
     }
 }
@@ -94,9 +68,7 @@ impl ::std::default::Default for LMSSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
-    pub context: ContextSettings,
     pub tools: ToolsSettings,
-    pub lmstudio: LMStudioAPISettings,
     pub lms: LMSSettings,
 }
 

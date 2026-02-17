@@ -16,7 +16,6 @@ serde_json = "1.0.148"
 toml = "1.0.0"
 fuzzy-cmp = "0.1.0"
 clap = { version = "4.5.53", features = ["derive"] }
-lm-studio-api = "0.1.5"
 chrono = "0.4.42"
 regex = "1.12.2"
-tiktoken-rs = "0.9.1"
+anylm = "0.1.1"
