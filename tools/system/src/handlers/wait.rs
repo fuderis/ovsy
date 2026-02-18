@@ -51,11 +51,11 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     // send messages on last 10 seconds:
     let tx_clone = tx.clone();
     tokio::spawn(async move {
-        let remaining = if total_secs >= 10 {
+        let remaining = if total_secs > 10 {
             sleep(Duration::from_secs(total_secs - 10)).await;
             10
         } else {
-            10 - total_secs
+            total_secs
         };
 
         for r in (0..remaining).rev() {

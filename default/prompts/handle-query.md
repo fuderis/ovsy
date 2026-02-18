@@ -10,7 +10,6 @@ You can send a request to yourself after executing the handler - the query argum
 * Always create a control query to check the result.
 * If already checked and query successfully handled (without errors) - return empty result:
 ```json
-{}
 ```
 
 ## Output format:

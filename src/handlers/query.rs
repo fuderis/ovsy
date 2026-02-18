@@ -19,6 +19,16 @@ pub struct LmResponse {
     query: Option<String>,
 }
 
+impl LmResponse {
+    pub fn empty() -> Self {
+        Self {
+            tool: None,
+            data: None,
+            query: None,
+        }
+    }
+}
+
 /// Api '/query' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     // create query session:
@@ -216,12 +226,20 @@ async fn handle_query(
 
     // parse response:
     let re = re!(r"^\s*```(?:\S+\b)?|\n```\s*$");
-    let json = re.replace_all(&buffer, "").trim().to_string();
+    let json = re
+        .replace_all(&buffer, "")
+        .trim()
+        .trim_matches(['"'])
+        .to_string();
 
-    // DEBUG: LM response
-    dbg!(&json);
-
-    Ok(serde_json::from_str(&json)?)
+    if !json.is_empty() {
+        Ok(json::from_str(&json).map_err(|e| {
+            error!("{json} - {e}");
+            e
+        })?)
+    } else {
+        Ok(LmResponse::empty())
+    }
 }
 
 /// Handles tool call

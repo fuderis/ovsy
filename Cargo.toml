@@ -6,7 +6,7 @@ edition = "2024"
 name = "root"
 
 [dependencies]
-macron = { version = "^0.1.13", features = ["full"] }
+macron = { version = "^0.1.14", features = ["full"] }
 atoman = { version = "^0.2.5", features = ["full"] }
 axum = "0.8.8"
 reqwest = { version = "0.13.1", features = ["json", "stream"] }
