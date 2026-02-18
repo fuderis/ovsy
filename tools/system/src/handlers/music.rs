@@ -25,6 +25,15 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         .collect::<Vec<_>>()
         .join(" / ");
 
+    // check name:
+    if name.trim().is_empty() {
+        return (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            fmt!("An empty request was received"),
+        )
+            .into_response();
+    }
+
     // search playlist path:
     info!("Search for music '{name}'..");
     let playlists = match search_playlists(data, name).await {
