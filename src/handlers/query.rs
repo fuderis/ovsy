@@ -15,7 +15,7 @@ pub struct QueryData {
 #[derive(Deserialize, Clone)]
 pub struct LmResponse {
     tool: Option<String>,
-    data: HashMap<String, JsonValue>,
+    data: Option<HashMap<String, JsonValue>>,
     query: Option<String>,
 }
 
@@ -102,13 +102,14 @@ async fn handle_query_cycle(
 
     // handle tool call:
     if let Some(tool) = response.tool {
-        if let Err(e) = handle_tool(st.clone(), tool, response.data).await {
+        if let Err(e) = handle_tool(st.clone(), tool, response.data.unwrap_or(map! {})).await {
             st.send(Err(fmt!("Tool error: {}", e).into())).ok();
             return;
         }
     } else {
         let content = response
             .data
+            .unwrap_or(map! {})
             .get("content")
             .cloned()
             .unwrap_or_else(|| json!("No content"));
