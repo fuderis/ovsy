@@ -1,0 +1,10 @@
+[agent]
+enable = false
+name = "system"
+description = ""
+exec = "target/release/system"
+
+[server]
+port = 7879
+
+[actions]

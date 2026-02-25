@@ -1,0 +1,33 @@
+[agent]
+enable = true
+name = "music"
+description = "Search and play local music"
+exec = "target/release/music"
+
+[server]
+port = 7881
+
+# Play:
+[actions.play]
+enable = true
+description = "Play local music by genre, artist, album and song options"
+
+[actions.play.arguments]
+genre = { type = "string", optional = true }
+artist = { type = "string", optional = true }
+album = { type = "string", optional = true }
+song = { type = "string", optional = true }
+
+[[actions.play.examples]]
+query = "play rock genre"
+data = { genre = "rock" }
+
+[[actions.play.examples]]
+query = "play Disturbed"
+data = { artist = "Disturbed" }
+
+[[actions.play.examples]]
+query = "play Disturbed - The Sickness"
+data = { artist = "Disturbed", album = "The Sickness" }
+
+# Search:
