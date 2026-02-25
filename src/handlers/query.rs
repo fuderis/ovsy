@@ -98,6 +98,9 @@ async fn delegate_tasks(
     // create query:
     let history = session.lock().await.results().clone();
     let mut request = utils::completions()?
+        .system_message(vec![
+            utils::read_prompt("assistant-character").await?.into(),
+        ])
         .assistant_message(history.into_iter().map(|item| item.into()).collect())
         .system_message(vec![prompt.into()])
         .user_message(vec![query.into()])
@@ -228,6 +231,9 @@ async fn handle_query(
     // create query:
     let history = session.lock().await.results().clone();
     let mut request = utils::completions()?
+        .system_message(vec![
+            utils::read_prompt("assistant-character").await?.into(),
+        ])
         .assistant_message(history.into_iter().map(|item| item.into()).collect())
         .system_message(vec![prompt.into()])
         .user_message(vec![query.into()])
