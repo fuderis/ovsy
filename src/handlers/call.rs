@@ -2,14 +2,14 @@ use crate::prelude::*;
 use reqwest::Client;
 use tokio::{io::BufReader, process::Command};
 
-/// Api '/call/:tool/:action' handler
+/// Api '/call/:agent/:action' handler
 pub async fn handle(
     Paths((name, action)): Paths<(String, String)>,
     Json(data): Json<JsonValue>,
 ) -> impl IntoResponse {
     let body = Stream::spawn(
         move |st| async move {
-            handle_tool(st, name, action, data).await;
+            handle_action(st, name, action, data).await;
         },
         move |msg| async move {
             match msg {
@@ -34,15 +34,15 @@ pub async fn handle(
         .into_response()
 }
 
-/// Handles user tool
-pub async fn handle_tool(st: Stream, name: String, action: String, data: JsonValue) {
+/// Handles an agent action
+pub async fn handle_action(st: Stream, name: String, action: String, data: JsonValue) {
     info!(
         "Call tool '{name}/{action}', POST data: {}",
         json::to_string(&data).unwrap_or_default()
     );
 
     // search tool by name:
-    let tool = match Tools::get(&name).await {
+    let tool = match Agents::get(&name).await {
         Some(t) => t,
         _ => {
             st.send(Err(Error::UnexpectToolName(name.clone()).into()))
@@ -77,7 +77,7 @@ pub async fn handle_tool(st: Stream, name: String, action: String, data: JsonVal
     }
     // do exec run:
     else {
-        let exec_path = &tool.manifest.tool.exec;
+        let exec_path = &tool.manifest.agent.exec;
         let mut cmd = Command::new(exec_path);
         cmd.kill_on_drop(true);
 

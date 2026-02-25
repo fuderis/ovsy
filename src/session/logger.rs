@@ -45,7 +45,7 @@ impl SessionLogger {
         f.write_all(b"\n\n").await?;
         f.flush().await?;
 
-        info!("Initialized session log on {file_path:?}");
+        info!("Initialized a new session log on {file_path:?}");
 
         Ok(Self {
             start_time: Some(Instant::now()),

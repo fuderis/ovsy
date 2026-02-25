@@ -16,20 +16,20 @@ impl ::std::default::Default for ServerSettings {
     }
 }
 
-/// The tools settings
+/// The agents settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ToolsSettings {
-    pub dirs: Vec<PathBuf>,
+pub struct AgentsSettings {
+    pub scan_dirs: Vec<PathBuf>,
     pub autocheck: bool,
     pub check_timeout: u64,
     pub trace_timeout: u64,
     pub recurs_limit: usize,
 }
 
-impl ::std::default::Default for ToolsSettings {
+impl ::std::default::Default for AgentsSettings {
     fn default() -> Self {
         Self {
-            dirs: vec![path!("$/../../tools/pc-control")],
+            scan_dirs: vec![path!("$/../../agents")],
             autocheck: true,
             check_timeout: 2000,
             trace_timeout: 200,
@@ -68,7 +68,7 @@ impl ::std::default::Default for LMSSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
-    pub tools: ToolsSettings,
+    pub agents: AgentsSettings,
     pub lms: LMSSettings,
 }
 

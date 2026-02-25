@@ -5,13 +5,15 @@ pub mod prelude;
 use prelude::{PathBuf, path};
 pub mod settings;
 pub use settings::Settings;
+pub mod utils;
+
 pub mod manifest;
 pub use manifest::Manifest;
 
 pub mod session;
 pub use session::SessionLogger;
-pub mod tools;
-pub use tools::{Tool, ToolCall, Tools};
+pub mod agents;
+pub use agents::{Agent, Agents};
 pub mod handlers;
 
 /// Returns path to app data dir

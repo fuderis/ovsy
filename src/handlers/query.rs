@@ -1,32 +1,16 @@
-use crate::{SessionLogger, prelude::*, settings::LMSSettings};
-use anylm::{Chunk, Completions};
-use reqwest::{Client, Proxy};
-use std::env;
-use tokio::fs;
+use crate::{
+    SessionLogger,
+    agents::{AgentAction, DelegatedTasks},
+    prelude::*,
+};
+use anylm::{Chunk, Schema};
+use reqwest::Client;
 
 /// The request POST data
 #[derive(Deserialize)]
 pub struct QueryData {
     query: String,
     session_id: String,
-}
-
-/// The LM response structure
-#[derive(Deserialize, Clone)]
-pub struct LmResponse {
-    tool: Option<String>,
-    data: Option<HashMap<String, JsonValue>>,
-    query: Option<String>,
-}
-
-impl LmResponse {
-    pub fn empty() -> Self {
-        Self {
-            tool: None,
-            data: None,
-            query: None,
-        }
-    }
 }
 
 /// Api '/query' handler
@@ -38,16 +22,25 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
             .map_err(|e| fmt!("Failed to create session: {e}"))
             .unwrap(),
     ));
+    let session2 = session.clone();
     let session_clone = session.clone();
 
     // create stream body:
     let body = Stream::spawn(
-        async move |tx| {
-            handle_query_cycle(tx.clone(), session_clone, data.query, 0).await;
+        async move |st| {
+            if let Err(e) = delegate_tasks_cycled(st.clone(), session_clone, data.query, 0).await {
+                st.send(Err(e)).ok();
+            }
+
+            st.send(Ok(Bytes::from(fmt!(
+                "\n\n[Duration]: {} ms\n[EOF]",
+                session.lock().await.exec_time()
+            ))))
+            .ok();
         },
         async move |msg| match msg {
             Ok(bytes) => {
-                let mut guard = session.lock().await;
+                let mut guard = session2.lock().await;
                 guard.write(&String::from_utf8_lossy(&bytes)).await.ok();
 
                 Ok(bytes)
@@ -55,7 +48,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
             Err(e) => {
                 error!("{e}");
 
-                let mut guard = session.lock().await;
+                let mut guard = session2.lock().await;
                 guard.write(&fmt!("[Error]: {e}")).await.ok();
 
                 Ok(Bytes::from(fmt!(
@@ -77,210 +70,183 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         .into_response()
 }
 
-/// Handles query cycle (recursive)
-async fn handle_query_cycle(
+/// Delegates an user query into agents (recursive)
+async fn delegate_tasks_cycled(
     st: Stream,
     session: Arc<Mutex<SessionLogger>>,
     query: String,
     mut recurs: usize,
-) {
+) -> Result<()> {
+    // check recursion & client connection:
     recurs += 1;
-    let limit = Settings::get().tools.recurs_limit;
+    let limit = Settings::get().agents.recurs_limit;
     if limit > 0 && recurs > limit {
-        st.send(Err(Error::RecursionLimit.into())).ok();
-        return;
+        return Err(Error::RecursionLimit.into());
     } else if st.is_closed() {
-        st.send(Err(Error::ClientDisconnected.into())).ok();
-        return;
+        return Err(Error::ClientDisconnected.into());
     }
 
-    // handle user/ai query:
-    let response = match handle_query(st.clone(), session.clone(), &query).await {
-        Ok(res) => {
-            // check client status:
-            if st.is_closed() {
-                st.send(Err(Error::ClientDisconnected.into())).ok();
-                return;
-            }
-            res
-        }
-        Err(e) => {
-            st.send(Err(fmt!("LM error: {e}").into())).ok();
-            return;
-        }
-    };
+    // read prompt:
+    let prompt = utils::read_prompt("delegate-query")
+        .await?
+        .replace("{AGENTS}", &Agents::list().await.join("\n"));
 
-    // handle tool call:
-    if let Some(tool) = response.tool {
-        if let Err(e) = handle_tool(st.clone(), tool, response.data.unwrap_or(map! {})).await {
-            st.send(Err(fmt!("Tool error: {}", e).into())).ok();
-            return;
+    dbg!(&prompt);
+
+    // create query:
+    let history = session.lock().await.results().clone();
+    let mut request = utils::completions()?
+        .assistant_message(history.into_iter().map(|item| item.into()).collect())
+        .system_message(vec![prompt.into()])
+        .user_message(vec![query.into()])
+        .schema(
+            Schema::object("response format")
+                .required_property(
+                    "tasks",
+                    Schema::array("Agents tasks").items(
+                        Schema::object("The agent task")
+                            .required_property("name", Schema::string("The agent name"))
+                            .required_property("query", Schema::string("The query to agent")),
+                    ),
+                )
+                .required_property(
+                    "say",
+                    Schema::string("The Assistant progress answer or pre-answer"),
+                ),
+        );
+
+    // send request:
+    let mut response = request.send().await?;
+
+    // read response stream:
+    let mut buffer = str!();
+    while let Some(chunk) = response.next().await {
+        if let Chunk::Text(text) = chunk? {
+            buffer.push_str(&text);
         }
-    } else {
-        let content = response
-            .data
-            .unwrap_or(map! {})
-            .get("content")
-            .cloned()
-            .unwrap_or_else(|| json!("No content"));
-        st.send(Ok(Bytes::from(fmt!("{}\n", content)))).ok();
     }
 
-    // handle next query cycle:
-    if let Some(next_query) = response.query
-        && !next_query.trim().is_empty()
-    {
-        // check client status:
-        if st.is_closed() {
-            st.send(Err(Error::ClientDisconnected.into())).ok();
-            return;
-        }
+    // parse response:
+    let response: DelegatedTasks = json::from_str(&buffer)?;
 
-        st.send(Ok(Bytes::from("\n"))).ok();
-        Box::pin(handle_query_cycle(st, session, next_query, recurs)).await;
-    } else {
+    // say to user something:
+    if let Some(msg) = response.say {
         st.send(Ok(Bytes::from(fmt!(
-            "\n[Duration]: {} ms\n[EOF]",
-            session.lock().await.exec_time()
+            "[Say]: {}\n",
+            msg.replace("\n", "\\n")
         ))))
         .ok();
     }
+
+    // handle tasks:
+    if let Some(tasks) = response.tasks {
+        // handle agents step by step:
+        for agent in tasks {
+            if st.is_closed() {
+                break;
+            }
+
+            handle_agent(st.clone(), session.clone(), agent.name, agent.query).await?;
+        }
+
+        // TODO: do control delegation cycle..
+    } else {
+    }
+
+    Ok(())
+}
+
+/// Handles agent query
+async fn handle_agent(
+    st: Stream,
+    session: Arc<Mutex<SessionLogger>>,
+    agent: String,
+    query: String,
+) -> Result<()> {
+    // handle user/ai query:
+    let actions = handle_query(st.clone(), session.clone(), &agent, &query).await?;
+
+    // check client connection:
+    if st.is_closed() {
+        return Err(Error::ClientDisconnected.into());
+    }
+
+    // handle action call:
+    for AgentAction { name, data } in actions {
+        handle_action(st.clone(), &agent, &name, data).await?;
+    }
+
+    Ok(())
 }
 
 /// Handles query by LM
 async fn handle_query(
     tx: Stream,
     session: Arc<Mutex<SessionLogger>>,
+    agent: &str,
     query: &str,
-) -> Result<LmResponse> {
+) -> Result<Vec<AgentAction>> {
     // log info:
-    let cfg = Settings::read()?;
     {
         info!("⏳ Processing query: {:.100}", query.replace('\n', "\\n"));
         tx.send(Ok(Bytes::from(fmt!("[Processing]: {query}\n"))))
             .ok();
     }
 
-    let prompt_dir = app_data().join("prompts");
-    let prompt_file = prompt_dir.join("handle-query.md");
-
-    if !prompt_file.exists() {
-        fs::create_dir_all(&prompt_dir).await?;
-        fs::write(
-            &prompt_file,
-            fs::read(path!("$/../../default/prompts/handle-query.md")).await?,
-        )
-        .await?;
-    }
-
-    // read & edit extend prompt:
-    let prompt = fs::read_to_string(&prompt_file)
+    // read prompt:
+    let prompt = utils::read_prompt("handle-query")
         .await?
-        .replace("{DOCS}", &Tools::docs().await.join("\\n\\n"))
-        .replace("{EXAMPLES}", &Tools::exmpls().await.join("\\n"));
-
-    // read LM settings:
-    let LMSSettings {
-        api_kind,
-        env_var,
-        model,
-        server,
-        proxy,
-        max_tokens,
-        temperature,
-    } = cfg.lms.clone();
-
-    // read API key:
-    let api_key = if !env_var.is_empty() {
-        env::var(&env_var)?
-    } else {
-        str!()
-    };
+        .replace("{EXAMPLES}", &Agents::exmpls(agent).await.join("\n"));
 
     // create query:
     let history = session.lock().await.results().clone();
-    let mut request = Completions::new(api_kind, api_key, model)
+    let mut request = utils::completions()?
         .assistant_message(history.into_iter().map(|item| item.into()).collect())
         .system_message(vec![prompt.into()])
         .user_message(vec![query.into()])
-        .max_tokens(max_tokens)
-        .temperature(temperature);
-
-    if !server.trim().is_empty() {
-        request.set_server(server);
-    }
-    if !proxy.trim().is_empty() {
-        request.set_proxy(Proxy::all(&proxy)?);
-    }
+        .tools(Agents::tools(agent).await);
 
     // read response:
     let mut response = request.send().await?;
-    let mut buffer = str!();
-
+    let mut actions = vec![];
     while let Some(chunk) = response.next().await {
-        match chunk {
-            Ok(Chunk { text }) => buffer.push_str(&text),
-            Err(e) => return Err(e),
+        match chunk? {
+            Chunk::Tool(name, data) => actions.push(AgentAction {
+                name,
+                data: json::from_str(&data)?,
+            }),
+            _ => {}
         }
     }
 
-    // parse response:
-    let re = re!(r"^\s*```(?:\S+\b)?|\n```\s*$");
-    let json = re
-        .replace_all(&buffer, "")
-        .trim()
-        .trim_matches(['"'])
-        .to_string();
-
-    if !json.is_empty() {
-        Ok(json::from_str(&json).map_err(|e| {
-            error!("{json} - {e}");
-            e
-        })?)
-    } else {
-        Ok(LmResponse::empty())
-    }
+    Ok(actions)
 }
 
-/// Handles tool call
-async fn handle_tool(tx: Stream, tool: String, data: HashMap<String, JsonValue>) -> Result<()> {
+/// Handles action call
+async fn handle_action(tx: Stream, agent: &str, action: &str, data: JsonValue) -> Result<()> {
+    // logging action start:
     {
         let data_str = json::to_string(&data).unwrap();
-        info!("⏳ Handling tool call: {tool} {data_str}",);
-        tx.send(Ok(Bytes::from(fmt!("[Handling]: {tool} {data_str}\n",))))
+        info!("⏳ Handling {agent} action: {action} {data_str}",);
+        tx.send(Ok(Bytes::from(fmt!("[Handling]: {action} {data_str}\n",))))
             .ok();
     }
 
-    // parse tool name/action:
-    let mut spl = tool.splitn(2, '/');
-    let tool_name = spl
-        .next()
-        .ok_or(Error::InvalidToolNameFormat(tool.clone()))?
-        .to_string();
-    let tool_action = spl
-        .next()
-        .ok_or(Error::InvalidToolNameFormat(tool.clone()))?
-        .to_string();
-
-    // parse tool data:
-    let tool_data = serde_json::to_value(data)?;
-
+    // create request to agent:
     let port = Settings::get().server.port;
     let client = Client::new();
     let response = client
-        .post(fmt!(
-            "http://127.0.0.1:{port}/call/{tool_name}/{tool_action}"
-        ))
-        .json(&tool_data)
+        .post(fmt!("http://127.0.0.1:{port}/call/{agent}/{action}"))
+        .json(&data)
         .send()
         .await?;
 
+    // read agent response stream:
     let mut stream = response.bytes_stream();
     while let Some(chunk) = stream.next().await {
         let bytes = chunk?;
         let _ = tx.send(Ok(bytes)).ok();
     }
-
     tx.send(Ok(Bytes::from("\n"))).ok();
 
     Ok(())

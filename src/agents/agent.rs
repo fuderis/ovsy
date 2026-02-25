@@ -1,32 +1,33 @@
-use super::Tools;
+use super::Agents;
 use crate::{Manifest, prelude::*};
+use anylm::{Schema, Tool};
 use std::{fs, process::Stdio, time::SystemTime};
 use tokio::{fs as tfs, process::Command};
 
 /// Time range to find recent file
 const RECENT_FILE_TIME_RANGE: u64 = 5;
 
-/// The tool structure
+/// The agent structure
 #[derive(Default, Clone, Debug)]
-pub struct Tool {
+pub struct Agent {
     pub dir: PathBuf,
     pub manifest: Config<Manifest>,
-    pub docs: Vec<String>,
     pub examples: Vec<String>,
+    pub tools: Vec<Tool>,
     pub last_update: Option<SystemTime>,
     pub trace: Option<Trace>,
 }
 
-impl Tool {
-    /// Reads a tool server & runs it
-    pub(super) async fn run<P>(tool_dir: P) -> Result<Option<()>>
+impl Agent {
+    /// Reads an agent server & runs it
+    pub(super) async fn run<P>(dir: P) -> Result<Option<()>>
     where
         P: AsRef<Path>,
     {
-        let tool_dir = tool_dir.as_ref();
+        let agent_dir = dir.as_ref();
 
         // read manifest:
-        let manifest_path = tool_dir.join("Ovsy.toml");
+        let manifest_path = agent_dir.join("Ovsy.toml");
         let manifest = match Config::<Manifest>::new(&manifest_path) {
             Ok(r) => r,
             Err(e) => {
@@ -34,22 +35,22 @@ impl Tool {
                 return Ok(None);
             }
         };
-        let tool_name = &manifest.tool.name;
+        let agent_name = &manifest.agent.name;
 
-        // check if tool already exists:
-        if Tools::has(tool_name).await {
-            trace!("Tool '{tool_name}' already running, skipping..");
+        // check if agent already is running:
+        if Agents::has(agent_name).await {
+            trace!("Tool '{agent_name}' already running, skipping..");
             return Ok(None);
         }
 
         // remove tool if disabled:
-        if !manifest.tool.enable {
-            Tools::stop(tool_name).await?;
+        if !manifest.agent.enable {
+            Agents::stop(agent_name).await?;
             return Ok(None);
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&manifest.tool.exec);
+        let exec_path = agent_dir.join(&manifest.agent.exec);
         let mut last_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
@@ -63,79 +64,45 @@ impl Tool {
             }
         }
 
-        // generate prompt-doc:
-        let mut docs = vec![];
-        for (action_name, action) in &manifest.actions {
-            // skip disabled actions:
-            if !action.enable {
-                continue;
+        // collect examples & tools:
+        let mut examples = vec![];
+        let mut tools = vec![];
+
+        for (name, action) in manifest.actions.iter() {
+            // gen examples:
+            for exmpl in action.examples.iter() {
+                examples.push(fmt!(
+                    r#"* query: "{query}", result: {name} {data}"#,
+                    query = exmpl.query,
+                    data = json::to_string(&exmpl.data).unwrap(),
+                ))
             }
 
-            // gen prompt-doc:
-            let doc = fmt!(
-                r#"* "{tool_name}/{action_name}":\n  * description: {descr}\n  * arguments: {args}\n  * examples: {exmpls}"#,
-                descr = &action.description,
-                args = {
-                    let mut args = vec![];
-                    for (name, arg) in &action.arguments {
-                        args.push(fmt!(
-                            r#"    * {}: format {}{}{}"#,
-                            name,
-                            arg.format,
-                            if let Some(vars) = &arg.variants {
-                                fmt!(", variants {:?}", vars)
-                            } else {
-                                String::new()
-                            },
-                            if arg.optional { ", optional" } else { "" },
-                        ));
-                    }
-                    args.join("\n")
-                },
-                exmpls = {
-                    let mut exmpls = vec![];
-                    for (query, data) in &action.examples {
-                        exmpls.push(fmt!(
-                            r#"    * query: "{query}", result: {{"tool": "{tool_name}/{action_name}", data: {data}}}"#,
-                            data = json::to_string(&data)?
-                        ))
-                    }
-                    exmpls.join("\n")
-                }
-            );
-            docs.push(doc);
+            // create tool & push:
+            let mut schema = Schema::object("");
+            for (name, arg) in action.arguments.iter() {
+                let value = json::to_value(arg).unwrap();
+                schema.set_property(
+                    name.clone(),
+                    json::from_value(value).unwrap(),
+                    !arg.optional,
+                );
+            }
+            tools.push(Tool::new(name.clone(), action.description.clone(), schema));
         }
-
-        // collect global examples:
-        let mut examples = vec![];
-        for exmpl in manifest.examples.iter() {
-            examples.push(fmt!(
-                r#"* query: "{query}", result: {{"tool": "{tool_name}/{action_name}", "data": {data}{next}}}"#,
-                query = exmpl.query,
-                action_name = exmpl.action,
-                data = json::to_string(&exmpl.data).unwrap(),
-                next = if let Some(q) = &exmpl.next {
-                    fmt!(r#", "query": "{q}""#)
-                } else {
-                    str!("")
-                }
-            ))
-        }
-
-        // dbg!(&docs, &examples);
 
         // exec file path:
         let orig_exec = exec_path.clone();
         let ovsy_exec_name = fmt!(
             "ovsy-{}",
             manifest
-                .tool
+                .agent
                 .exec
                 .file_name()
                 .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
-                .unwrap_or(tool_name.clone())
+                .unwrap_or(agent_name.clone())
         );
-        let ovsy_exec_path = tool_dir.join(&ovsy_exec_name);
+        let ovsy_exec_path = agent_dir.join(&ovsy_exec_name);
 
         // check metadata:
         let needs_copy = if ovsy_exec_path.exists() {
@@ -164,7 +131,7 @@ impl Tool {
             // check port for available:
             let addr = fmt!("127.0.0.1:{}", server.port);
             if TcpStream::connect(&addr).await.is_err() {
-                // create tool run command:
+                // create agent run command:
                 let mut cmd = Command::new(ovsy_exec_path);
                 cmd.stdout(Stdio::null());
                 cmd.stderr(Stdio::null());
@@ -172,8 +139,8 @@ impl Tool {
 
                 // spawn process child:
                 if let Err(e) = cmd.spawn() {
-                    error!("Failed start '{}' tool server: {e}", manifest.tool.name);
-                    return Err(Error::FailedRunTool(manifest.tool.name.clone(), e).into());
+                    error!("Failed start '{}' agent server: {e}", manifest.agent.name);
+                    return Err(Error::FailedRunTool(manifest.agent.name.clone(), e).into());
                 };
             }
         }
@@ -185,12 +152,15 @@ impl Tool {
         let mut retryes = RECENT_FILE_TIME_RANGE * 2;
         let mut trace = None;
         while retryes > 0 {
-            let logs_dir = app_data().join(&manifest.tool.name).join("logs");
+            let logs_dir = app_data()
+                .join("agents")
+                .join(&manifest.agent.name)
+                .join("logs");
 
             if let Some(log_file) =
                 Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
             {
-                let timeout = Settings::get().tools.trace_timeout;
+                let timeout = Settings::get().agents.trace_timeout;
                 trace.replace(Trace::open(log_file, Duration::from_millis(timeout), false).await?);
                 break;
             }
@@ -205,12 +175,12 @@ impl Tool {
         }
 
         // register tool instance:
-        Tools::add(Tool {
-            dir: tool_dir.to_path_buf(),
+        Agents::add(Agent {
+            dir: agent_dir.to_path_buf(),
             manifest,
-            last_update,
-            docs,
             examples,
+            tools,
+            last_update,
             trace,
         })
         .await;
@@ -256,28 +226,28 @@ impl Tool {
         Ok(newest_file.map(|(path, _)| path))
     }
 
-    /// Checks & reruns tool if needs
+    /// Checks & reruns agent if needs
     pub(super) async fn check(&self) -> Result<()> {
-        let tool_dir = &self.dir;
-        let manifest_path = tool_dir.join("Ovsy.toml");
-        let name = &self.manifest.tool.name;
+        let agent_dir = &self.dir;
+        let manifest_path = agent_dir.join("Ovsy.toml");
+        let name = &self.manifest.agent.name;
 
         // check manifest for exists:
         if !manifest_path.exists() {
             warn!(
-                "Manifest '{}' not found, stopping tool '{name}'..",
+                "Manifest '{}' not found, stopping agent '{name}'..",
                 manifest_path.display()
             );
-            Tools::stop(&self.manifest.tool.name).await?;
+            Agents::stop(&self.manifest.agent.name).await?;
             return Ok(());
         }
 
         // check if still enabled:
         match Config::<Manifest>::new(&manifest_path) {
             Ok(new_manifest) => {
-                if !new_manifest.tool.enable {
-                    warn!("Tool '{name}' disabled in manifest, stopping..");
-                    Tools::stop(name).await?;
+                if !new_manifest.agent.enable {
+                    warn!("Agent '{name}' disabled in manifest, stopping..");
+                    Agents::stop(name).await?;
                     return Ok(());
                 }
             }
@@ -286,13 +256,13 @@ impl Tool {
                     "Fail with read manifest '{}': {e}..",
                     manifest_path.display()
                 );
-                Tools::stop(name).await?;
+                Agents::stop(name).await?;
                 return Ok(());
             }
         }
 
         // get actual mimetype:
-        let exec_path = tool_dir.join(&self.manifest.tool.exec);
+        let exec_path = agent_dir.join(&self.manifest.agent.exec);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
             Some(fs::metadata(&manifest_path)?.modified()?)
         } else {
@@ -309,33 +279,36 @@ impl Tool {
         // rerun tool server (if outdated):
         match (self.last_update, new_update) {
             (Some(old), Some(new)) if new > old => {
-                info!("Tool '{name}' outdated, restarting..");
+                info!("Agent '{name}' outdated, restarting..");
 
                 // stop server:
-                Tools::stop(name).await?;
+                Agents::stop(name).await?;
 
                 // re-run server:
-                if let Some(()) = Self::run(tool_dir).await? {
-                    info!("Tool '{name}' successfully restarted");
+                if let Some(()) = Self::run(agent_dir).await? {
+                    info!("Agent '{name}' successfully restarted");
                 }
             }
             _ => {
                 // up to date
-                trace!("Tool '{name}' is up to date");
+                trace!("Agent '{name}' is up to date");
             }
         }
 
         Ok(())
     }
 
-    /// Stops the tool server
-    pub(super) async fn stop(self) -> Result<()> {
+    /// Stops the agent server
+    pub(super) async fn stop(&self) -> Result<()> {
         let port = if let Some(server) = &self.manifest.server {
             server.port
         } else {
             return Ok(());
         };
-        info!("Trying to kill server on {port} port..");
+        info!(
+            "Trying to kill '{}' agent server on {port} port..",
+            &self.manifest.agent.name
+        );
 
         // kill tool server by port:
         #[cfg(unix)]

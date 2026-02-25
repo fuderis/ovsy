@@ -1,50 +1,73 @@
 use crate::prelude::*;
+use anylm::{Schema, SchemaKind};
 
-/// The manifest tool settings
+/// The agent settings
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestTool {
+pub struct ManifestAgent {
     pub enable: bool,
     pub name: String,
+    pub description: String,
     pub exec: PathBuf,
 }
 
-/// The manifest server configuration
+/// The agent server configuration
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestServer {
     pub port: u16,
 }
 
-/// The manifest tool use example struct
+/// The agent using example struct
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct ManifestExample {
     pub query: String,
-    pub action: String,
     pub data: HashMap<String, JsonValue>,
-    pub next: Option<String>,
 }
 
-/// The manifest tool handler options
+/// The agent handler options
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestToolAction {
+pub struct ManifestAction {
     pub enable: bool,
     pub description: String,
-    pub arguments: HashMap<String, ManifestToolArgument>,
-    pub examples: Vec<(String, HashMap<String, JsonValue>)>,
+    pub arguments: HashMap<String, ManifestArgument>,
+    pub examples: Vec<ManifestExample>,
 }
 
-/// The manifest tool argument structure
+/// The agent argument structure
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestToolArgument {
-    pub format: String,
+pub struct ManifestArgument {
+    /// The schema type
+    #[serde(rename = "type")]
+    pub kind: SchemaKind,
+    /// The schema description
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// The string value variants
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(rename = "enum")]
     pub variants: Option<Vec<String>>,
+    /// The minimum value for number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub minimum: Option<f64>,
+    /// The maximum value for number
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub maximum: Option<f64>,
+    /// The array items type
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Box<Schema>>,
+    /// The object properties
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub properties: Option<HashMap<String, Box<ManifestArgument>>>,
+    /// The required object properties
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub required: Option<Vec<String>>,
+    #[serde(default)]
     pub optional: bool,
 }
 
-/// The manifest data structure
+/// The agent manifest structure
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
-    pub tool: ManifestTool,
-    pub examples: Vec<ManifestExample>,
+    pub agent: ManifestAgent,
     pub server: Option<ManifestServer>,
-    pub actions: HashMap<String, ManifestToolAction>,
+    pub actions: HashMap<String, ManifestAction>,
 }

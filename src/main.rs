@@ -35,8 +35,8 @@ async fn main() -> Result<()> {
         return Ok(());
     }
 
-    // manage tools:
-    Tools::manage();
+    // manage agents:
+    Agents::manage();
 
     // create router:
     let router = Router::new()
