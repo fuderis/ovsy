@@ -73,6 +73,11 @@ impl SessionLogger {
         &self.results
     }
 
+    /// Returns last line of output
+    pub fn last_line(&self) -> Option<&String> {
+        self.results.last()
+    }
+
     /// Returns execution time
     pub fn exec_time(&self) -> u128 {
         self.start_time.unwrap().elapsed().as_millis()

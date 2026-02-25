@@ -10,7 +10,7 @@ port = 7881
 # Play:
 [actions.play]
 enable = true
-description = "Play local music by genre, artist, album and song options"
+description = "Play local music by genre, artist, album and song options (prioritize using the artist argument)"
 
 [actions.play.arguments]
 genre = { type = "string", optional = true }

@@ -46,7 +46,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         }
         Err(e) => {
             error!("{e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("{e}")).into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response();
         }
     };
 
@@ -114,13 +114,13 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
                 }
                 Err(e) => {
                     error!("{e}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+                    (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response()
                 }
             }
         }
         Err(e) => {
             error!("{e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()).into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response()
         }
     }
 }

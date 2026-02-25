@@ -39,7 +39,7 @@ impl Agent {
 
         // check if agent already is running:
         if Agents::has(agent_name).await {
-            trace!("Tool '{agent_name}' already running, skipping..");
+            trace!("Agent '{agent_name}' already running, skipping..");
             return Ok(None);
         }
 

@@ -28,15 +28,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     // create stream body:
     let body = Stream::spawn(
         async move |st| {
-            if let Err(e) = delegate_tasks_cycled(st.clone(), session_clone, data.query, 0).await {
-                st.send(Err(e)).ok();
-            }
-
-            st.send(Ok(Bytes::from(fmt!(
-                "\n\n[Duration]: {} ms\n[EOF]",
-                session.lock().await.exec_time()
-            ))))
-            .ok();
+            delegate_tasks_cycled(st.clone(), session_clone, data.query, 0).await;
         },
         async move |msg| match msg {
             Ok(bytes) => {
@@ -75,6 +67,18 @@ async fn delegate_tasks_cycled(
     st: Stream,
     session: Arc<Mutex<SessionLogger>>,
     query: String,
+    recurs: usize,
+) {
+    if let Err(e) = delegate_tasks(st.clone(), session.clone(), query, recurs).await {
+        st.send(Err(e)).ok();
+    }
+}
+
+/// Delegates an user query into agents
+async fn delegate_tasks(
+    st: Stream,
+    session: Arc<Mutex<SessionLogger>>,
+    query: String,
     mut recurs: usize,
 ) -> Result<()> {
     // check recursion & client connection:
@@ -90,8 +94,6 @@ async fn delegate_tasks_cycled(
     let prompt = utils::read_prompt("delegate-query")
         .await?
         .replace("{AGENTS}", &Agents::list().await.join("\n"));
-
-    dbg!(&prompt);
 
     // create query:
     let history = session.lock().await.results().clone();
@@ -109,9 +111,9 @@ async fn delegate_tasks_cycled(
                             .required_property("query", Schema::string("The query to agent")),
                     ),
                 )
-                .required_property(
+                .optional_property(
                     "say",
-                    Schema::string("The Assistant progress answer or pre-answer"),
+                    Schema::string("The assistant execution progress answer"),
                 ),
         );
 
@@ -139,7 +141,9 @@ async fn delegate_tasks_cycled(
     }
 
     // handle tasks:
-    if let Some(tasks) = response.tasks {
+    if let Some(tasks) = response.tasks
+        && !tasks.is_empty()
+    {
         // handle agents step by step:
         for agent in tasks {
             if st.is_closed() {
@@ -149,9 +153,32 @@ async fn delegate_tasks_cycled(
             handle_agent(st.clone(), session.clone(), agent.name, agent.query).await?;
         }
 
-        // TODO: do control delegation cycle..
-    } else {
+        // do query to fix errors:
+        if let Some(last_line) = session.lock().await.last_line()
+            && last_line.trim().starts_with("[Error]")
+        {
+            let query = str!(
+                "Study the errors of the above execution, and if you can, then take action to correct mistakes else return empty tasks []."
+            );
+
+            Box::pin(delegate_tasks_cycled(
+                st.clone(),
+                session.clone(),
+                query,
+                recurs.clone(),
+            ))
+            .await;
+
+            return Ok(());
+        }
     }
+
+    // print EOF:
+    st.send(Ok(Bytes::from(fmt!(
+        "\n\n[Duration]: {} ms\n[EOF]",
+        session.lock().await.exec_time()
+    ))))
+    .ok();
 
     Ok(())
 }
