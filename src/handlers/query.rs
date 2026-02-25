@@ -155,7 +155,7 @@ async fn delegate_tasks(
 
         // do query to fix errors:
         if let Some(last_line) = session.lock().await.last_line()
-            && last_line.trim().starts_with("[Error]")
+            && last_line.trim().starts_with("[Error]: ")
         {
             let query = str!(
                 "Study the errors of the above execution, and if you can, then take action to correct mistakes else return empty tasks []."
