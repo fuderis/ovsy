@@ -2,7 +2,7 @@ use crate::prelude::*;
 use fuzzy_cmp as fz;
 use tokio::{
     fs::{self, File, OpenOptions},
-    io::AsyncWriteExt,
+    io::{AsyncSeekExt, AsyncWriteExt},
 };
 
 /// The comparing coefficient
@@ -29,11 +29,14 @@ impl AgentCache {
         let path = dir.join("Ovsy.cache");
 
         // read/write file:
-        let buf = fs::read_to_string(&path).await?;
-        let size = buf.len();
+        if !path.exists() {
+            fs::write(&path, []).await?;
+        }
+        let buffer = fs::read_to_string(&path).await?;
+        let size = buffer.len();
 
         // parse keywords:
-        let keys = buf
+        let keys = buffer
             .split_whitespace()
             .into_iter()
             .filter(|s| !s.is_empty())
@@ -48,10 +51,8 @@ impl AgentCache {
 
     /// Refresh keywords if file changed
     pub async fn refresh_if_changed(&self) -> Result<()> {
-        use tokio::io::AsyncSeekExt;
-
-        let mut state = self.keys.lock().await;
-        let cached = &mut *state;
+        let mut guard = self.keys.lock().await;
+        let cached = &mut *guard;
 
         let len = if let Ok(meta) = tokio::fs::metadata(&self.path).await {
             meta.len() as usize
@@ -60,7 +61,7 @@ impl AgentCache {
         };
 
         if len > cached.size {
-            // читаем только "хвост"
+            // reading only a new data:
             let mut file = File::open(&self.path).await?;
             file.seek(std::io::SeekFrom::Start(cached.size as u64))
                 .await?;
@@ -68,19 +69,18 @@ impl AgentCache {
             let mut buf = String::new();
             file.read_to_string(&mut buf).await?;
 
-            // парсим новые слова
+            // parsing keywords:
             let new_keys = buf
                 .split_whitespace()
                 .filter(|s| !s.is_empty())
                 .map(|s| s.trim().to_lowercase())
                 .collect::<Vec<_>>();
 
-            // вставляем только новые
+            // insert a new keywords:
             for key in new_keys {
                 cached.keys.insert(key);
             }
 
-            // обновляем курсор
             cached.size = len;
         }
 
