@@ -5,6 +5,8 @@ use tokio::{
     io::{AsyncSeekExt, AsyncWriteExt},
 };
 
+// FIXME: Protect against simultaneous writing of new keys
+
 /// The comparing coefficient
 const COMP_COEF: f32 = 0.8;
 
