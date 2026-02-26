@@ -24,6 +24,7 @@ pub struct AgentsSettings {
     pub check_timeout: u64,
     pub trace_timeout: u64,
     pub recurs_limit: usize,
+    pub caching: bool,
 }
 
 impl ::std::default::Default for AgentsSettings {
@@ -34,6 +35,7 @@ impl ::std::default::Default for AgentsSettings {
             check_timeout: 2000,
             trace_timeout: 200,
             recurs_limit: 10,
+            caching: true,
         }
     }
 }

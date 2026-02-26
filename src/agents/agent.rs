@@ -1,5 +1,5 @@
 use super::Agents;
-use crate::{Manifest, prelude::*};
+use crate::{AgentCache, Manifest, prelude::*};
 use anylm::{Schema, Tool};
 use std::{fs, process::Stdio, time::SystemTime};
 use tokio::{fs as tfs, process::Command};
@@ -14,6 +14,7 @@ pub struct Agent {
     pub manifest: Config<Manifest>,
     pub examples: Vec<String>,
     pub tools: Vec<Tool>,
+    pub cache: AgentCache,
     pub last_update: Option<SystemTime>,
     pub trace: Option<Trace>,
 }
@@ -125,7 +126,6 @@ impl Agent {
         }
 
         // run tool server (if exists):
-        let mut not_busy = true;
         if let Some(server) = &manifest.server {
             use tokio::net::TcpStream;
 
@@ -143,23 +143,14 @@ impl Agent {
                     error!("Failed start '{}' agent server: {e}", manifest.agent.name);
                     return Err(Error::FailedRunTool(manifest.agent.name.clone(), e).into());
                 };
-            } else {
-                not_busy = false;
+
+                // wait for run server:
+                sleep(Duration::from_millis(1000)).await;
             }
         }
 
-        // wait for run server:
-        if not_busy {
-            sleep(Duration::from_millis(500)).await;
-        }
-
         // trace a new created log file:
-        let time_range = if not_busy { RECENT_FILE_TIME_RANGE } else { 0 };
-        let mut retries = if not_busy {
-            RECENT_FILE_TIME_RANGE * 2
-        } else {
-            10
-        };
+        let mut retries = RECENT_FILE_TIME_RANGE * 2;
         let mut trace = None;
         while retries > 0 {
             let logs_dir = app_data()
@@ -167,7 +158,9 @@ impl Agent {
                 .join(&manifest.agent.name)
                 .join("logs");
 
-            if let Some(log_file) = Self::find_recent_file(&logs_dir, time_range).await? {
+            if let Some(log_file) =
+                Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
+            {
                 let timeout = Settings::get().agents.trace_timeout;
                 trace.replace(Trace::open(log_file, Duration::from_millis(timeout), false).await?);
                 break;
@@ -182,12 +175,16 @@ impl Agent {
             warn!("Failed to catch log file for tracing");
         }
 
+        // read cache file:
+        let cache = AgentCache::read_or_write(&agent_dir).await?;
+
         // register tool instance:
         Agents::add(Agent {
             dir: agent_dir.to_path_buf(),
             manifest,
             examples,
             tools,
+            cache,
             last_update,
             trace,
         })

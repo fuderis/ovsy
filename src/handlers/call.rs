@@ -36,11 +36,6 @@ pub async fn handle(
 
 /// Handles an agent action
 pub async fn handle_action(st: Stream, name: String, action: String, data: JsonValue) {
-    info!(
-        "Call tool '{name}/{action}', POST data: {}",
-        json::to_string(&data).unwrap_or_default()
-    );
-
     // search tool by name:
     let tool = match Agents::get(&name).await {
         Some(t) => t,

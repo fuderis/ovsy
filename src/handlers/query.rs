@@ -1,6 +1,7 @@
 use crate::{
     SessionLogger,
     agents::{AgentAction, DelegatedTasks},
+    cache::AgentCache,
     prelude::*,
 };
 use anylm::{Chunk, Schema};
@@ -81,58 +82,86 @@ async fn delegate_tasks(
     query: String,
     mut recurs: usize,
 ) -> Result<()> {
+    let cfg = &Settings::get().agents;
+
     // check recursion & client connection:
     recurs += 1;
-    let limit = Settings::get().agents.recurs_limit;
+    let limit = cfg.recurs_limit;
     if limit > 0 && recurs > limit {
         return Err(Error::RecursionLimit.into());
     } else if st.is_closed() {
         return Err(Error::ClientDisconnected.into());
     }
 
-    // read prompt:
-    let prompt = utils::read_prompt("delegate-query")
-        .await?
-        .replace("{AGENTS}", &Agents::list().await.join("\n"));
+    // delegate tasks:
+    let query_words = AgentCache::to_words(&query);
+    let mut cached = None;
 
-    // create query:
-    let history = session.lock().await.results().clone();
-    let mut request = utils::completions()?
-        .system_message(vec![
-            utils::read_prompt("assistant-character").await?.into(),
-        ])
-        .assistant_message(history.into_iter().map(|item| item.into()).collect())
-        .system_message(vec![prompt.into()])
-        .user_message(vec![query.into()])
-        .schema(
-            Schema::object("response format")
-                .required_property(
-                    "tasks",
-                    Schema::array("Agents tasks").items(
-                        Schema::object("The agent task")
-                            .required_property("name", Schema::string("The agent name"))
-                            .required_property("query", Schema::string("The query to agent")),
-                    ),
-                )
-                .optional_property(
-                    "say",
-                    Schema::string("The assistant execution progress answer"),
-                ),
-        );
-
-    // send request:
-    let mut response = request.send().await?;
-
-    // read response stream:
-    let mut buffer = str!();
-    while let Some(chunk) = response.next().await {
-        if let Chunk::Text(text) = chunk? {
-            buffer.push_str(&text);
+    // read cached data:
+    if cfg.caching {
+        for agent in Agents::get_all().await.iter() {
+            if agent.cache.compare(&query_words[..]).await.unwrap_or(false) {
+                let _ = cached.insert(agent.manifest.agent.name.clone());
+            }
         }
     }
 
-    // parse response:
-    let response: DelegatedTasks = json::from_str(&buffer)?;
+    let response: DelegatedTasks = if let Some(name) = cached {
+        info!("Used cached data to handle {name} agent");
+        DelegatedTasks::from_cached_agent(name, query)
+    } else {
+        // read prompt:
+        let prompt = utils::read_prompt("delegate-query")
+            .await?
+            .replace("{AGENTS}", &Agents::list().await.join("\n"));
+
+        // create query:
+        let history = session.lock().await.results().clone();
+        let mut request = utils::completions()?
+            .system_message(vec![
+                utils::read_prompt("assistant-character").await?.into(),
+            ])
+            .assistant_message(history.into_iter().map(|item| item.into()).collect())
+            .system_message(vec![prompt.into()])
+            .user_message(vec![query.into()])
+            .schema(
+                Schema::object("response format")
+                    .required_property(
+                        "tasks",
+                        Schema::array("Agents tasks").items(
+                            Schema::object("The agent task")
+                                .required_property("name", Schema::string("The agent name"))
+                                .required_property(
+                                    "query",
+                                    Schema::string("The query to agent (don't shorten it)"),
+                                )
+                                .required_property(
+                                    "keys",
+                                    Schema::array("The query basic keywords")
+                                        .items(Schema::string("")),
+                                ),
+                        ),
+                    )
+                    .optional_property(
+                        "say",
+                        Schema::string("The assistant execution progress answer"),
+                    ),
+            );
+
+        // send request:
+        let mut response = request.send().await?;
+
+        // read response stream:
+        let mut buffer = str!();
+        while let Some(chunk) = response.next().await {
+            if let Chunk::Text(text) = chunk? {
+                buffer.push_str(&text);
+            }
+        }
+
+        // parse response:
+        json::from_str(&buffer)?
+    };
 
     // say to user something:
     if let Some(msg) = response.say {
@@ -144,16 +173,26 @@ async fn delegate_tasks(
     }
 
     // handle tasks:
-    if let Some(tasks) = response.tasks
+    if let Some(mut tasks) = response.tasks
         && !tasks.is_empty()
     {
+        // cache results:
+        if tasks.len() == 1 {
+            let task = &mut tasks[0];
+            if let Some(keys) = task.keys.take()
+                && let Some(agent) = Agents::get(&task.name).await
+            {
+                agent.cache.write_keys(keys).await?;
+            }
+        }
+
         // handle agents step by step:
-        for agent in tasks {
+        for task in tasks {
             if st.is_closed() {
                 break;
             }
 
-            handle_agent(st.clone(), session.clone(), agent.name, agent.query).await?;
+            handle_agent(st.clone(), session.clone(), task.name, task.query).await?;
         }
 
         // do query to fix errors:

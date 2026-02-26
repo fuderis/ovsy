@@ -10,6 +10,9 @@ pub mod utils;
 pub mod manifest;
 pub use manifest::Manifest;
 
+pub mod cache;
+pub use cache::{AgentCache, CachedKeys};
+
 pub mod session;
 pub use session::SessionLogger;
 pub mod agents;

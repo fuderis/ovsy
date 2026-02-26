@@ -1,7 +1,7 @@
 [agent]
 enable = true
 name = "music"
-description = "Search and play local music"
+description = "Search or play local music (command play)"
 exec = "target/release/music"
 
 [server]

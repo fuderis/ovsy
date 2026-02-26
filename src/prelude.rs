@@ -19,7 +19,7 @@ pub use macron::{Display, From, hash_map as map, path, re, str};
 
 // Basic:
 pub(crate) use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     convert::Infallible,
     format as fmt,
     path::{Path, PathBuf},

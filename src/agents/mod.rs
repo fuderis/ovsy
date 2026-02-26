@@ -22,6 +22,17 @@ impl Agents {
         AGENTS.get().await.agents.contains_key(name)
     }
 
+    /// Returns agents map
+    pub async fn get_all() -> Vec<Arc<Agent>> {
+        AGENTS
+            .get()
+            .await
+            .agents
+            .iter()
+            .map(|(_, a)| a.clone())
+            .collect()
+    }
+
     /// Returns a tool instance by name
     pub async fn get(name: &str) -> Option<Arc<Agent>> {
         AGENTS.get().await.agents.get(name).cloned()
