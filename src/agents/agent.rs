@@ -125,6 +125,7 @@ impl Agent {
         }
 
         // run tool server (if exists):
+        let mut not_busy = true;
         if let Some(server) = &manifest.server {
             use tokio::net::TcpStream;
 
@@ -142,30 +143,37 @@ impl Agent {
                     error!("Failed start '{}' agent server: {e}", manifest.agent.name);
                     return Err(Error::FailedRunTool(manifest.agent.name.clone(), e).into());
                 };
+            } else {
+                not_busy = false;
             }
         }
 
         // wait for run server:
-        sleep(Duration::from_millis(500)).await;
+        if not_busy {
+            sleep(Duration::from_millis(500)).await;
+        }
 
         // trace a new created log file:
-        let mut retryes = RECENT_FILE_TIME_RANGE * 2;
+        let time_range = if not_busy { RECENT_FILE_TIME_RANGE } else { 0 };
+        let mut retries = if not_busy {
+            RECENT_FILE_TIME_RANGE * 2
+        } else {
+            10
+        };
         let mut trace = None;
-        while retryes > 0 {
+        while retries > 0 {
             let logs_dir = app_data()
                 .join("agents")
                 .join(&manifest.agent.name)
                 .join("logs");
 
-            if let Some(log_file) =
-                Self::find_recent_file(&logs_dir, RECENT_FILE_TIME_RANGE).await?
-            {
+            if let Some(log_file) = Self::find_recent_file(&logs_dir, time_range).await? {
                 let timeout = Settings::get().agents.trace_timeout;
                 trace.replace(Trace::open(log_file, Duration::from_millis(timeout), false).await?);
                 break;
             }
 
-            retryes -= 1;
+            retries -= 1;
             sleep(Duration::from_millis(500)).await;
         }
 
@@ -206,11 +214,8 @@ impl Agent {
         while let Some(entry) = reader.next_entry().await? {
             let path = entry.path();
             if path.is_file() {
-                let metadata = tfs::metadata(&path).await?;
-                if let Ok(created) = metadata.created()
-                    && created >= time_start
-                    && created <= time_end
-                {
+                let created = tfs::metadata(&path).await?.created()?;
+                if time_range == 0 || created >= time_start && created <= time_end {
                     // compare with last recent file:
                     if let Some((_, ref newest_time)) = newest_file {
                         if created > *newest_time {
