@@ -12,7 +12,6 @@ pub struct AgentTask {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DelegatedTasks {
     pub tasks: Option<Vec<AgentTask>>,
-    pub say: Option<String>,
 }
 
 impl DelegatedTasks {
@@ -24,7 +23,6 @@ impl DelegatedTasks {
                 query: query.into(),
                 keys: None,
             }]),
-            say: None,
         }
     }
 }

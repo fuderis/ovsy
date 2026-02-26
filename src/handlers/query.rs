@@ -82,11 +82,9 @@ async fn delegate_tasks(
     query: String,
     mut recurs: usize,
 ) -> Result<()> {
-    let cfg = &Settings::get().agents;
-
     // check recursion & client connection:
     recurs += 1;
-    let limit = cfg.recurs_limit;
+    let limit = Settings::get().agents.recurs_limit;
     if limit > 0 && recurs > limit {
         return Err(Error::RecursionLimit.into());
     } else if st.is_closed() {
@@ -98,7 +96,7 @@ async fn delegate_tasks(
     let mut cached = None;
 
     // read cached data:
-    if cfg.caching {
+    if Settings::get().agents.caching {
         for agent in Agents::get_all().await.iter() {
             if agent.cache.compare(&query_words[..]).await.unwrap_or(false) {
                 let _ = cached.insert(agent.manifest.agent.name.clone());
@@ -106,10 +104,13 @@ async fn delegate_tasks(
         }
     }
 
+    // check if cache found:
     let response: DelegatedTasks = if let Some(name) = cached {
         info!("Used cached data to handle {name} agent");
         DelegatedTasks::from_cached_agent(name, query)
-    } else {
+    }
+    // handle with AI:
+    else {
         // read prompt:
         let prompt = utils::read_prompt("delegate-query")
             .await?
@@ -118,9 +119,6 @@ async fn delegate_tasks(
         // create query:
         let history = session.lock().await.results().clone();
         let mut request = utils::completions()?
-            .system_message(vec![
-                utils::read_prompt("assistant-character").await?.into(),
-            ])
             .assistant_message(history.into_iter().map(|item| item.into()).collect())
             .system_message(vec![prompt.into()])
             .user_message(vec![query.into()])
@@ -162,15 +160,6 @@ async fn delegate_tasks(
         // parse response:
         json::from_str(&buffer)?
     };
-
-    // say to user something:
-    if let Some(msg) = response.say {
-        st.send(Ok(Bytes::from(fmt!(
-            "[Say]: {}\n",
-            msg.replace("\n", "\\n")
-        ))))
-        .ok();
-    }
 
     // handle tasks:
     if let Some(mut tasks) = response.tasks
