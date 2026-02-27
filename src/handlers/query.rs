@@ -40,14 +40,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
             }
             Err(e) => {
                 error!("{e}");
-
                 let mut guard = session2.lock().await;
                 guard.write(&fmt!("[Error] {e}")).await.ok();
 
-                Ok(Bytes::from(fmt!(
-                    "[Error]: {e}\n\n[Duration] {} ms\n[EOF]",
-                    guard.exec_time()
-                )))
+                Ok(Bytes::from(fmt!("[Error] {e}",)))
             }
         },
     )
