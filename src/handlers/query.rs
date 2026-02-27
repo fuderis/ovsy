@@ -5,6 +5,7 @@ use crate::{
     prelude::*,
 };
 use anylm::{Chunk, Schema};
+use atoman::futures::future;
 use reqwest::Client;
 
 /// The request POST data
@@ -174,19 +175,28 @@ async fn delegate_tasks(
                 Schema::object("response format")
                     .required_property(
                         "tasks",
-                        Schema::array("Agents tasks").items(
-                            Schema::object("The agent task")
-                                .required_property("name", Schema::string("The agent name"))
-                                .required_property(
-                                    "query",
-                                    Schema::string("The query to agent (don't shorten it)"),
-                                )
-                                .required_property(
-                                    "keys",
-                                    Schema::array("The query basic keywords")
-                                        .items(Schema::string("")),
-                                ),
-                        ),
+                        Schema::array("Agent task groups (executed sequentially - step by step)")
+                            .items(
+                                Schema::array("Agent tasks (tasks in group executed in parallel)")
+                                    .items(
+                                        Schema::object("The agent task")
+                                            .required_property(
+                                                "name",
+                                                Schema::string("The agent name"),
+                                            )
+                                            .required_property(
+                                                "query",
+                                                Schema::string(
+                                                    "The query to agent (don't shorten it)",
+                                                ),
+                                            )
+                                            .required_property(
+                                                "keys",
+                                                Schema::array("The query basic keywords")
+                                                    .items(Schema::string("")),
+                                            ),
+                                    ),
+                            ),
                     )
                     .optional_property(
                         "say",
@@ -212,10 +222,11 @@ async fn delegate_tasks(
     // handle tasks:
     if let Some(mut tasks) = response.tasks
         && !tasks.is_empty()
+        && !tasks[0].is_empty()
     {
-        // cache results:
-        if tasks.len() == 1 {
-            let task = &mut tasks[0];
+        // cache results (simple queries only):
+        if tasks.len() == 1 && tasks[0].len() == 1 {
+            let task = &mut tasks[0][0];
             if let Some(keys) = task.keys.take()
                 && let Some(agent) = Agents::get(&task.name).await
             {
@@ -223,13 +234,30 @@ async fn delegate_tasks(
             }
         }
 
-        // handle agents step by step:
-        for task in tasks {
+        // handle task groups step by step:
+        for group in tasks {
             if st.is_closed() {
                 break;
             }
 
-            handle_agent(st.clone(), session.clone(), task.name, task.query).await?;
+            // handle parallel futures:
+            let handles: Vec<_> = group
+                .into_iter()
+                .map(|task| {
+                    let st = st.clone();
+                    let session = session.clone();
+                    async move {
+                        // handle agent:
+                        if let Err(e) =
+                            handle_agent(st.clone(), session, task.name, task.query).await
+                        {
+                            st.send(Err(e)).ok();
+                        }
+                    }
+                })
+                .collect();
+
+            let _results = future::join_all(handles).await;
         }
 
         // do query to fix errors:

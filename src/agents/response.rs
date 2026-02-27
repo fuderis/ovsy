@@ -11,18 +11,18 @@ pub struct AgentTask {
 /// The delegated user query
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DelegatedTasks {
-    pub tasks: Option<Vec<AgentTask>>,
+    pub tasks: Option<Vec<Vec<AgentTask>>>,
 }
 
 impl DelegatedTasks {
     /// Creates delegated tasks from cached agent
     pub fn from_cached_agent(name: impl Into<String>, query: impl Into<String>) -> Self {
         Self {
-            tasks: Some(vec![AgentTask {
+            tasks: Some(vec![vec![AgentTask {
                 name: name.into(),
                 query: query.into(),
                 keys: None,
-            }]),
+            }]]),
         }
     }
 }
