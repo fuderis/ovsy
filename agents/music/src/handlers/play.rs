@@ -46,7 +46,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         }
         Err(e) => {
             error!("{e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response();
+            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response();
         }
     };
 
@@ -108,19 +108,19 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
                         HeaderMap::from_iter(map! {
                             header::CONTENT_TYPE => "text/plain".parse().unwrap()
                         }),
-                        Body::new(fmt!("[Success]: Playing music dirs: {playlists:#?}")),
+                        Body::new(fmt!("[Success] Playing music dirs: {playlists:#?}")),
                     )
                         .into_response()
                 }
                 Err(e) => {
                     error!("{e}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response()
+                    (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response()
                 }
             }
         }
         Err(e) => {
             error!("{e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error]: {e}")).into_response()
+            (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response()
         }
     }
 }

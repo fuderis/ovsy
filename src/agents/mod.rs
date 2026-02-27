@@ -1,7 +1,7 @@
 pub mod agent;
 pub use agent::Agent;
-pub mod calls;
-pub use calls::{AgentAction, AgentTask, DelegatedTasks};
+pub mod response;
+pub use response::{AgentAction, AgentTask, DelegatedTasks, SummaryResults};
 
 use crate::prelude::*;
 use anylm::Tool;

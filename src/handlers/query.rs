@@ -1,6 +1,6 @@
 use crate::{
     SessionLogger,
-    agents::{AgentAction, DelegatedTasks},
+    agents::{AgentAction, DelegatedTasks, SummaryResults},
     cache::AgentCache,
     prelude::*,
 };
@@ -42,10 +42,10 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
                 error!("{e}");
 
                 let mut guard = session2.lock().await;
-                guard.write(&fmt!("[Error]: {e}")).await.ok();
+                guard.write(&fmt!("[Error] {e}")).await.ok();
 
                 Ok(Bytes::from(fmt!(
-                    "[Error]: {e}\n\n[Duration]: {} ms\n[EOF]",
+                    "[Error]: {e}\n\n[Duration] {} ms\n[EOF]",
                     guard.exec_time()
                 )))
             }
@@ -70,9 +70,61 @@ async fn delegate_tasks_cycled(
     query: String,
     recurs: usize,
 ) {
+    // delegate & handle tasks:
     if let Err(e) = delegate_tasks(st.clone(), session.clone(), query, recurs).await {
         st.send(Err(e)).ok();
     }
+
+    // summarize execution results:
+    if let Err(e) = summarize_results(st.clone(), session).await {
+        st.send(Err(e)).ok();
+    }
+}
+
+/// Summarizes the execution results
+async fn summarize_results(st: Stream, session: Arc<Mutex<SessionLogger>>) -> Result<()> {
+    let history = session.lock().await.results().clone();
+    let mut response = utils::completions()?
+        .system_message(vec![
+            utils::read_prompt("assistant-character").await?.into(),
+        ])
+        .assistant_message(vec![history.join("\n").into()])
+        .system_message(vec![utils::read_prompt("summary-results").await?.into()])
+        .schema(
+            Schema::object("response format")
+                .required_property(
+                    "answer",
+                    Schema::string("The short and useful answer to user (summing up the results)"),
+                )
+                .required_property(
+                    "context",
+                    Schema::string("The all summarized results (for AI context)"),
+                ),
+        )
+        .send()
+        .await?;
+
+    // read response stream:
+    let mut buffer = str!();
+    while let Some(chunk) = response.next().await {
+        if let Chunk::Text(text) = chunk? {
+            buffer.push_str(&text);
+        }
+    }
+
+    // parse response:
+    let SummaryResults { answer, context: _ } = json::from_str(&buffer)?;
+
+    // TODO: Save summary context into RAG DB
+
+    // print answer & EOF:
+    st.send(Ok(Bytes::from(fmt!(
+        "\n\n[Answer] {answer}\n[Duration] {} ms\n[EOF]",
+        session.lock().await.exec_time()
+    ))))
+    .ok();
+
+    Ok(())
 }
 
 /// Delegates an user query into agents
@@ -204,13 +256,6 @@ async fn delegate_tasks(
         }
     }
 
-    // print EOF:
-    st.send(Ok(Bytes::from(fmt!(
-        "\n\n[Duration]: {} ms\n[EOF]",
-        session.lock().await.exec_time()
-    ))))
-    .ok();
-
     Ok(())
 }
 
@@ -247,7 +292,7 @@ async fn handle_query(
     // log info:
     {
         info!("⏳ Processing query: {:.100}", query.replace('\n', "\\n"));
-        tx.send(Ok(Bytes::from(fmt!("[Processing]: {query}\n"))))
+        tx.send(Ok(Bytes::from(fmt!("[Processing] {query}\n"))))
             .ok();
     }
 
@@ -289,7 +334,7 @@ async fn handle_action(tx: Stream, agent: &str, action: &str, data: JsonValue) -
     {
         let data_str = json::to_string(&data).unwrap();
         info!("⏳ Handling {agent} action: {action} {data_str}",);
-        tx.send(Ok(Bytes::from(fmt!("[Handling]: {action} {data_str}\n",))))
+        tx.send(Ok(Bytes::from(fmt!("[Handling] {action} {data_str}\n",))))
             .ok();
     }
 

@@ -33,3 +33,10 @@ pub struct AgentAction {
     pub name: String,
     pub data: JsonValue,
 }
+
+/// The summarize response
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct SummaryResults {
+    pub answer: String,
+    pub context: String,
+}
