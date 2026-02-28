@@ -30,7 +30,7 @@ pub struct AgentsSettings {
 impl ::std::default::Default for AgentsSettings {
     fn default() -> Self {
         Self {
-            scan_dirs: vec![path!("$/../../agents")],
+            scan_dirs: vec![],
             autocheck: true,
             check_timeout: 2000,
             trace_timeout: 200,
@@ -80,7 +80,17 @@ impl Settings {
     where
         P: AsRef<Path>,
     {
-        let cfg = Config::new(file_path.as_ref())?;
+        let mut cfg = Config::<Settings>::new(file_path.as_ref())?;
+
+        #[cfg(debug_assertions)]
+        {
+            cfg.agents.scan_dirs.push(path!("$/../../agents"));
+        }
+        #[cfg(not(debug_assertions))]
+        {
+            cfg.agents.scan_dirs.push(path!("$/agents"));
+        };
+
         SETTINGS.unsafe_set(cfg);
         Ok(())
     }

@@ -91,7 +91,7 @@ async fn summarize_results(st: Stream, session: Arc<Mutex<SessionLogger>>) -> Re
             Schema::object("response format")
                 .required_property(
                     "answer",
-                    Schema::string("The short and useful answer to user (summing up the results)"),
+                    Schema::string("The short and useful human-readable answer to user (summing up the results)"),
                 )
                 .required_property(
                     "context",
