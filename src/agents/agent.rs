@@ -44,7 +44,7 @@ impl Agent {
             return Ok(None);
         }
 
-        // remove tool if disabled:
+        // remove agent if disabled:
         if !manifest.agent.enable {
             Agents::stop(agent_name).await?;
             return Ok(None);

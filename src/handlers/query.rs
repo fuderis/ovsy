@@ -70,58 +70,14 @@ async fn delegate_tasks_cycled(
     // delegate & handle tasks:
     if let Err(e) = delegate_tasks(st.clone(), session.clone(), query, recurs).await {
         st.send(Err(e)).ok();
+        return;
     }
 
     // summarize execution results:
     if let Err(e) = summarize_results(st.clone(), session).await {
         st.send(Err(e)).ok();
+        return;
     }
-}
-
-/// Summarizes the execution results
-async fn summarize_results(st: Stream, session: Arc<Mutex<SessionLogger>>) -> Result<()> {
-    let history = session.lock().await.results().clone();
-    let mut response = utils::completions()?
-        .system_message(vec![
-            utils::read_prompt("assistant-character").await?.into(),
-        ])
-        .assistant_message(vec![history.join("\n").into()])
-        .system_message(vec![utils::read_prompt("summary-results").await?.into()])
-        .schema(
-            Schema::object("response format")
-                .required_property(
-                    "answer",
-                    Schema::string("The short and useful human-readable answer to user (summing up the results)"),
-                )
-                .required_property(
-                    "context",
-                    Schema::string("The all summarized results (for AI context)"),
-                ),
-        )
-        .send()
-        .await?;
-
-    // read response stream:
-    let mut buffer = str!();
-    while let Some(chunk) = response.next().await {
-        if let Chunk::Text(text) = chunk? {
-            buffer.push_str(&text);
-        }
-    }
-
-    // parse response:
-    let SummaryResults { answer, context: _ } = json::from_str(&buffer)?;
-
-    // TODO: Save summary context into RAG DB
-
-    // print answer & EOF:
-    st.send(Ok(Bytes::from(fmt!(
-        "\n\n[Answer] {answer}\n[Duration] {} ms\n[EOF]",
-        session.lock().await.exec_time()
-    ))))
-    .ok();
-
-    Ok(())
 }
 
 /// Delegates an user query into agents
@@ -172,36 +128,24 @@ async fn delegate_tasks(
             .system_message(vec![prompt.into()])
             .user_message(vec![query.into()])
             .schema(
-                Schema::object("response format")
-                    .required_property(
-                        "tasks",
-                        Schema::array("Agent task groups (executed sequentially - step by step)")
-                            .items(
-                                Schema::array("Agent tasks (tasks in group executed in parallel)")
-                                    .items(
-                                        Schema::object("The agent task")
-                                            .required_property(
-                                                "name",
-                                                Schema::string("The agent name"),
-                                            )
-                                            .required_property(
-                                                "query",
-                                                Schema::string(
-                                                    "The query to agent (don't shorten it)",
-                                                ),
-                                            )
-                                            .required_property(
-                                                "keys",
-                                                Schema::array("The query basic keywords")
-                                                    .items(Schema::string("")),
-                                            ),
-                                    ),
-                            ),
-                    )
-                    .optional_property(
-                        "say",
-                        Schema::string("The assistant execution progress answer"),
+                Schema::object("response format").required_property(
+                    "tasks",
+                    Schema::array("Agent task groups").items(
+                        Schema::array("Agent tasks group (executed in parallel)").items(
+                            Schema::object("The agent task")
+                                .required_property("name", Schema::string("The agent name"))
+                                .required_property(
+                                    "query",
+                                    Schema::string("The query to agent (don't shorten it)"),
+                                )
+                                .required_property(
+                                    "keys",
+                                    Schema::array("The query basic keywords")
+                                        .items(Schema::string("")),
+                                ),
+                        ),
                     ),
+                ),
             );
 
         // send request:
@@ -216,7 +160,7 @@ async fn delegate_tasks(
         }
 
         // parse response:
-        json::from_str(&buffer)?
+        json::from_str(&buffer).map_err(|e| fmt!("Incorrect response format: {e}"))?
     };
 
     // handle tasks:
@@ -315,9 +259,15 @@ async fn handle_query(
 ) -> Result<Vec<AgentAction>> {
     // log info:
     {
-        info!("⏳ Processing query: {:.100}", query.replace('\n', "\\n"));
-        tx.send(Ok(Bytes::from(fmt!("[Processing] {query}\n"))))
-            .ok();
+        info!(
+            "⏳ Processing query to {agent} agent: {:.100}",
+            query.replace('\n', "\\n")
+        );
+        tx.send(Ok(Bytes::from(fmt!(
+            "[Processing] ({name}) {query}\n",
+            name = agent.to_uppercase()
+        ))))
+        .ok();
     }
 
     // read prompt:
@@ -378,6 +328,52 @@ async fn handle_action(tx: Stream, agent: &str, action: &str, data: JsonValue) -
         let _ = tx.send(Ok(bytes)).ok();
     }
     tx.send(Ok(Bytes::from("\n"))).ok();
+
+    Ok(())
+}
+
+/// Summarizes the execution results
+async fn summarize_results(st: Stream, session: Arc<Mutex<SessionLogger>>) -> Result<()> {
+    let history = session.lock().await.results().clone();
+    let mut response = utils::completions()?
+        .system_message(vec![
+            utils::read_prompt("assistant-character").await?.into(),
+        ])
+        .assistant_message(vec![history.join("\n").into()])
+        .system_message(vec![utils::read_prompt("summary-results").await?.into()])
+        .schema(
+            Schema::object("response format")
+                .required_property(
+                    "answer",
+                    Schema::string("The short and useful human-readable answer to user (summing up the results)"),
+                )
+                .required_property(
+                    "context",
+                    Schema::string("The all summarized results (for AI context)"),
+                ),
+        )
+        .send()
+        .await?;
+
+    // read response stream:
+    let mut buffer = str!();
+    while let Some(chunk) = response.next().await {
+        if let Chunk::Text(text) = chunk? {
+            buffer.push_str(&text);
+        }
+    }
+
+    // parse response:
+    let SummaryResults { answer, context: _ } = json::from_str(&buffer)?;
+
+    // TODO: Save summary context into RAG DB
+
+    // print answer & EOF:
+    st.send(Ok(Bytes::from(fmt!(
+        "\n\n[Answer] {answer}\n[Duration] {} ms\n[EOF]",
+        session.lock().await.exec_time()
+    ))))
+    .ok();
 
     Ok(())
 }
