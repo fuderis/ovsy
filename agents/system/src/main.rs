@@ -10,10 +10,7 @@ async fn main() -> Result<()> {
     // create router:
     let router = Router::new()
         .route("/", get(async || Html("")))
-        .route("/wait", post(handlers::wait::handle))
         .route("/power", post(handlers::power::handle))
-        .route("/app", post(handlers::app::handle))
-        .route("/music", post(handlers::music::handle))
         .route("/volume", post(handlers::volume::handle));
 
     // init listenner:
