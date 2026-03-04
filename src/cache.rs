@@ -9,6 +9,7 @@ use tokio::{
 
 /// The comparing coefficient
 const COMP_COEF: f32 = 0.8;
+const CACHE_COEF: f32 = 0.65;
 
 /// The cached keywords
 #[derive(Default, Debug, Clone)]
@@ -137,7 +138,7 @@ impl AgentCache {
             }
         }
 
-        Ok(score * 1.0 / count as f32 >= COMP_COEF)
+        Ok(score * 1.0 / count as f32 >= CACHE_COEF)
     }
 
     /// Splits string to words
