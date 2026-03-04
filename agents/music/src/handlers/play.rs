@@ -42,7 +42,9 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
     let playlists = match search_playlists(data, name).await {
         Ok(r) => {
             info!("Found music: {r:?}");
-            r
+            r.into_iter()
+                .filter(|v| is_audio_file(&v))
+                .collect::<Vec<_>>()
         }
         Err(e) => {
             error!("{e}");
@@ -272,7 +274,7 @@ async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
             let path = entry.path();
             if path.is_dir() {
                 stack.push(fs::read_dir(path).await?);
-            } else if is_music_file(&path) {
+            } else if is_audio_file(&path) {
                 songs.push(str!(path.to_string_lossy()));
             }
         }
@@ -282,7 +284,7 @@ async fn read_song_files<P: AsRef<Path>>(dir: P) -> Result<Vec<String>> {
 }
 
 /// Checks file extension for song format
-fn is_music_file<P>(path: P) -> bool
+fn is_audio_file<P>(path: P) -> bool
 where
     P: AsRef<Path>,
 {
