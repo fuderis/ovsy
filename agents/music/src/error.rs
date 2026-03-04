@@ -10,9 +10,12 @@ pub enum Error {
     #[from]
     Io(std::io::Error),
 
-    #[display = "Expected server '--port' argument."]
-    ExpectedPortArg,
-
     #[display = "Playlist '{0}' is not found."]
     PlaylistNotFound(String),
+
+    #[display = "Pactl set-volume failed: {0}"]
+    PactlError(std::io::Error),
+
+    #[display = "Audio devices not found"]
+    DevicesNotFound,
 }

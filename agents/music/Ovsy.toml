@@ -1,7 +1,7 @@
 [agent]
 enable = true
 name = "music"
-description = "Search or play local music (command play)"
+description = "Search/play local music, set/increase/decrease system volume"
 exec = "target/release/music"
 
 [server]
@@ -30,4 +30,24 @@ data = { artist = "Disturbed" }
 query = "play Disturbed - The Sickness"
 data = { artist = "Disturbed", album = "The Sickness" }
 
-# Search:
+# Volume:
+[actions.volume]
+enable = true
+description = "Set system volume by delta or force value"
+
+[actions.volume.arguments]
+delta = { type = "integer", optional = false }
+force = { type = "boolean", description = "false by default", optional = true }
+
+[[actions.volume.examples]]
+query = "set volume to 50%"
+data = { delta = 50, force = true }
+
+[[actions.volume.examples]]
+query = "increase volume by 20%"
+data = { delta = 20 }
+
+[[actions.volume.examples]]
+query = "decrease volume by 30%"
+data = { delta = -30 }
+

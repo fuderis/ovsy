@@ -15,7 +15,8 @@ async fn main() -> Result<()> {
     // create router:
     let router = Router::new()
         .route("/", get(async || Html("")))
-        .route("/play", post(handlers::play::handle));
+        .route("/play", post(handlers::play::handle))
+        .route("/volume", post(handlers::volume::handle));
 
     // init listenner:
     let port = Settings::get().server.port;
