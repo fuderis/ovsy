@@ -123,7 +123,8 @@ async fn delegate_tasks(
 
         // create query:
         let history = session.lock().await.results().clone();
-        let mut request = utils::completions()?
+        let mut request = utils::completions()
+            .await?
             .assistant_message(history.into_iter().map(|item| item.into()).collect())
             .system_message(vec![prompt.into()])
             .user_message(vec![query.into()])
@@ -277,7 +278,8 @@ async fn handle_query(
 
     // create query:
     let history = session.lock().await.results().clone();
-    let mut request = utils::completions()?
+    let mut request = utils::completions()
+        .await?
         .system_message(vec![
             utils::read_prompt("assistant-character").await?.into(),
         ])
@@ -335,7 +337,7 @@ async fn handle_action(tx: Stream, agent: &str, action: &str, data: JsonValue) -
 /// Summarizes the execution results
 async fn summarize_results(st: Stream, session: Arc<Mutex<SessionLogger>>) -> Result<()> {
     let history = session.lock().await.results().clone();
-    let mut response = utils::completions()?
+    let mut response = utils::completions().await?
         .system_message(vec![
             utils::read_prompt("assistant-character").await?.into(),
         ])

@@ -11,23 +11,7 @@ pub struct ServerSettings {
 
 impl ::std::default::Default for ServerSettings {
     fn default() -> Self {
-        Self { port: 7881 }
-    }
-}
-
-/// The music settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct MusicSettings {
-    pub scan_dirs: Vec<PathBuf>,
-    pub search_coef: f32,
-}
-
-impl ::std::default::Default for MusicSettings {
-    fn default() -> Self {
-        Self {
-            scan_dirs: vec![path!("~/Music")],
-            search_coef: 0.65,
-        }
+        Self { port: 7882 }
     }
 }
 
@@ -35,7 +19,6 @@ impl ::std::default::Default for MusicSettings {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
     pub server: ServerSettings,
-    pub music: MusicSettings,
 }
 
 impl Settings {

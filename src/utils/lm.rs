@@ -21,7 +21,7 @@ pub async fn read_prompt(name: &str) -> Result<String> {
 }
 
 /// Creates AI completions request
-pub fn completions() -> Result<Completions> {
+pub async fn completions() -> Result<Completions> {
     let lm = Settings::get().lms.clone();
     let mut request = Completions::new(lm.api_kind, var(&lm.env_var).unwrap_or_default(), lm.model)
         .max_tokens(lm.max_tokens)
