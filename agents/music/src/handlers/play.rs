@@ -41,10 +41,8 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
     info!("Search for music '{name}'..");
     let playlists = match search_playlists(data, name).await {
         Ok(r) => {
-            info!("Found music: {r:?}");
-            r.into_iter()
-                .filter(|v| is_audio_file(&v))
-                .collect::<Vec<_>>()
+            info!("Found files: {r:?}");
+            r
         }
         Err(e) => {
             error!("{e}");
