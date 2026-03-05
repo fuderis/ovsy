@@ -15,9 +15,7 @@ cd ../../
 echo "Installing to /opt/ovsy/"
 mkdir -p /opt/ovsy
 
-# core:
-cp target/release/ovsy /opt/ovsy/
-
+# copy agents:
 install_agent() {
   mkdir -p "/opt/ovsy/agents/$1/target/release"
   cp "agents/$1/Ovsy.toml" "/opt/ovsy/agents/$1/"
@@ -26,5 +24,8 @@ install_agent() {
 
 install_agent music
 install_agent power
+
+# copy core:
+cp target/release/ovsy /opt/ovsy/
 
 echo "✅ Installed!"
