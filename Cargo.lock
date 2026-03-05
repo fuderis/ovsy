@@ -78,9 +78,9 @@ checksum = "5f0e0fee31ef5ed1ba1316088939cea399010ed7731dba877ed44aeb407a75ea"
 
 [[package]]
 name = "anylm"
-version = "0.1.4"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6a3eeda77d40e729f11f57f928d98ae8ed3b6f110cc18340d106997accb959ca"
+checksum = "8c2df699c28cc0ab9e41ea48c23636296ac8b5895f727bccdd3246f156277513"
 dependencies = [
  "base64",
  "bytes",
