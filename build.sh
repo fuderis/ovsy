@@ -13,7 +13,7 @@ cd ../music && cargo build --release
 cd ../../
 
 echo "Installing to /opt/ovsy/"
-sudo mkdir -p /opt/ovsy
+mkdir -p /opt/ovsy
 #sudo chown $USER:$USER /opt/ovsy
 
 # core:
