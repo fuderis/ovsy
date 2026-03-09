@@ -1,6 +1,6 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> Version: 0.5.3 BETA
+> Version: 1.0 STABLE
 
 ![Header](/imgs/header.png)
 
@@ -11,6 +11,12 @@ Fully anonymous, fully yours — you decide how to use this power.<br>
 Designed as a lightweight core for custom AI agents, Ovsy intelligently routes your natural‑language commands
 to modular tools you build yourself, turning your system into a seamless command center.<br>
 
+## Features:
+
+* **AI Agent Task Delegation**: Distributes tasks to custom AI agents that you create yourself.
+* **Automatic Agent Restart**: Automatically restarts AI agents upon rebuild or update without downtime.
+* **Async Server Mode**: Runs in fully asynchronous mode and can be used as a production server.
+* **Demo AI Agents Included**: Comes with ready-to-use demonstration agents for testing — Music Agent and System Power Management.
 
 ## Planned/Implemented:
 
@@ -23,22 +29,17 @@ to modular tools you build yourself, turning your system into a seamless command
 * ⏳ **Tasks Management (0%)**: Set reminders/alarms, AI-powered scheduling assistance.
 * ⏳ **Web-Search (0%)**: A search assistant for news, weather, currency, stock information, developer tools, and etc.
 
-### LM's API:
+### AI APIs:
 
 * ✅ **LM Studio (100%)**: Local AI models, such as `Qwen`, `Gemma`, `Llama`, and beyond..
 * ✅ **Anthropic (100%)**: Anthropic's safe, powerful LLMs. Flagship `Claude`, `Sonnet` and `Haiku` excels in coding, reasoning, 200K-token context.
 * ✅ **Cerebras (100%)**: Ultra-fast LLM hosting on wafer-scale chips — 3000 tokens/sec for `Llama`, `GPT OSS`, `Qwen3`, `Zai GLM`.
-* ⏳ **Vosk (0%)**: The light-weight AI for voice recognition for implementing voice control.
-* ⏳ **Whisper (0%)**: The medium-weight AI for voice recognition.
  
 ## System support:
 
-I planned to support all systems, but I need help in the form of feedback on bugs and improvements — 
-write to me if anything (contact us below).
-
-* **Linux**: It is best supported, because I write on archlinux (it works smoothly).
-* **MacOS**: It is also supported, but has not been tested yet.
-* **Windows**: Partially supported, I will refine more at the end of the project development.
+* **Linux**: It's full supported.
+* **MacOS**: It's also supported, but maybe more tests are needed..
+* **Windows**: Partially supported.
 
 ## Configurations:
 
