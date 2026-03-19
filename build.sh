@@ -17,9 +17,9 @@ mkdir -p /opt/ovsy
 
 # copy agents:
 install_agent() {
-  mkdir -p "/opt/ovsy/agents/$1/target/release"
+  mkdir -p "/opt/ovsy/agents/$1/"
   cp "agents/$1/Ovsy.toml" "/opt/ovsy/agents/$1/"
-  cp "agents/$1/target/release/$1" "/opt/ovsy/agents/$1/target/release/"
+  cp "agents/$1/target/release/$1-agent" "/opt/ovsy/agents/$1/"
 }
 
 install_agent music
