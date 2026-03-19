@@ -121,12 +121,12 @@ impl Agents {
 
             loop {
                 interval.tick().await;
-                let mut checked = vec![];
+                let mut checked = HashSet::new();
 
                 // check & restart existing agents:
                 {
                     for (name, agent) in AGENTS.get().await.agents.iter() {
-                        checked.push(agent.dir.clone());
+                        checked.insert(agent.dir.clone());
 
                         if let Err(e) = agent.check().await {
                             if let Some(e) = e.downcast_ref::<std::io::Error>()
@@ -135,7 +135,7 @@ impl Agents {
                                 continue;
                             }
 
-                            warn!("Fail with check '{name}' agent: {e}");
+                            warn!("Failed to check '{name}' agent: {e}");
                         }
                     }
                 }

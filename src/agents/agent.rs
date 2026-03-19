@@ -1,22 +1,31 @@
 use super::Agents;
 use crate::{AgentCache, Manifest, prelude::*};
 use anylm::{Schema, Tool};
-use std::{fs, process::Stdio, time::SystemTime};
-use tokio::{fs as tfs, process::Command};
+use reqwest::Client;
+use std::{fs as stdfs, process::Stdio, time::SystemTime};
+use tokio::process::{Child, Command};
 
-/// Time range to find recent file
-const RECENT_FILE_TERM_SECS: u64 = 5;
+/// Count of tries to catch server log file (1 failed try = 500ms wait)
+const TRACE_LOG_FILE_TRIES: usize = 10;
+
+/// The agent server /health response structure
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthResponse {
+    pub log_file: PathBuf,
+}
 
 /// The agent structure
 #[derive(Default, Clone, Debug)]
 pub struct Agent {
     pub dir: PathBuf,
+    pub port: Option<u16>,
     pub manifest: Config<Manifest>,
     pub examples: Vec<String>,
     pub tools: Vec<Tool>,
     pub cache: AgentCache,
     pub last_update: Option<SystemTime>,
     pub trace: Option<Trace>,
+    child: Arc<Mutex<Option<Child>>>,
 }
 
 impl Agent {
@@ -50,15 +59,26 @@ impl Agent {
             return Ok(None);
         }
 
-        // get actual mimetype:
-        let exec_path = agent_dir.join(&manifest.agent.exec);
-        let mut last_update: Option<SystemTime> = if manifest_path.exists() {
-            Some(fs::metadata(&manifest_path)?.modified()?)
+        // get agent exec file path:
+        let exec_path = agent_dir.join({
+            #[cfg(debug_assertions)]
+            {
+                &manifest.agent.debug_exec
+            }
+            #[cfg(not(debug_assertions))]
+            {
+                &manifest.agent.exec
+            }
+        });
+
+        // read manifest mimetype:
+        let mut last_update: Option<SystemTime> = if manifest_path.is_file() {
+            Some(stdfs::metadata(&manifest_path)?.modified()?)
         } else {
             None
         };
-        if exec_path.exists() {
-            let exec_mtime = fs::metadata(&exec_path)?.modified()?;
+        if exec_path.is_file() {
+            let exec_mtime = stdfs::metadata(&exec_path)?.modified()?;
             match last_update {
                 Some(current) => last_update = Some(current.max(exec_mtime)),
                 None => last_update = Some(exec_mtime),
@@ -92,154 +112,115 @@ impl Agent {
             tools.push(Tool::new(name.clone(), action.description.clone(), schema));
         }
 
-        // exec file path:
-        let orig_exec = exec_path.clone();
-        let ovsy_exec_name = fmt!(
-            "ovsy-{}",
-            manifest
-                .agent
-                .exec
-                .file_name()
-                .map(|s: &std::ffi::OsStr| str!(s.to_string_lossy()))
-                .unwrap_or(agent_name.clone())
-        );
-        let ovsy_exec_path = agent_dir.join(&ovsy_exec_name);
+        // run tool server (if is server):
+        let (port, child) = if manifest.agent.is_server {
+            // bind free port:
+            let port = utils::get_free_port().await?;
 
-        // check metadata:
-        let needs_copy = if ovsy_exec_path.exists() {
-            let ovsy_mtime = fs::metadata(&ovsy_exec_path)?.modified()?;
-            if let Some(orig_mtime) = fs::metadata(&orig_exec)?.modified()?.into() {
-                orig_mtime > ovsy_mtime
-            } else {
-                true
-            }
-        } else {
-            true
-        };
+            // create command with argument --port:
+            let mut cmd = Command::new(&exec_path);
+            cmd.arg("--port").arg(port.to_string()); // send port
 
-        // copy exec file (if needs):
-        if needs_copy {
-            if ovsy_exec_path.exists() {
-                let _ = fs::remove_file(&ovsy_exec_path);
-            }
-            fs::copy(&orig_exec, &ovsy_exec_path)?;
-        }
+            cmd.stdout(Stdio::null());
+            cmd.stderr(Stdio::null());
+            cmd.kill_on_drop(true);
 
-        // run tool server (if exists):
-        let mut trace = None;
-        if let Some(server) = &manifest.server {
-            use tokio::net::TcpStream;
-
-            // check port for available:
-            let addr = fmt!("127.0.0.1:{}", server.port);
-            if TcpStream::connect(&addr).await.is_err() {
-                // create agent run command:
-                let mut cmd = Command::new(ovsy_exec_path);
-                cmd.stdout(Stdio::null());
-                cmd.stderr(Stdio::null());
-                cmd.kill_on_drop(false);
-
-                // spawn process child:
-                if let Err(e) = cmd.spawn() {
+            // spawning process:
+            let child = match cmd.spawn() {
+                Ok(c) => c,
+                Err(e) => {
                     error!("Failed start '{}' agent server: {e}", manifest.agent.name);
-                    return Err(Error::FailedRunTool(manifest.agent.name.clone(), e).into());
-                };
-
-                // wait for run server:
-                sleep(Duration::from_millis(500)).await;
-
-                // trace a new created log file:
-                let mut retries = RECENT_FILE_TERM_SECS * 2;
-                while retries > 0 {
-                    let logs_dir = app_data()
-                        .join("agents")
-                        .join(&manifest.agent.name)
-                        .join("logs");
-
-                    if let Some(log_file) =
-                        Self::find_recent_file(&logs_dir, RECENT_FILE_TERM_SECS).await?
-                    {
-                        let timeout = Settings::get().agents.trace_timeout;
-                        trace.replace(
-                            Trace::open(log_file, Duration::from_millis(timeout), false).await?,
-                        );
-                        break;
-                    }
-
-                    retries -= 1;
-                    sleep(Duration::from_millis(500)).await;
+                    return Err(Error::RunAgentServer(manifest.agent.name.clone(), e).into());
                 }
+            };
 
-                // check trace status:
-                if trace.is_none() {
-                    warn!("Failed to catch log file for tracing");
-                }
-            }
-        }
+            // waiting for run server:
+            sleep(Duration::from_millis(500)).await;
+
+            (Some(port), Some(child))
+        } else {
+            (None, None)
+        };
 
         // read cache file:
         let cache = AgentCache::read_or_write(&agent_dir).await?;
 
         // register tool instance:
-        Agents::add(Agent {
+        let mut agent = Agent {
             dir: agent_dir.to_path_buf(),
             manifest,
+            port,
             examples,
             tools,
             cache,
             last_update,
-            trace,
-        })
-        .await;
+            trace: None,
+            child: Arc::new(Mutex::new(child)),
+        };
 
+        agent.trace().await?;
+
+        Agents::add(agent).await;
         Ok(Some(()))
     }
 
-    /// Finds and returns the most recent file in dir
-    async fn find_recent_file<P>(dir: &P, term_secs: u64) -> Result<Option<PathBuf>>
-    where
-        P: AsRef<Path>,
-    {
-        let dir = dir.as_ref();
-        // time range:
-        let now = SystemTime::now();
-        let time_start = now.checked_sub(Duration::from_secs(term_secs)).unwrap();
-        let time_end = now.checked_add(Duration::from_secs(term_secs)).unwrap();
+    /// Checks agent server for alive & returns his answer
+    pub async fn health(&self) -> Result<HealthResponse> {
+        let client = Client::new();
+        let agent_name = &self.manifest.agent.name;
+        let health_url = fmt!("http://127.0.0.1:{}/health", self.port.as_ref().unwrap());
 
-        let mut newest_file: Option<(PathBuf, SystemTime)> = None;
-        let mut reader = tfs::read_dir(dir).await?;
-
-        // read dir files:
-        while let Some(entry) = reader.next_entry().await? {
-            let path = entry.path();
-            if path.is_file() {
-                let created = tfs::metadata(&path).await?.created()?;
-                if term_secs == 0 || created >= time_start && created <= time_end {
-                    // compare with last recent file:
-                    if let Some((_, ref newest_time)) = newest_file {
-                        if created > *newest_time {
-                            newest_file = Some((path, created));
-                        }
-                    } else {
-                        newest_file = Some((path, created));
-                    }
-                }
+        if let Ok(resp) = client.post(&health_url).send().await {
+            if resp.status().is_success() {
+                // agent responded - parsing answer:
+                let data = resp.json::<HealthResponse>().await?;
+                return Ok(data);
             }
         }
 
-        Ok(newest_file.map(|(path, _)| path))
+        warn!("Agent '{agent_name}' failed health check");
+        Err(Error::AgentHealth(agent_name.clone()).into())
     }
 
-    /// Checks & reruns agent if needs
+    /// Trace the agent server log file
+    pub(super) async fn trace(&mut self) -> Result<()> {
+        let agent_name = &self.manifest.agent.name;
+
+        for n in 1..=TRACE_LOG_FILE_TRIES {
+            info!("Trying to catch agent '{agent_name}' log file (attempt {n})..");
+
+            if let Ok(data) = self.health().await {
+                let path = data.log_file;
+                self.trace
+                    .replace(Trace::open(path, Duration::from_millis(500), false).await?);
+                return Ok(());
+            }
+
+            sleep(Duration::from_millis(500)).await;
+        }
+
+        warn!("Agent '{agent_name}' did not provide log_file path via /health");
+        Err(Error::AgentHealth(agent_name.clone()).into())
+    }
+
+    /// Checks the status of the agent's server and restarts it if necessary
     pub(super) async fn check(&self) -> Result<()> {
         let agent_dir = &self.dir;
         let manifest_path = agent_dir.join("Ovsy.toml");
         let name = &self.manifest.agent.name;
 
-        // check manifest for exists:
+        // ping server health:
+        if self.health().await.is_err() {
+            warn!("Connection to the '{name}' agent server is lost - restarting..");
+
+            // restart server:
+            self.restart().await?;
+        }
+
+        // check if manifest exists:
         if !manifest_path.exists() {
             warn!(
-                "Manifest '{}' not found, stopping agent '{name}'..",
+                "Manifest '{}' not found, stopping '{name}' agent server..",
                 manifest_path.display()
             );
             Agents::stop(&self.manifest.agent.name).await?;
@@ -257,7 +238,7 @@ impl Agent {
             }
             Err(e) => {
                 warn!(
-                    "Fail with read manifest '{}': {e}..",
+                    "Failed to read manifest '{}': {e}..",
                     manifest_path.display()
                 );
                 Agents::stop(name).await?;
@@ -265,15 +246,15 @@ impl Agent {
             }
         }
 
-        // get actual mimetype:
+        // get the manifest modify time:
         let exec_path = agent_dir.join(&self.manifest.agent.exec);
         let mut new_update: Option<SystemTime> = if manifest_path.exists() {
-            Some(fs::metadata(&manifest_path)?.modified()?)
+            Some(stdfs::metadata(&manifest_path)?.modified()?)
         } else {
             None
         };
         if exec_path.exists() {
-            let exec_mtime = fs::metadata(&exec_path)?.modified()?;
+            let exec_mtime = stdfs::metadata(&exec_path)?.modified()?;
             match new_update {
                 Some(current) => new_update = Some(current.max(exec_mtime)),
                 None => new_update = Some(exec_mtime),
@@ -285,30 +266,59 @@ impl Agent {
             (Some(old), Some(new)) if new > old => {
                 info!("Agent '{name}' outdated, restarting..");
 
-                // stop server:
-                Agents::stop(name).await?;
-
-                // re-run server:
-                if let Some(()) = Self::run(agent_dir).await? {
-                    info!("Agent '{name}' successfully restarted");
-                }
+                // restart server:
+                self.restart().await?;
             }
             _ => {
                 // up to date
-                trace!("Agent '{name}' is up to date");
+                trace!("Agent '{name}' is up to date!");
             }
         }
 
         Ok(())
     }
 
-    /// Stops the agent server
+    /// Restarts the agent server
+    pub(super) async fn restart(&self) -> Result<()> {
+        let agent_dir = &self.dir;
+        let name = &self.manifest.agent.name;
+
+        // stop server:
+        Agents::stop(name).await?;
+
+        // restart server:
+        if let Some(()) = Self::run(agent_dir).await? {
+            info!("Agent '{name}' successfully restarted");
+        }
+
+        Ok(())
+    }
+
+    /// Kills the agent server process
     pub(super) async fn stop(&self) -> Result<()> {
-        let port = if let Some(server) = &self.manifest.server {
-            server.port
+        if !self.manifest.agent.is_server {
+            return Ok(());
+        }
+
+        let mut lock = self.child.lock().await;
+        if let Some(mut child) = lock.take() {
+            info!("Killing agent process '{}'...", self.manifest.agent.name);
+            child.kill().await?;
+            // waiting for kill process:
+            let _ = child.wait().await;
+        }
+
+        Ok(())
+    }
+
+    /* /// Stops the agent server by port
+    pub(super) async fn stop_by_port(&self) -> Result<()> {
+        let port = if let Some(port) = self.port {
+            port
         } else {
             return Ok(());
         };
+
         info!(
             "Trying to kill '{}' agent server on {port} port..",
             &self.manifest.agent.name
@@ -411,5 +421,5 @@ impl Agent {
         sleep(Duration::from_millis(1000)).await;
 
         Ok(())
-    }
+    } */
 }

@@ -2,10 +2,9 @@
 enable = true
 name = "power"
 description = "The system power control (with timeout): turnoff (poweroff), restart, suspend (sleep), lock session and cancel power operations."
-exec = "target/release/power"
-
-[server]
-port = 7879
+debug_exec = "target/release/power-agent"
+exec = "power-agent"
+is_server = true
 
 # Power:
 [actions.power]

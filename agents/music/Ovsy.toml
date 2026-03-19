@@ -2,10 +2,9 @@
 enable = true
 name = "music"
 description = "Search/play local music, set/increase/decrease system volume"
-exec = "target/release/music"
-
-[server]
-port = 7881
+debug_exec = "target/release/music-agent"
+exec = "music-agent"
+is_server = true
 
 # Play:
 [actions.play]

@@ -1,11 +1,4 @@
-use macron::{Display, Error, From};
-
-/// Std Result alias
-pub type StdResult<T, E> = std::result::Result<T, E>;
-/// Result alias
-pub type Result<T> = std::result::Result<T, DynError>;
-/// Dyn error alias
-pub type DynError = Box<dyn std::error::Error + Send + Sync + 'static>;
+use agent::macron::{Display, Error, From};
 
 // The error
 #[derive(Debug, Display, Error, From)]

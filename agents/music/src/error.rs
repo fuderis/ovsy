@@ -1,8 +1,4 @@
-use macron::{Display, Error, From};
-
-/// The result alias
-pub type Result<T> = macron::Result<T>;
-pub type StdResult<T, E> = std::result::Result<T, E>;
+use agent::macron::{Display, Error, From};
 
 // The error
 #[derive(Debug, Display, Error, From)]

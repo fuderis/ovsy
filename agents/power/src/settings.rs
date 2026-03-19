@@ -3,23 +3,9 @@ use crate::prelude::*;
 /// The settings instance
 static SETTINGS: State<Config<Settings>> = State::new();
 
-/// The server settings
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ServerSettings {
-    pub port: u16,
-}
-
-impl ::std::default::Default for ServerSettings {
-    fn default() -> Self {
-        Self { port: 7879 }
-    }
-}
-
 /// The settings
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct Settings {
-    pub server: ServerSettings,
-}
+pub struct Settings {}
 
 impl Settings {
     /// Reads & initializes the settings

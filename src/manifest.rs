@@ -7,13 +7,9 @@ pub struct ManifestAgent {
     pub enable: bool,
     pub name: String,
     pub description: String,
+    pub debug_exec: PathBuf,
     pub exec: PathBuf,
-}
-
-/// The agent server configuration
-#[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestServer {
-    pub port: u16,
+    pub is_server: bool,
 }
 
 /// The agent using example struct
@@ -68,6 +64,5 @@ pub struct ManifestArgument {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub agent: ManifestAgent,
-    pub server: Option<ManifestServer>,
     pub actions: HashMap<String, ManifestAction>,
 }

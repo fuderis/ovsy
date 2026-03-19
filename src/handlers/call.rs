@@ -40,15 +40,14 @@ pub async fn handle_action(st: Stream, name: String, action: String, data: JsonV
     let tool = match Agents::get(&name).await {
         Some(t) => t,
         _ => {
-            st.send(Err(Error::UnexpectToolName(name.clone()).into()))
+            st.send(Err(Error::UnexpectedAgentName(name.clone()).into()))
                 .ok();
             return;
         }
     };
 
     // do server query:
-    if let Some(server) = &tool.manifest.server {
-        let port = server.port;
+    if let Some(port) = &tool.port {
         let response = match Client::new()
             .post(fmt!("http://127.0.0.1:{port}/{action}"))
             .json(&data)
@@ -79,9 +78,7 @@ pub async fn handle_action(st: Stream, name: String, action: String, data: JsonV
         // add command args:
         if let JsonValue::Object(map) = data {
             for (key, value) in map {
-                // key=value or just value.to_string()
-                let arg = fmt!("{}={}", key, to_cmd_arg(&value));
-                cmd.arg(&arg);
+                cmd.arg(fmt!("--{key}")).arg(to_cmd_arg(&value));
             }
         }
 
@@ -97,7 +94,7 @@ pub async fn handle_action(st: Stream, name: String, action: String, data: JsonV
         // streaming response:
         let stdout = child.stdout.take().unwrap();
         let mut reader = BufReader::new(stdout);
-        let mut buf = vec![0u8; 1024];
+        let mut buf = vec![0u8; 4096];
 
         loop {
             match reader.read(&mut buf).await {

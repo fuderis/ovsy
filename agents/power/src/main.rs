@@ -1,35 +1,15 @@
+use agent::AgentServer;
 use root::{handlers, prelude::*};
-
-use axum::{
-    Router,
-    routing::{get, post},
-};
-use std::net::SocketAddr;
-use tokio::net::TcpListener;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // init logger:
     Logger::init(app_data().join("logs"), 20)?;
-    Settings::init(app_data().join("config.toml"))?;
-
-    // create router:
-    let router = Router::new()
-        .route("/", get(async || Html("")))
-        .route("/power", post(handlers::power::handle))
-        .route("/cancel", post(handlers::cancel::handle));
-
-    // init listenner:
-    let port = Settings::get().server.port;
-    let addr = SocketAddr::from(([127, 0, 0, 1], port));
-    info!("🚀 Serve power agent on http://{addr}..");
-
-    let listener = TcpListener::bind(addr).await.map_err(|e| {
-        error!("Error with running server: {e}");
-        e
-    })?;
 
     // run server:
-    axum::serve(listener, router).await?;
-
-    Ok(())
+    AgentServer::new()
+        .route("/power", handlers::power::handle)
+        .route("/cancel", handlers::cancel::handle)
+        .run()
+        .await
 }
