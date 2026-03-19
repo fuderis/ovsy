@@ -1,8 +1,8 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> Version: 1.0 STABLE
+> Version: 0.6 BETA-TESTING
 
-![Header](/imgs/header.png)
+![Header](/header.png)
 
 In a world dominated by proprietary voice assistants like Alice and Siri, imagine taking back full control.
 Meet Ovsy — an open‑source AI orchestrator that redefines what a personal assistant can be.
