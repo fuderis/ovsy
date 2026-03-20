@@ -4,6 +4,9 @@ pub mod error;
 pub use error::{Result, StdResult};
 pub mod prelude;
 
+pub mod chunk;
+pub use chunk::SessionChunk;
+
 use crate::prelude::*;
 use axum::{
     Json, Router,

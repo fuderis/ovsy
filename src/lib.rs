@@ -9,14 +9,14 @@ pub mod utils;
 
 pub mod manifest;
 pub use manifest::Manifest;
+pub mod agents;
+pub use agents::{Agent, Agents};
 
 pub mod cache;
 pub use cache::{AgentCache, CachedKeys};
-
 pub mod session;
-pub use session::SessionLogger;
-pub mod agents;
-pub use agents::{Agent, Agents};
+pub use session::{Session, SessionChunk};
+
 pub mod handlers;
 
 /// Returns path to app data dir

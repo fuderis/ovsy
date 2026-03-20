@@ -11,11 +11,11 @@ pub enum Error {
     #[from]
     Io(std::io::Error),
 
-    #[display = "Failed read tools dir {0:?}: {1}"]
+    #[display = "Failed to read tools dir {0:?}: {1}"]
     ToolsDirRead(PathBuf, std::io::Error),
-    #[display = "Failed read manifest {0:?}: {1}"]
+    #[display = "Failed to read manifest {0:?}: {1}"]
     ManifestRead(PathBuf, String),
-    #[display = "Failed parse manifest {0:?}: {1}"]
+    #[display = "Failed to parse manifest {0:?}: {1}"]
     ManifestParse(PathBuf, toml::de::Error),
 
     #[display = "Agent named as '{0}' is not found."]
@@ -34,4 +34,7 @@ pub enum Error {
     ClientDisconnected,
     #[display = "Recursion limit, interrupting handling"]
     RecursionLimit,
+
+    #[display = "Agent execution error: {0}"]
+    ExecutionStop(Box<macron::DynError>),
 }

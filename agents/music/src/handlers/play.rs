@@ -108,7 +108,10 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
                         HeaderMap::from_iter(map! {
                             header::CONTENT_TYPE => "text/plain".parse().unwrap()
                         }),
-                        Body::new(fmt!("[Success] Playing music dirs: {playlists:#?}")),
+                        Body::new(
+                            SessionChunk::think(fmt!("Playing music dirs: {playlists:#?}"))
+                                .to_string(),
+                        ),
                     )
                         .into_response()
                 }

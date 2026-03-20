@@ -105,9 +105,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.5"
+version = "0.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "63d1a818587a26a3c93477095a5bddc0cca6bd1e6080edb87f39093ce64b6add"
+checksum = "e4b89f0f45e6470c14000d798899227032222802d917cd5ac2fc6070ff2be567"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -297,6 +297,7 @@ dependencies = [
  "iana-time-zone",
  "js-sys",
  "num-traits",
+ "serde",
  "wasm-bindgen",
  "windows-link",
 ]
