@@ -55,9 +55,10 @@ On Windows `~/` is located in `C:\Users\UserName`.
 1. Clone the repo and build project:
 
 ```bash
-git clone https://github.com/fuderis/ovsy.git
-cd ovsy && bash build.sh
+git clone https://github.com/fuderis/ovsy.git && cd ovsy
+bash install.sh
 ```
+By default, it will be installed in the `/opt/ovsy` directory (you can change it in the `INSTALL_DIR` constant in the `install.sh` file)
 
 2. (Optional) Add a bash alias into `~/.bashrc` for one-word launches:
 
