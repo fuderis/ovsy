@@ -11,6 +11,8 @@ Fully anonymous, fully yours — you decide how to use this power.<br>
 Designed as a lightweight core for custom AI agents, Ovsy intelligently routes your natural‑language commands
 to modular tools you build yourself, turning your system into a seamless command center.<br>
 
+![Demo](/demo.gif)
+
 ## Features:
 
 * **AI Agent Task Delegation**: Distributes tasks to custom AI agents that you create yourself.
