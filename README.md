@@ -1,6 +1,6 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> Version: 0.6 BETA-TESTING
+> Version: 0.6.1 BETA-TESTING
 
 ![Header](/header.png)
 
