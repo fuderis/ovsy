@@ -2,9 +2,17 @@
 # Exit on error, undefined variables, and pipe failures
 set -euo pipefail
 
-# Installation directory (can be overridden by the first argument):
-INSTALL_DIR="${1:-/opt/ovsy}"
-BUILD_MODE="release"
+PORT=7878              # Ovsy server port
+DIR="${1:-/opt/ovsy}"  # installation dir
+
+# looking for a PID listening on a port:
+PID=$(lsof -t -i:$PORT)
+if [ -n "$PID" ]; then
+    echo "💀 Cleaning up port $PORT (killing PID $PID)..."
+    # soft kill the Ovsy server:
+    kill $PID 2>/dev/null
+    sleep 0.5
+fi
 
 echo "🚀 Starting Ovsy build & install..."
 
@@ -13,11 +21,11 @@ echo "📦 Building Core..."
 cargo build --release
 
 # 2. Prepare directory structure:
-echo "📂 Preparing installation directory: $INSTALL_DIR"
-mkdir -p "$INSTALL_DIR/agents"
+echo "📂 Preparing installation directory: $DIR"
+mkdir -p "$DIR/agents"
 
 # Install core binary using 'install' to set executable permissions (755):
-install -Dm755 "target/release/ovsy" "$INSTALL_DIR/ovsy"
+install -Dm755 "target/release/ovsy" "$DIR/ovsy"
 
 # 3. Iterate through /agents dir:
 for agent_dir in agents/*/; do
@@ -40,19 +48,19 @@ for agent_dir in agents/*/; do
         # build inside the agent directory:
         (cd "$agent_dir" && cargo build --release)
         
-        mkdir -p "$INSTALL_DIR/agents/$agent_name"
-        cp "${agent_dir}Ovsy.toml" "$INSTALL_DIR/agents/$agent_name/"
+        mkdir -p "$DIR/agents/$agent_name"
+        cp "${agent_dir}Ovsy.toml" "$DIR/agents/$agent_name/"
         
         # we look for any binary in target/release and install it as {name}-agent:
         AGENT_BIN_DIR="${agent_dir}target/release"
         
         # 1. try to find {name}-agent:
         if [ -f "$AGENT_BIN_DIR/${agent_name}-agent" ]; then
-             install -m755 "$AGENT_BIN_DIR/${agent_name}-agent" "$INSTALL_DIR/agents/$agent_name/${agent_name}-agent"
+             install -m755 "$AGENT_BIN_DIR/${agent_name}-agent" "$DIR/agents/$agent_name/${agent_name}-agent"
         # 2. if not found, take the binary named after the folder/package and rename it during install:
         elif [ -f "$AGENT_BIN_DIR/${agent_name}" ]; then
              echo "   Renaming $agent_name to ${agent_name}-agent during installation..."
-             install -m755 "$AGENT_BIN_DIR/${agent_name}" "$INSTALL_DIR/agents/$agent_name/${agent_name}-agent"
+             install -m755 "$AGENT_BIN_DIR/${agent_name}" "$DIR/agents/$agent_name/${agent_name}-agent"
         else
              echo "❌ Error: Could not find any suitable binary in $AGENT_BIN_DIR"
              exit 1
@@ -61,15 +69,15 @@ for agent_dir in agents/*/; do
     # Python
     elif [ -f "${agent_dir}requirements.txt" ]; then
         echo "   Detected Python agent. Deploying sources..."
-        mkdir -p "$INSTALL_DIR/agents/$agent_name"
-        cp -r "$agent_dir"* "$INSTALL_DIR/agents/$agent_name/"
+        mkdir -p "$DIR/agents/$agent_name"
+        cp -r "$agent_dir"* "$DIR/agents/$agent_name/"
         
     # Unknown
     else
         echo "   Unknown agent type for $agent_name. Copying all files..."
-        mkdir -p "$INSTALL_DIR/agents/$agent_name"
-        cp -r "$agent_dir"* "$INSTALL_DIR/agents/$agent_name/"
+        mkdir -p "$DIR/agents/$agent_name"
+        cp -r "$agent_dir"* "$DIR/agents/$agent_name/"
     fi
 done
 
-echo "✅ All components installed successfully to $INSTALL_DIR"
+echo "✅ All components installed successfully to $DIR"

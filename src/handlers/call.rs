@@ -21,7 +21,7 @@ pub async fn handle(
 
 /// Handles an agent action
 pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String, data: JsonValue) {
-    // 1. Поиск инструмента
+    // tool search:
     let tool = match Agents::get(&name).await {
         Some(t) => t,
         _ => {
@@ -34,7 +34,7 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
         }
     };
 
-    // 2. Выполнение через HTTP (если указан порт)
+    // execution via HTTP (if a port is specified):
     if let Some(port) = &tool.port {
         let response = match Client::new()
             .post(fmt!("http://127.0.0.1:{port}/{action}"))
@@ -56,12 +56,12 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
         let mut response_stream = response.bytes_stream();
         while let Some(chunk) = response_stream.next().await {
             if let Ok(bytes) = chunk {
-                // Пересылаем сырые байты (которые уже должны быть SessionChunk в JSON)
+                // forward the raw bytes:
                 let _ = st.send(bytes);
             }
         }
     }
-    // 3. Выполнение через бинарный файл (spawn)
+    // or execution through a binary file:
     else {
         let exec_path = &tool.manifest.agent.exec;
 
@@ -103,7 +103,7 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
     }
 }
 
-/// Помощник для отправки типизированной ошибки через байтовый стрим
+/// An assistant for sending a typed error via a byte stream
 fn send_error(st: &StreamSender<Bytes>, friendly_msg: impl Into<String>, technical_err: String) {
     let chunk = SessionChunk::Error {
         message: friendly_msg.into(),

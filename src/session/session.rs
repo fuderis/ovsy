@@ -65,6 +65,7 @@ impl Session {
                     .ok();
             }
         }
+
         Ok(())
     }
 
@@ -131,6 +132,7 @@ impl Session {
         });
 
         fs::write(path, json::to_string_pretty(&report)?).await?;
+
         Ok(())
     }
 

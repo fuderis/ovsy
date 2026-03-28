@@ -40,28 +40,50 @@ impl ::std::default::Default for AgentsSettings {
     }
 }
 
-/// The LM's settings
+/// The ai-completions settings
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LMSSettings {
+pub struct CompletionsSettings {
     pub api_kind: ApiKind,
-    pub env_var: String,
-    pub server: String,
-    pub proxy: String,
+    pub env_var: Option<String>,
+    pub server: Option<String>,
+    pub proxy: Option<String>,
     pub model: String,
     pub max_tokens: i32,
     pub temperature: f32,
 }
 
-impl ::std::default::Default for LMSSettings {
+impl ::std::default::Default for CompletionsSettings {
     fn default() -> Self {
         Self {
             api_kind: ApiKind::LmStudio,
-            env_var: str!(),
-            server: str!(),
-            proxy: str!(),
+            env_var: None,
+            server: None,
+            proxy: None,
             model: str!("qwen/qwen3-vl-8b"),
             max_tokens: 8192,
             temperature: 0.4,
+        }
+    }
+}
+
+/// The ai-embeddings settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct EmbeddingsSettings {
+    pub api_kind: ApiKind,
+    pub env_var: Option<String>,
+    pub server: Option<String>,
+    pub proxy: Option<String>,
+    pub model: String,
+}
+
+impl ::std::default::Default for EmbeddingsSettings {
+    fn default() -> Self {
+        Self {
+            api_kind: ApiKind::LmStudio,
+            env_var: None,
+            server: None,
+            proxy: None,
+            model: str!("text-embedding-nomic-embed-text-v1.5@q8_0"),
         }
     }
 }
@@ -71,7 +93,8 @@ impl ::std::default::Default for LMSSettings {
 pub struct Settings {
     pub server: ServerSettings,
     pub agents: AgentsSettings,
-    pub lms: LMSSettings,
+    pub completions: CompletionsSettings,
+    pub embeddings: EmbeddingsSettings,
 }
 
 impl Settings {

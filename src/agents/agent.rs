@@ -5,8 +5,8 @@ use reqwest::Client;
 use std::{fs as stdfs, process::Stdio, time::SystemTime};
 use tokio::process::{Child, Command};
 
-/// Count of tries to catch server log file (1 failed try = 500ms wait)
-const TRACE_LOG_FILE_TRIES: usize = 10;
+/// Count of tries to catch server log file (1 failed try = 100ms wait)
+const TRACE_LOG_FILE_TRIES: usize = 100;
 
 /// The agent server /health response structure
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -196,7 +196,7 @@ impl Agent {
                 return Ok(());
             }
 
-            sleep(Duration::from_millis(500)).await;
+            sleep(Duration::from_millis(100)).await;
         }
 
         warn!("Agent '{agent_name}' did not provide log_file path via /health");

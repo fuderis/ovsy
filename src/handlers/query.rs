@@ -1,10 +1,10 @@
 use crate::{
     Session, SessionChunk,
-    agents::{AgentAction, DelegatedTasks, SummaryResults},
+    agents::{AgentAction, AgentTask, SummaryResults},
     cache::AgentCache,
     prelude::*,
 };
-use anylm::{Chunk, Schema};
+use anylm::{Chunk, Schema, Tool};
 use atoman::futures::{TryStreamExt, future};
 use reqwest::Client;
 
@@ -51,7 +51,15 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
 /// Delegates an user query into agents (recursive)
 async fn delegate_tasks_cycled(session: Arc<Mutex<Session>>, query: String) -> Result<()> {
     // delegating and completing tasks:
-    delegate_tasks(session.clone(), query).await?;
+    let (count, completed) = delegate_tasks(session.clone(), query).await?;
+
+    // wait for end all last task:
+    while completed.lock().await.len() < count {
+        if session.lock().await.is_closed() {
+            return Ok(());
+        }
+        sleep(Duration::from_millis(100)).await;
+    }
 
     // summarizing the results:
     summarize_results(session).await?;
@@ -60,12 +68,16 @@ async fn delegate_tasks_cycled(session: Arc<Mutex<Session>>, query: String) -> R
 }
 
 /// Delegates an user query into agents
-async fn delegate_tasks(session: Arc<Mutex<Session>>, query: String) -> Result<()> {
+async fn delegate_tasks(
+    session: Arc<Mutex<Session>>,
+    query: String,
+) -> Result<(usize, Arc<Mutex<HashSet<u32>>>)> {
     if session.lock().await.is_closed() {
         return Err(Error::ClientDisconnected.into());
     }
 
-    // caching logic:
+    // TODO: Load from cache
+    /* // caching logic:
     let query_words = AgentCache::to_words(&query);
     let mut cached = None;
 
@@ -76,90 +88,122 @@ async fn delegate_tasks(session: Arc<Mutex<Session>>, query: String) -> Result<(
                 break;
             }
         }
-    }
+    } */
+    // info!("Used cached data to handle {name} agent");
+    // DelegatedTasks::from_cached_agent(name, query)
 
-    let response: DelegatedTasks = if let Some(name) = cached {
-        info!("Used cached data to handle {name} agent");
-        DelegatedTasks::from_cached_agent(name, query)
-    } else {
-        // preparing the prompta for the scheduler:
-        let prompt = utils::read_prompt("delegate-query")
-            .await?
-            .replace("{AGENTS}", &Agents::list().await.join("\n"));
+    // preparing the prompt for the scheduler:
+    let prompt = utils::read_prompt("delegate-query").await?;
+    let history = session.lock().await.results().clone();
+    let mut request = utils::completions()
+        .await?
+        .assistant_message(history.into_iter().map(|item| item.into()).collect())
+        .system_message(vec![prompt.into()])
+        .user_message(vec![query.into()]);
 
-        let history = session.lock().await.results().clone();
-        let mut request = utils::completions()
-            .await?
-            .assistant_message(history.into_iter().map(|item| item.into()).collect())
-            .system_message(vec![prompt.into()])
-            .user_message(vec![query.into()])
-            .schema(
-                Schema::object("response format").required_property(
-                    "tasks",
-                    Schema::array("Agent task groups").items(
-                        Schema::array("Agent tasks group").items(
-                            Schema::object("The agent task")
-                                .required_property("name", Schema::string("Agent name"))
-                                .required_property("query", Schema::string("Query to agent"))
-                                .required_property(
-                                    "keys",
-                                    Schema::array("Keywords").items(Schema::string("")),
-                                ),
-                        ),
+    // add agent calls api:
+    for agent in Agents::get_all().await.iter() {
+        let agent = &agent.manifest.agent;
+        request.set_tool(Tool::new(
+            &agent.name,
+            &agent.description,
+            Schema::object("Task details")
+                .required_property("id", Schema::integer("Unique task identifier."))
+                .required_property(
+                    "query",
+                    Schema::string(
+                        "Detailed technical instructions for the agent. **Be specific**",
                     ),
+                )
+                .optional_property(
+                    "wait_for",
+                    Schema::integer("The ID of the prerequisite task."),
                 ),
-            );
+        ));
+    }
 
-        let mut resp = request.send().await?;
-        let mut buffer = str!();
-        while let Some(chunk) = resp.next().await {
-            if let Chunk::Text(text) = chunk? {
-                buffer.push_str(&text);
-            }
-        }
-        json::from_str(&buffer).map_err(|e| fmt!("Incorrect response format: {e}"))?
-    };
+    // send request to ai:
+    let mut response = request.send().await?;
 
-    // completing tasks:
-    if let Some(mut tasks) = response.tasks
-        && !tasks.is_empty()
-    {
-        // caching of simple queries:
-        if tasks.len() == 1 && tasks[0].len() == 1 {
-            let task = &mut tasks[0][0];
-            if let Some(keys) = task.keys.take()
-                && let Some(agent) = Agents::get(&task.name).await
-            {
-                agent.cache.write_keys(keys).await?;
-            }
-        }
+    let completed = Arc::new(Mutex::new(set![]));
+    let pending = Arc::new(Mutex::new(map![]));
+    let mut count = 0;
 
-        for group in tasks {
-            if session.lock().await.is_closed() {
-                break;
-            }
+    // read response stream:
+    while let Some(chunk) = response.next().await {
+        if let Chunk::Tool(name, json_str) = chunk? {
+            let mut task: AgentTask =
+                json::from_str(&json_str).map_err(|e| fmt!("Incorrect response format: {e}"))?;
+            task.name = name;
 
-            let handles: Vec<_> = group
-                .into_iter()
-                .map(|task| {
-                    let session = session.clone();
-                    async move {
-                        if let Err(e) = handle_agent(session.clone(), task.name, task.query).await {
-                            let mut guard = session.lock().await;
-                            guard
-                                .error(e.to_string(), "Agent failed to process task")
-                                .await
-                                .ok();
-                        }
-                    }
-                })
-                .collect();
+            let session_clone = session.clone();
+            let completed_clone = completed.clone();
+            let pending_clone = pending.clone();
 
-            future::join_all(handles).await;
+            tokio::spawn(async move {
+                handle_task(session_clone, completed_clone, pending_clone, task).await;
+            });
+
+            count += 1;
         }
     }
 
-    Ok(())
+    Ok((count, completed))
+}
+
+/// Handles the agent task
+async fn handle_task(
+    session: Arc<Mutex<Session>>,
+    completed: Arc<Mutex<HashSet<u32>>>,
+    pending: Arc<Mutex<HashMap<u32, Vec<AgentTask>>>>,
+    task: AgentTask,
+) {
+    // check for pending:
+    if let Some(id) = task.wait_for
+        && !completed.lock().await.contains(&id)
+    {
+        let mut guard = pending.lock().await;
+        guard.entry(id).or_default().push(task);
+        return;
+    }
+
+    // handle agent task:
+    match handle_agent(session.clone(), task.name, task.query).await {
+        Ok(_) => {
+            // mark as completed:
+            completed.lock().await.insert(task.id);
+
+            // handle next tasks:
+            if let Some(pends) = pending.lock().await.remove(&task.id) {
+                let mut handles = vec![];
+
+                for mut next_task in pends {
+                    next_task.wait_for.take();
+
+                    let session_clone = session.clone();
+                    let completed_clone = completed.clone();
+                    let pending_clone = pending.clone();
+
+                    handles.push(async move {
+                        handle_task(session_clone, completed_clone, pending_clone, next_task).await;
+                    });
+                }
+
+                future::join_all(handles).await;
+            }
+        }
+        Err(e) => {
+            // mark as completed:
+            completed.lock().await.insert(task.id);
+
+            // panic with error:
+            let mut guard = session.lock().await;
+            guard
+                .error(e.to_string(), "Agent failed to process task")
+                .await
+                .ok();
+        }
+    }
 }
 
 /// Handles agent query
@@ -276,8 +320,8 @@ async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
         .system_message(vec![utils::read_prompt("summary-results").await?.into()])
         .schema(
             Schema::object("summary")
-                .required_property("answer", Schema::string("Final answer"))
-                .required_property("context", Schema::string("Full context")),
+                .required_property("answer", Schema::string("A short, conversational message to the user"))
+                .required_property("context", Schema::string("A highly compressed technical summary of the facts, data, and actions taken")),
         )
         .send()
         .await?;

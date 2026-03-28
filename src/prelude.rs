@@ -15,7 +15,7 @@ pub use atoman::{
     StreamSender, Trace, error, info, lazy, trace, warn,
 };
 pub use chrono::{DateTime, Local, Utc};
-pub use macron::{Display, From, hash_map as map, path, re, str};
+pub use macron::{Display, From, hash_map as map, hash_set as set, path, re, str};
 
 // Basic:
 pub(crate) use std::{

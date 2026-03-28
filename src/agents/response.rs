@@ -3,28 +3,11 @@ use crate::prelude::*;
 /// The AI-agent query
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AgentTask {
+    #[serde(default)]
     pub name: String,
+    pub id: u32,
     pub query: String,
-    pub keys: Option<HashSet<String>>,
-}
-
-/// The delegated user query
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DelegatedTasks {
-    pub tasks: Option<Vec<Vec<AgentTask>>>,
-}
-
-impl DelegatedTasks {
-    /// Creates delegated tasks from cached agent
-    pub fn from_cached_agent(name: impl Into<String>, query: impl Into<String>) -> Self {
-        Self {
-            tasks: Some(vec![vec![AgentTask {
-                name: name.into(),
-                query: query.into(),
-                keys: None,
-            }]]),
-        }
-    }
+    pub wait_for: Option<u32>,
 }
 
 /// The AI-agent query
