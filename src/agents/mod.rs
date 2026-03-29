@@ -91,7 +91,7 @@ impl Agents {
         // run tool logs tracing:
         let timeout = {
             let cfg = &Settings::get().agents;
-            cfg.trace_timeout
+            cfg.trace_interval
         };
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(timeout));
@@ -114,7 +114,7 @@ impl Agents {
         // run tools check:
         let (timeout, autocheck) = {
             let cfg = &Settings::get().agents;
-            (cfg.check_timeout, cfg.autocheck)
+            (cfg.check_interval, cfg.autocheck)
         };
         tokio::spawn(async move {
             let mut interval = time::interval(Duration::from_millis(timeout));

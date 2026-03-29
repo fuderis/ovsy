@@ -1,5 +1,5 @@
 use super::Agents;
-use crate::{AgentCache, Manifest, prelude::*};
+use crate::{Manifest, prelude::*};
 use anylm::{Schema, Tool};
 use reqwest::Client;
 use std::{fs as stdfs, process::Stdio, time::SystemTime};
@@ -22,7 +22,6 @@ pub struct Agent {
     pub manifest: Config<Manifest>,
     pub examples: Vec<String>,
     pub tools: Vec<Tool>,
-    pub cache: AgentCache,
     pub last_update: Option<SystemTime>,
     pub trace: Option<Trace>,
     child: Arc<Mutex<Option<Child>>>,
@@ -142,9 +141,6 @@ impl Agent {
             (None, None)
         };
 
-        // read cache file:
-        let cache = AgentCache::read_or_write(&agent_dir).await?;
-
         // register tool instance:
         let mut agent = Agent {
             dir: agent_dir.to_path_buf(),
@@ -152,7 +148,6 @@ impl Agent {
             port,
             examples,
             tools,
-            cache,
             last_update,
             trace: None,
             child: Arc::new(Mutex::new(child)),

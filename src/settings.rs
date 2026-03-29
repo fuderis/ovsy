@@ -21,10 +21,9 @@ impl ::std::default::Default for ServerSettings {
 pub struct AgentsSettings {
     pub scan_dirs: Vec<PathBuf>,
     pub autocheck: bool,
-    pub check_timeout: u64,
-    pub trace_timeout: u64,
+    pub check_interval: u64,
+    pub trace_interval: u64,
     pub recurs_limit: usize,
-    pub caching: bool,
 }
 
 impl ::std::default::Default for AgentsSettings {
@@ -32,10 +31,25 @@ impl ::std::default::Default for AgentsSettings {
         Self {
             scan_dirs: vec![],
             autocheck: true,
-            check_timeout: 2000,
-            trace_timeout: 200,
+            check_interval: 2000,
+            trace_interval: 200,
             recurs_limit: 10,
-            caching: true,
+        }
+    }
+}
+
+/// The query caching settings
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct CacheSettings {
+    pub enable: bool,
+    pub coefficient: f32,
+}
+
+impl ::std::default::Default for CacheSettings {
+    fn default() -> Self {
+        Self {
+            enable: true,
+            coefficient: 0.95,
         }
     }
 }
@@ -93,6 +107,7 @@ impl ::std::default::Default for EmbeddingsSettings {
 pub struct Settings {
     pub server: ServerSettings,
     pub agents: AgentsSettings,
+    pub cache: CacheSettings,
     pub completions: CompletionsSettings,
     pub embeddings: EmbeddingsSettings,
 }

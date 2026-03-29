@@ -1,7 +1,6 @@
 use crate::{
     Session, SessionChunk,
     agents::{AgentAction, AgentTask, SummaryResults},
-    cache::AgentCache,
     prelude::*,
 };
 use anylm::{Chunk, Schema, Tool};
@@ -22,22 +21,28 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
 
     let body = Stream::body(move |tx| async move {
         // initialize session:
-        let session = Arc::new(Mutex::new(Session::new(session_id, query.clone(), tx)));
+        let session = Session::init(session_id, query.clone(), tx).await;
+        let session = Arc::new(Mutex::new(session));
 
         // starting the delegation cycle:
-        if let Err(e) = delegate_tasks_cycled(session.clone(), query).await {
-            error!("Chain broken: {e}");
-            // we inform the user about a critical error if the stream is still alive:
-            let mut guard = session.lock().await;
-            guard
-                .error(e.to_string(), "Critical error when executing the request")
-                .await
-                .ok();
-        }
+        match delegate_tasks_cycled(session.clone(), query).await {
+            // finalizing (writing to the database, caching, closing tags, etc.):
+            Ok(name) => {
+                let mut guard = session.lock().await;
+                guard.finalize_success(name).await.ok();
+            }
 
-        // finalizing (writing to the database, caching, closing tags, etc.):
-        let mut guard = session.lock().await;
-        guard.finalize_success().await.ok();
+            // we inform the user about a critical error if the stream is still alive:
+            Err(e) => {
+                error!("Chain broken: {e}");
+
+                let mut guard = session.lock().await;
+                guard
+                    .error(e.to_string(), "Critical error when executing the request")
+                    .await
+                    .ok();
+            }
+        }
     });
 
     (
@@ -49,14 +54,17 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
 }
 
 /// Delegates an user query into agents (recursive)
-async fn delegate_tasks_cycled(session: Arc<Mutex<Session>>, query: String) -> Result<()> {
+async fn delegate_tasks_cycled(
+    session: Arc<Mutex<Session>>,
+    query: String,
+) -> Result<Option<String>> {
     // delegating and completing tasks:
-    let (count, completed) = delegate_tasks(session.clone(), query).await?;
+    let (count, completed, agent_name) = delegate_tasks(session.clone(), query).await?;
 
     // wait for end all last task:
     while completed.lock().await.len() < count {
         if session.lock().await.is_closed() {
-            return Ok(());
+            return Ok(agent_name);
         }
         sleep(Duration::from_millis(100)).await;
     }
@@ -64,34 +72,65 @@ async fn delegate_tasks_cycled(session: Arc<Mutex<Session>>, query: String) -> R
     // summarizing the results:
     summarize_results(session).await?;
 
-    Ok(())
+    Ok(agent_name)
 }
 
 /// Delegates an user query into agents
 async fn delegate_tasks(
     session: Arc<Mutex<Session>>,
     query: String,
-) -> Result<(usize, Arc<Mutex<HashSet<u32>>>)> {
+) -> Result<(usize, Arc<Mutex<HashSet<u32>>>, Option<String>)> {
     if session.lock().await.is_closed() {
         return Err(Error::ClientDisconnected.into());
     }
 
-    // TODO: Load from cache
-    /* // caching logic:
-    let query_words = AgentCache::to_words(&query);
-    let mut cached = None;
+    let completed = Arc::new(Mutex::new(set![]));
+    let pending = Arc::new(Mutex::new(map![]));
 
-    if Settings::get().agents.caching {
-        for agent in Agents::get_all().await.iter() {
-            if agent.cache.compare(&query_words[..]).await.unwrap_or(false) {
-                cached = Some(agent.manifest.agent.name.clone());
-                break;
-            }
+    // the caching logic's (read):
+    if Settings::get().cache.enable {
+        // converting query into vector
+        // and see for relevant queries in database:
+        if let Some(agent_name) = session.lock().await.load_cache().await? {
+            info!("🗃️  Using cached data for handle with {agent_name} agent..");
+
+            // spawn agent task:
+            let session_clone = session.clone();
+            let completed_clone = completed.clone();
+            let name = agent_name.clone();
+            tokio::spawn(async move {
+                handle_task(
+                    session_clone,
+                    completed_clone,
+                    pending,
+                    AgentTask {
+                        name,
+                        id: 1,
+                        query: query,
+                        wait_for: None,
+                    },
+                )
+                .await;
+            });
+
+            return Ok((1, completed, Some(agent_name)));
         }
-    } */
-    // info!("Used cached data to handle {name} agent");
-    // DelegatedTasks::from_cached_agent(name, query)
+    }
 
+    // or delegate with AI using:
+    let (count, single) =
+        delegate_tasks_with_ai(session.clone(), completed.clone(), pending.clone(), query).await?;
+
+    Ok((count, completed, single))
+}
+
+/// Delegates tasks to agents with AI using
+async fn delegate_tasks_with_ai(
+    session: Arc<Mutex<Session>>,
+    completed: Arc<Mutex<HashSet<u32>>>,
+    pending: Arc<Mutex<HashMap<u32, Vec<AgentTask>>>>,
+    query: String,
+) -> Result<(usize, Option<String>)> {
     // preparing the prompt for the scheduler:
     let prompt = utils::read_prompt("delegate-query").await?;
     let history = session.lock().await.results().clone();
@@ -124,14 +163,17 @@ async fn delegate_tasks(
 
     // send request to ai:
     let mut response = request.send().await?;
-
-    let completed = Arc::new(Mutex::new(set![]));
-    let pending = Arc::new(Mutex::new(map![]));
+    let mut single_agent = None;
     let mut count = 0;
 
     // read response stream:
     while let Some(chunk) = response.next().await {
         if let Chunk::Tool(name, json_str) = chunk? {
+            // for caching query:
+            if count == 0 {
+                single_agent = Some(name.clone());
+            }
+
             let mut task: AgentTask =
                 json::from_str(&json_str).map_err(|e| fmt!("Incorrect response format: {e}"))?;
             task.name = name;
@@ -140,6 +182,7 @@ async fn delegate_tasks(
             let completed_clone = completed.clone();
             let pending_clone = pending.clone();
 
+            // spawn agent task:
             tokio::spawn(async move {
                 handle_task(session_clone, completed_clone, pending_clone, task).await;
             });
@@ -148,7 +191,7 @@ async fn delegate_tasks(
         }
     }
 
-    Ok((count, completed))
+    Ok((count, single_agent))
 }
 
 /// Handles the agent task

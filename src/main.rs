@@ -10,6 +10,7 @@ use tokio::{
 async fn main() -> Result<()> {
     Logger::init(app_data().join("logs"), 20)?;
     Settings::init(app_data().join("settings.toml"))?;
+    Database::connect(app_data().join("database")).await?;
 
     let port = Settings::get().server.port;
 

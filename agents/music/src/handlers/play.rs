@@ -21,6 +21,11 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         data.genre.take();
     }
 
+    if data.song.is_some() && data.artist.is_none() {
+        let song = data.song.take().unwrap();
+        data.artist = Some(song);
+    }
+
     let noplay = data.noplay;
     let name = [&data.genre, &data.artist, &data.album, &data.song]
         .iter()

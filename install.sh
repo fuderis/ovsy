@@ -6,12 +6,15 @@ PORT=7878              # Ovsy server port
 DIR="${1:-/opt/ovsy}"  # installation dir
 
 # looking for a PID listening on a port:
-PID=$(lsof -t -i:$PORT)
+PID=$(lsof -t -i:$PORT || true)
+
 if [ -n "$PID" ]; then
     echo "💀 Cleaning up port $PORT (killing PID $PID)..."
-    # soft kill the Ovsy server:
-    kill $PID 2>/dev/null
+    # soft terminating process:
+    kill $PID
     sleep 0.5
+else
+    echo "ℹ️ Port $PORT is already free. Moving on..."
 fi
 
 echo "🚀 Starting Ovsy build & install..."

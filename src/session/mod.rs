@@ -1,3 +1,6 @@
+pub mod cached;
+pub use cached::CachedQuery;
+
 pub mod chunk;
 pub use chunk::SessionChunk;
 

@@ -67,3 +67,18 @@ pub async fn embeddings() -> Result<Embeddings> {
 
     Ok(request)
 }
+
+/// Converts text to embeddings vector
+pub async fn to_embeddings(s: impl Into<String>) -> Result<Option<Vec<f32>>> {
+    let response = embeddings().await?.input(s).send().await?;
+    let data = response.data;
+
+    // read first vector (because we only sent 1 line):
+    let v = if let Some(first) = data.into_iter().next() {
+        Some(first.embedding)
+    } else {
+        None
+    };
+
+    Ok(v)
+}

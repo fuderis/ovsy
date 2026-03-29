@@ -11,6 +11,12 @@ pub enum Error {
     #[from]
     Io(std::io::Error),
 
+    #[display = "Database connection is not initialized"]
+    DatabaseConnect,
+
+    #[display = "Failed to generate query embeddings"]
+    Embeddings,
+
     #[display = "Failed to read tools dir {0:?}: {1}"]
     ToolsDirRead(PathBuf, std::io::Error),
     #[display = "Failed to read manifest {0:?}: {1}"]

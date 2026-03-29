@@ -1,28 +1,89 @@
-use super::SessionChunk;
+use super::*;
 use crate::prelude::*;
 use tokio::fs;
+
+const CACHE_TABLE: &'static str = "cache";
 
 /// The user session manager
 pub struct Session {
     session_id: String,
     query: String,
+    query_vector: Option<Vec<f32>>,
     context: Vec<String>,
     start_time: Instant,
     tx: StreamSender<Bytes>,
     is_thinking: bool,
+    cached: bool,
 }
 
 impl Session {
-    /// Creates a new session by user id
-    pub fn new(session_id: String, query: String, tx: StreamSender<Bytes>) -> Self {
+    /// Creates a new session and generates the query embedding inside!
+    pub async fn init(session_id: String, query: String, tx: StreamSender<Bytes>) -> Self {
+        // converting query to embeddings:
+        let query_vector = utils::to_embeddings(&query).await.ok().take().unwrap();
+
         Self {
             session_id,
             query,
+            query_vector,
             context: Vec::new(),
             start_time: Instant::now(),
             tx,
             is_thinking: false,
+            cached: false,
         }
+    }
+
+    /// Fast cache lookup. Generates embeddings and searches LanceDB.
+    pub async fn load_cache(&self) -> Result<Option<String>> {
+        if !Settings::get().cache.enable {
+            return Ok(None);
+        }
+
+        if self.query_vector.is_none() {
+            return Ok(None);
+        }
+
+        info!("[Cache] Checking cache for session: {}", self.session_id);
+        let coef = Settings::get().cache.coefficient;
+
+        // Ищем до 10 кандидатов
+        let cached_results: Option<Vec<Record<CachedQuery>>> = Database::read(
+            CACHE_TABLE,
+            self.query_vector.as_ref().unwrap().clone(),
+            10,
+            coef,
+        )
+        .await?;
+
+        let Some(records) = cached_results else {
+            info!("[Cache Miss] No similar queries found in database.");
+            return Ok(None);
+        };
+
+        info!("[Cache] Found {} potential cache candidates", records.len());
+
+        for record in records {
+            let agent_name = &record.data.agent_name;
+
+            if Agents::get(agent_name).await.is_some() {
+                info!(
+                    "[Cache Hit] Valid cache found! Agent '{}' is active.",
+                    agent_name
+                );
+                return Ok(Some(agent_name.clone()));
+            } else {
+                info!(
+                    "[Cache Stale] Agent '{}' no longer exists. Deleting record #{}",
+                    agent_name, record.id
+                );
+                Database::delete(CACHE_TABLE, record.id).await.ok();
+            }
+        }
+
+        info!("[Cache] All found candidates belonged to non-existent agents.");
+
+        Ok(None)
     }
 
     /// The main method of processing a chunk
@@ -102,23 +163,37 @@ impl Session {
         let _ = self.tx.send(Bytes::copy_from_slice(data.as_bytes()));
     }
 
-    /// Saving results to RAG DB
-    pub async fn finalize_success(&mut self) -> Result<()> {
+    /// Finalizes the success and saves data without extra neural network calls!
+    pub async fn finalize_success(&mut self, agent_name: Option<String>) -> Result<()> {
         if self.is_thinking {
             self.close_thinking();
         }
-        info!("Saving session {} to RAG DB...", self.session_id);
 
-        // TODO: Logic for RAG DB
+        // caching results:
+        if let Some(name) = agent_name
+            && let Some(vector) = self.query_vector.take()
+            && Settings::get().cache.enable
+            && !self.cached
+        {
+            info!("[Cache] Saving new successful query to cache DB...");
+
+            let cached_query = CachedQuery::new(self.query.len(), name);
+
+            Database::write(CACHE_TABLE, vector, cached_query).await?;
+            info!("[Cache] Cached data successfully saved to LanceDB!");
+        }
 
         Ok(())
     }
 
     /// Saving the error to a file
     async fn save_error(&self, error_detail: &str) -> Result<()> {
-        let path = app_data()
-            .join("errors")
-            .join(fmt!("{}.json", self.session_id));
+        // generating file name:
+        let timestamp = Utc::now().format("%Y-%m-%d_%H-%M-%S").to_string();
+        let file_name = fmt!("{}__{}.json", timestamp, self.session_id);
+
+        let path = app_data().join("errors").join(file_name);
+
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent).await?;
         }

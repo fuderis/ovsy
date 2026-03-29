@@ -5,6 +5,8 @@ pub mod prelude;
 use prelude::{PathBuf, path};
 pub mod settings;
 pub use settings::Settings;
+pub mod database;
+pub use database::{Database, Record};
 pub mod utils;
 
 pub mod manifest;
@@ -12,10 +14,8 @@ pub use manifest::Manifest;
 pub mod agents;
 pub use agents::{Agent, Agents};
 
-pub mod cache;
-pub use cache::{AgentCache, CachedKeys};
 pub mod session;
-pub use session::{Session, SessionChunk};
+pub use session::{CachedQuery, Session, SessionChunk};
 
 pub mod handlers;
 
