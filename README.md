@@ -1,6 +1,6 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> Version: 0.6.3 BETA-TESTING
+> Version: 0.6.4 BETA-TESTING
 
 ![Header](/header.png)
 
@@ -58,7 +58,7 @@ On Windows `~/` is located in `C:\Users\UserName`.
 
 ```bash
 git clone https://github.com/fuderis/ovsy.git && cd ovsy
-bash install.sh
+bash build.sh
 ```
 By default, it will be installed in the `/opt/ovsy` directory (you can change it in the `INSTALL_DIR` constant in the `install.sh` file)
 

@@ -1,11 +1,14 @@
 pub use macron;
 
 pub mod error;
-pub use error::{Result, StdResult};
+pub use error::{Error, Result, StdResult};
 pub mod prelude;
 
 pub mod chunk;
 pub use chunk::SessionChunk;
+
+pub mod session;
+pub use session::Session;
 
 use crate::prelude::*;
 use axum::{

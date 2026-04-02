@@ -1,5 +1,6 @@
 #![allow(unused_imports)]
-pub use crate::{Result, SessionChunk, StdResult};
+pub(crate) use crate::Error;
+pub use crate::{Result, Session, SessionChunk, StdResult};
 pub use axum::{
     Json,
     body::Body,
@@ -21,7 +22,8 @@ pub use tokio::{
 
 // Utils:
 pub use atoman::{
-    Bytes, Config, Flag, Lazy, Logger, State, StateGuard, error, info, lazy, trace, warn,
+    Bytes, Config, Flag, Lazy, Logger, State, StateGuard, Stream, StreamReader, StreamSender,
+    error, info, lazy, trace, warn,
 };
 pub use chrono::{DateTime, Local, Utc};
 pub use macron::{Display, From, hash_map as map, hash_set as set, path, re, str};

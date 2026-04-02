@@ -46,7 +46,7 @@ for agent_dir in agents/*/; do
     # determine build logic based on files present in the agent's folder:
     # Rust
     if [ -f "${agent_dir}Cargo.toml" ]; then
-        echo "   Detected Rust agent. Compiling..."
+        echo "   Detected Rust language. Compiling..."
         
         # build inside the agent directory:
         (cd "$agent_dir" && cargo build --release)
@@ -71,7 +71,7 @@ for agent_dir in agents/*/; do
 
     # Python
     elif [ -f "${agent_dir}requirements.txt" ]; then
-        echo "   Detected Python agent. Deploying sources..."
+        echo "   Detected Python language. Deploying sources..."
         mkdir -p "$DIR/agents/$agent_name"
         cp -r "$agent_dir"* "$DIR/agents/$agent_name/"
         

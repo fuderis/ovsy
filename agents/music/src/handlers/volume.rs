@@ -11,36 +11,57 @@ pub struct QueryData {
 
 /// Api '/volume' handler
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
-    let vol = if !data.force {
-        match get_volume().await {
-            Ok(vol) => vol as i32 + data.delta,
+    // creating HTTP stream body:
+    let body = Stream::body(move |tx| async move {
+        let mut session = Session::new(tx);
+
+        session.think("Calculating target volume...").await.ok();
+
+        let vol = if !data.force {
+            match get_volume().await {
+                Ok(vol) => vol as i32 + data.delta,
+                Err(e) => {
+                    error!("Failed to get volume: {e}");
+                    session
+                        .error(e.to_string(), "Failed to get current volume")
+                        .await
+                        .ok();
+                    return;
+                }
+            }
+        } else {
+            data.delta
+        }
+        .clamp(0, 100) as u32;
+
+        session
+            .think(fmt!("Setting the volume to {vol}%..."))
+            .await
+            .ok();
+        info!("Volume set to {vol}%");
+
+        match set_volume(vol).await {
+            Ok(_) => {
+                let success_msg = fmt!("Volume set to {vol}%");
+                session.info(success_msg).await.ok();
+            }
             Err(e) => {
-                error!("Failed to get volume: {e}");
-                return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response();
+                error!("Failed to set volume: {e}");
+                session
+                    .error(e.to_string(), "Failed to set volume")
+                    .await
+                    .ok();
             }
         }
-    } else {
-        data.delta
-    }
-    .clamp(0, 100) as u32;
+    });
 
-    info!("Set volume to {vol}%");
-    match set_volume(vol).await {
-        Ok(_) => {
-            let mut headers = HeaderMap::new();
-            headers.insert(header::CONTENT_TYPE, "text/plain".parse().unwrap());
-            (
-                StatusCode::OK,
-                headers,
-                Body::new(fmt!("[Success] Set volume to {vol}%")),
-            )
-                .into_response()
-        }
-        Err(e) => {
-            error!("Failed to set volume: {e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response()
-        }
-    }
+    // send stream to client:
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        Body::from_stream(body),
+    )
+        .into_response()
 }
 
 /// Sets system volume

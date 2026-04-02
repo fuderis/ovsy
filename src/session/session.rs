@@ -4,6 +4,13 @@ use tokio::fs;
 
 const CACHE_TABLE: &'static str = "cache";
 
+// Formatting:
+const THINKING_COLOR: &'static str = "\x1b[36m"; // Cyan
+const INFO_COLOR: &'static str = "\x1b[0m"; // White (default)
+const ANSWER_COLOR: &'static str = "\x1b[92m"; // Green
+const ERROR_COLOR: &'static str = "\x1b[31;1m"; // Red
+const RESET: &'static str = "\x1b[0m"; // Default
+
 /// The user session manager
 pub struct Session {
     session_id: String,
@@ -13,7 +20,7 @@ pub struct Session {
     start_time: Instant,
     tx: StreamSender<Bytes>,
     is_thinking: bool,
-    cached: bool,
+    already_cached: bool,
 }
 
 impl Session {
@@ -30,12 +37,12 @@ impl Session {
             start_time: Instant::now(),
             tx,
             is_thinking: false,
-            cached: false,
+            already_cached: false,
         }
     }
 
     /// Fast cache lookup. Generates embeddings and searches LanceDB.
-    pub async fn load_cache(&self) -> Result<Option<String>> {
+    pub async fn load_cache(&mut self) -> Result<Option<String>> {
         if !Settings::get().cache.enable {
             return Ok(None);
         }
@@ -47,7 +54,7 @@ impl Session {
         info!("[Cache] Checking cache for session: {}", self.session_id);
         let coef = Settings::get().cache.coefficient;
 
-        // Ищем до 10 кандидатов
+        // looking for up to 10 candidates:
         let cached_results: Option<Vec<Record<CachedQuery>>> = Database::read(
             CACHE_TABLE,
             self.query_vector.as_ref().unwrap().clone(),
@@ -57,7 +64,7 @@ impl Session {
         .await?;
 
         let Some(records) = cached_results else {
-            info!("[Cache Miss] No similar queries found in database.");
+            info!("[Cache] No similar queries found in database.");
             return Ok(None);
         };
 
@@ -68,13 +75,14 @@ impl Session {
 
             if Agents::get(agent_name).await.is_some() {
                 info!(
-                    "[Cache Hit] Valid cache found! Agent '{}' is active.",
+                    "[Cache] Valid cache found! Agent '{}' is active.",
                     agent_name
                 );
+                self.already_cached = true;
                 return Ok(Some(agent_name.clone()));
             } else {
                 info!(
-                    "[Cache Stale] Agent '{}' no longer exists. Deleting record #{}",
+                    "[Cache] Agent '{}' no longer exists. Deleting record #{}",
                     agent_name, record.id
                 );
                 Database::delete(CACHE_TABLE, record.id).await.ok();
@@ -91,16 +99,24 @@ impl Session {
         match chunk {
             SessionChunk::Thinking { thinking } => {
                 if !self.is_thinking {
-                    self.send_raw("\x1b[34;1m[thinking]\x1b[0m\x1b[34m\n");
+                    self.send_raw(&fmt!(
+                        "{THINKING_COLOR}\x1b[1m[thinking]{RESET}{THINKING_COLOR}"
+                    ));
                     self.is_thinking = true;
                 }
 
                 let formatted = thinking
-                    .replace(" Handling", "\x1b[1m Handling\x1b[0;34m")
-                    .replace(" Processing", "\x1b[1m Processing\x1b[0;34m");
+                    .replace(
+                        " Handling",
+                        &fmt!("\x1b[1m Handling\x1b[0m{THINKING_COLOR}"),
+                    )
+                    .replace(
+                        " Processing",
+                        &fmt!("\x1b[1m Processing\x1b[0m{THINKING_COLOR}"),
+                    );
 
                 self.tx
-                    .send(Bytes::from(fmt!("\x1b[34m{formatted}\x1b[0m")))
+                    .send(Bytes::from(fmt!("\n{THINKING_COLOR}{formatted}{RESET}")))
                     .ok();
                 self.context.push(thinking);
             }
@@ -108,13 +124,13 @@ impl Session {
             SessionChunk::Answer { answer } => {
                 self.close_thinking();
                 self.tx
-                    .send(Bytes::from(fmt!("\x1b[97m{answer}\x1b[0m")))
+                    .send(Bytes::from(fmt!("\n{ANSWER_COLOR}{answer}{RESET}")))
                     .ok();
             }
 
             SessionChunk::Error { error, message } => {
                 self.close_thinking();
-                self.send_raw(&fmt!("\n\x1b[31;1m❌ Error: {message}\x1b[0m\n"));
+                self.send_raw(&fmt!("\n{ERROR_COLOR}❌ Error: {message}: {error}{RESET}"));
                 self.save_error(&error).await.ok();
                 return Err(Error::ExecutionStop(Box::new(error.into())).into());
             }
@@ -122,7 +138,7 @@ impl Session {
             SessionChunk::Info { info } => {
                 self.close_thinking();
                 self.tx
-                    .send(Bytes::from(fmt!("\x1b[92m{info}\x1b[0m")))
+                    .send(Bytes::from(fmt!("\n{INFO_COLOR}{info}{RESET}")))
                     .ok();
             }
         }
@@ -133,7 +149,7 @@ impl Session {
     /// Closes the thinking block
     fn close_thinking(&mut self) {
         if self.is_thinking {
-            self.send_raw("\n\x1b[34;1m[/thinking]\x1b[0m\x1b[34m\n\n");
+            self.send_raw(&fmt!("\n{THINKING_COLOR}\x1b[1m[/thinking]{RESET}\n"));
             self.is_thinking = false;
         }
     }
@@ -170,17 +186,17 @@ impl Session {
         }
 
         // caching results:
-        if let Some(name) = agent_name
-            && let Some(vector) = self.query_vector.take()
-            && Settings::get().cache.enable
-            && !self.cached
-        {
-            info!("[Cache] Saving new successful query to cache DB...");
+        if !self.already_cached && Settings::get().cache.enable {
+            if let Some(name) = agent_name
+                && let Some(vector) = self.query_vector.take()
+            {
+                info!("[Cache] Saving new successful query to cache...");
 
-            let cached_query = CachedQuery::new(self.query.len(), name);
+                let cached_query = CachedQuery::new(self.query.len(), name);
 
-            Database::write(CACHE_TABLE, vector, cached_query).await?;
-            info!("[Cache] Cached data successfully saved to LanceDB!");
+                Database::write(CACHE_TABLE, vector, cached_query).await?;
+                info!("[Cache] Cached data successfully saved to LanceDB!");
+            }
         }
 
         Ok(())

@@ -3,7 +3,7 @@ use std::process::Stdio;
 use tokio::{fs, process::Command};
 
 /// The request POST data
-#[derive(Deserialize)]
+#[derive(Debug, Deserialize)]
 pub struct QueryData {
     genre: Option<String>,
     artist: Option<String>,
@@ -15,6 +15,7 @@ pub struct QueryData {
 
 /// Api '/music' handler
 pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
+    // preparing data:
     if data.genre.is_some()
         && (data.artist.is_some() || data.album.is_some() || data.song.is_some())
     {
@@ -33,108 +34,130 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         .collect::<Vec<_>>()
         .join(" / ");
 
-    // check name:
-    if name.trim().is_empty() {
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            fmt!("An empty request was received"),
-        )
-            .into_response();
-    }
+    // creating HTTP stream body:
+    let body = Stream::body(move |tx| async move {
+        let mut session = Session::new(tx);
 
-    // search playlist path:
-    info!("Search for music '{name}'..");
-    let playlists = match search_playlists(data, name).await {
-        Ok(r) => {
-            info!("Found files: {r:?}");
-            r
+        // validating:
+        if name.trim().is_empty() {
+            session
+                .error("An empty request was received", "Empty request")
+                .await
+                .ok();
+            return;
         }
-        Err(e) => {
-            error!("{e}");
-            return (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response();
-        }
-    };
 
-    // return results without playing:
-    if noplay {
-        return (
-            StatusCode::OK,
-            HeaderMap::from_iter(map! {
-                header::CONTENT_TYPE => "text/plain".parse().unwrap()
-            }),
-            Body::new(fmt!(
+        session
+            .think(fmt!("Searching for music '{name}'.."))
+            .await
+            .ok();
+        info!("Search for music '{name}'..");
+
+        // searching files:
+        let playlists = match search_playlists(&data, &name).await {
+            Ok(r) => {
+                info!("Found files: {r:?}");
+                r
+            }
+            Err(e) => {
+                error!("{e}");
+                session
+                    .error(e.to_string(), "Search music error")
+                    .await
+                    .ok();
+                return;
+            }
+        };
+
+        // no-play mode:
+        if noplay {
+            let found_msg = fmt!(
                 "Found music: {}",
                 json::to_string_pretty(&playlists).unwrap()
-            )),
-        )
-            .into_response();
-    }
+            );
+            session.info(found_msg).await.ok();
+            return;
+        }
 
-    // close audacious processes:
-    #[cfg(unix)]
-    {
-        close_audacious().await.ok();
-    }
+        // stop audacious app (Linux):
+        #[cfg(unix)]
+        {
+            session
+                .think("Stopping previous audio player instances...")
+                .await
+                .ok();
+            close_audacious().await.ok();
+        }
 
-    // create playlist file & run it:
-    match create_playlist(&playlists, path!("$/playlist.m3u")).await {
-        Ok(playlist_file) => {
-            info!("Trying to play music..");
+        session
+            .think("Creating playlist and starting playback...")
+            .await
+            .ok();
 
-            // open playlist file:
-            let status = {
-                #[cfg(unix)]
-                {
-                    Command::new("sh")
-                        .arg("-c")
-                        .arg(fmt!(
-                            "setsid xdg-open '{}' > /dev/null 2>&1 &",
-                            playlist_file.display()
-                        ))
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                }
-                #[cfg(windows)]
-                {
-                    Command::new("cmd")
-                        .args(["/C", "start", "", &str!(playlist_file.to_string_lossy())])
-                        .stdout(Stdio::null())
-                        .stderr(Stdio::null())
-                        .spawn()
-                }
-            };
+        // create playlist & run it:
+        match create_playlist(&playlists, path!("$/playlist.m3u")).await {
+            Ok(playlist_file) => {
+                info!("Trying to play music..");
 
-            match status {
-                Ok(_) => {
-                    info!("Play music success");
-                    (
-                        StatusCode::OK,
-                        HeaderMap::from_iter(map! {
-                            header::CONTENT_TYPE => "text/plain".parse().unwrap()
-                        }),
-                        Body::new(
-                            SessionChunk::think(fmt!("Playing music dirs: {playlists:#?}"))
-                                .to_string(),
-                        ),
-                    )
-                        .into_response()
-                }
-                Err(e) => {
-                    error!("{e}");
-                    (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response()
+                let status = {
+                    #[cfg(unix)]
+                    {
+                        Command::new("sh")
+                            .arg("-c")
+                            .arg(fmt!(
+                                "setsid xdg-open '{}' > /dev/null 2>&1 &",
+                                playlist_file.display()
+                            ))
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                    }
+                    #[cfg(windows)]
+                    {
+                        Command::new("cmd")
+                            .args(["/C", "start", "", &str!(playlist_file.to_string_lossy())])
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn()
+                    }
+                };
+
+                match status {
+                    Ok(_) => {
+                        info!("Play music success");
+                        let success_msg = fmt!("Playing music dirs: {playlists:#?}");
+                        session.info(success_msg).await.ok();
+                    }
+                    Err(e) => {
+                        error!("{e}");
+                        session
+                            .error(e.to_string(), "Failed to start music player")
+                            .await
+                            .ok();
+                    }
                 }
             }
+            Err(e) => {
+                error!("{e}");
+                session
+                    .error(e.to_string(), "Failed to create playlist file")
+                    .await
+                    .ok();
+            }
         }
-        Err(e) => {
-            error!("{e}");
-            (StatusCode::INTERNAL_SERVER_ERROR, fmt!("[Error] {e}")).into_response()
-        }
-    }
+    });
+
+    // send stream to client:
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        Body::from_stream(body),
+    )
+        .into_response()
 }
 
 /// Smart search playlists
-async fn search_playlists(data: QueryData, name: String) -> Result<Vec<PathBuf>> {
+async fn search_playlists(data: &QueryData, name: &str) -> Result<Vec<PathBuf>> {
     let cfg = &Settings::get().music;
     let mut search_dirs = vec![cfg.scan_dirs.clone()];
     let stages = [&data.genre, &data.artist, &data.album];
@@ -148,7 +171,7 @@ async fn search_playlists(data: QueryData, name: String) -> Result<Vec<PathBuf>>
             if !results.is_empty() {
                 search_dirs.push(results);
             } else {
-                return Err(Error::PlaylistNotFound(name).into());
+                return Err(Error::PlaylistNotFound(name.into()).into());
             }
         } else {
             let new_level = utils::flatten_subdirs(search_dirs.last().unwrap())
@@ -164,7 +187,7 @@ async fn search_playlists(data: QueryData, name: String) -> Result<Vec<PathBuf>>
         if !results.is_empty() {
             results
         } else {
-            return Err(Error::PlaylistNotFound(name).into());
+            return Err(Error::PlaylistNotFound(name.into()).into());
         }
     } else if data.genre.is_some() && data.artist.is_none() {
         search_dirs.get(search_dirs.len() - 2).unwrap().clone()

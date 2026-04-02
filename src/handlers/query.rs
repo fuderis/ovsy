@@ -1,6 +1,6 @@
 use crate::{
     Session, SessionChunk,
-    agents::{AgentAction, AgentTask, SummaryResults},
+    agents::{AgentAction, AgentTask, FinalResponse},
     prelude::*,
 };
 use anylm::{Chunk, Schema, Tool};
@@ -276,7 +276,7 @@ async fn handle_query(
     session
         .lock()
         .await
-        .think(fmt!(" Processing ({agent}): {query}\n"))
+        .think(fmt!(" Processing ({agent}): {query}"))
         .await?;
 
     let prompt = utils::read_prompt("handle-query")
@@ -322,7 +322,7 @@ async fn handle_action(
         let mut guard = session.lock().await;
         let data_str = json::to_string(&data).unwrap_or_default();
         guard
-            .think(fmt!(" Handling ({agent}): /{action} {data_str}\n"))
+            .think(fmt!(" Handling ({agent}): /{action} {data_str}"))
             .await?;
     }
 
@@ -360,11 +360,10 @@ async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
             utils::read_prompt("assistant-character").await?.into(),
         ])
         .assistant_message(vec![history.join("\n").into()])
-        .system_message(vec![utils::read_prompt("summary-results").await?.into()])
+        .system_message(vec![utils::read_prompt("final-response").await?.into()])
         .schema(
-            Schema::object("summary")
-                .required_property("answer", Schema::string("A short, conversational message to the user"))
-                .required_property("context", Schema::string("A highly compressed technical summary of the facts, data, and actions taken")),
+            Schema::object("Response")
+                .required_property("answer", Schema::string("A short answer to user")),
         )
         .send()
         .await?;
@@ -376,14 +375,14 @@ async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
         }
     }
 
-    let SummaryResults { answer, .. } = json::from_str(&buffer)?;
+    let FinalResponse { answer } = json::from_str(&buffer)?;
 
     // output of the final answer directly:
     let mut guard = session.lock().await;
     let dur = guard.exec_time() as f64 / 1000.0;
-    guard.answer(fmt!("{answer}")).await?;
+    guard.answer(fmt!("\n{answer}")).await?;
     guard
-        .info(&fmt!("\n\n[EOF] Execution time: {dur} sec."))
+        .info(&fmt!("\n[EOF] Execution time: {dur} sec."))
         .await?;
 
     Ok(())

@@ -17,9 +17,14 @@ pub struct AgentAction {
     pub data: JsonValue,
 }
 
-/// The summarize response
+/// The final AI response to user
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct SummaryResults {
+pub struct FinalResponse {
     pub answer: String,
-    pub context: String,
 }
+
+// /// The summarize response
+// #[derive(Clone, Debug, Serialize, Deserialize)]
+// pub struct SummaryResults {
+//     pub context: String,
+// }

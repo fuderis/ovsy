@@ -16,67 +16,72 @@ pub struct QueryData {
 pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
     let QueryData { mode, timeout } = data;
 
-    match defer_power(mode.clone(), timeout).await {
-        Ok(_) => {
-            info!("Deferred {mode} for {timeout} seconds..");
+    // creating HTTP stream body:
+    let body = Stream::body(move |tx| async move {
+        let mut session = Session::new(tx);
 
-            (
-                StatusCode::OK,
-                HeaderMap::from_iter(map! {
-                    header::CONTENT_TYPE => "text/plain".parse().unwrap()
-                }),
-                Body::new(fmt!(
-                    "[Success] Power operation {mode} will be executed in {timeout} seconds.."
-                )),
-            )
+        session
+            .think(fmt!("Preparing power operation '{mode}'.."))
+            .await
+            .ok();
+
+        // cancel old power action:
+        if DEFERRED_POWER_ACTION.lock().await.take().is_some() {
+            session
+                .think("Canceling previous pending power action...")
+                .await
+                .ok();
+            sleep(Duration::from_millis(2000)).await;
         }
-        Err(e) => {
-            error!("{e}");
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                HeaderMap::from_iter(map! {
-                    header::CONTENT_TYPE => "text/plain".parse().unwrap()
-                }),
-                Body::new(fmt!("[Error] {e}")),
-            )
-        }
-    }
-    .into_response()
-}
 
-/// Deferres power operation
-async fn defer_power(mode: PowerMode, timeout: u64) -> Result<()> {
-    // cancel old power action:
-    if let Some(_) = DEFERRED_POWER_ACTION.lock().await.take() {
-        sleep(Duration::from_millis(2000)).await;
-    }
-    // set new power action:
-    let _ = DEFERRED_POWER_ACTION.lock().await.insert(mode.clone());
+        // set new power action:
+        let _ = DEFERRED_POWER_ACTION.lock().await.insert(mode.clone());
+        info!("Deferred {mode} for {timeout} seconds..");
 
-    tokio::spawn(async move {
-        let mut interval = interval(Duration::from_secs(1));
-        let start_time = Instant::now();
-        let end_time = Duration::from_secs(timeout);
+        // streaming the successful response BEFORE the countdown starts and end the stream:
+        session
+            .info(fmt!(
+                "Power operation {mode} scheduled in {timeout} seconds."
+            ))
+            .await
+            .ok();
 
-        loop {
-            interval.tick().await;
+        // generating a background task in Tokio runtime:
+        // (it will continue to live after this stream ends..)
+        tokio::spawn(async move {
+            let mut interval = interval(Duration::from_secs(1));
+            let start_time = Instant::now();
+            let end_time = Duration::from_secs(timeout);
 
-            // check for canceled:
-            if Some(&mode) != DEFERRED_POWER_ACTION.lock().await.as_ref() {
-                return;
+            loop {
+                interval.tick().await;
+
+                // check for canceled (если прилетит новый запрос на /power):
+                if Some(&mode) != DEFERRED_POWER_ACTION.lock().await.as_ref() {
+                    info!("Power action '{mode}' was canceled.");
+                    return;
+                }
+
+                if start_time.elapsed() >= end_time {
+                    break;
+                }
             }
 
-            // check elapsed time:
-            if start_time.elapsed() >= end_time {
-                break;
-            }
-        }
+            // clean up the global state before execution:
+            let _ = DEFERRED_POWER_ACTION.lock().await.take();
 
-        // do power action:
-        power(mode).await;
+            // do power action:
+            power(mode).await;
+        });
     });
 
-    Ok(())
+    // send stream to client:
+    (
+        StatusCode::OK,
+        [(header::CONTENT_TYPE, "application/octet-stream")],
+        Body::from_stream(body),
+    )
+        .into_response()
 }
 
 /// Do power operation
