@@ -22,8 +22,6 @@ turning your system into a seamless, conversational command center.
 * ⚡ **High-Performance Async Core**: Runs in a fully asynchronous environment, capable of handling production-grade loads.
 * 📦 **Out-of-the-Box Demos**: Comes with ready-to-use demonstration agents including a System Music Agent and Power Management.
 
----
-
 ## 💻 OS Support Matrix
 
 Ovsy is built for cross-platform freedom. Version 0.6.5 brings complete, unified support across all major operating systems.
@@ -100,6 +98,8 @@ Building for Ovsy is designed to be painless:
  * Drop an `Ovsy.toml` manifest file into the root of your agent's folder.
  * Use the pre-existing system agents at `.../ovsy/agents/(AGENT_NAME)/Ovsy.toml` as blueprints to get started.
 
+---
+
 ## 🕊️ Ovsy is more than software
 
 It is digital liberation for those tired of walled gardens. Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic.
@@ -123,7 +123,7 @@ Fast, private, and endlessly expandable.
 
 Distributed under the **Apache-2.0** License. See [LICENSE](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) for more information.
 
-### 🌐 Let's Connect
+### 📩 Project Feedback
 
 * **Code & Projects:** [GitHub](https://github.com/fuderis)
 * **Design Portfolio:** [Behance](https://behance.net/fuderis)
