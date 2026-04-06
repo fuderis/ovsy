@@ -26,6 +26,8 @@ cargo build --release
 # 2. Prepare directory structure:
 echo "📂 Preparing installation directory: $DIR"
 mkdir -p "$DIR/agents"
+mkdir -p "$DIR/default"
+cp -r "default/prompts"* "$DIR/default/"
 
 # Install core binary using 'install' to set executable permissions (755):
 install -Dm755 "target/release/ovsy" "$DIR/ovsy"
