@@ -137,4 +137,4 @@ If Ovsy helps you reclaim your digital autonomy and you want to support its acti
 > 💎 **TON Wallet:** `UQBq2GVLt_nu6bF8ku0RneWDr_B0AdrBMXVPcRrNmTU6mz65`<br>
 
 <br>
-*P.S.: This software is actively evolving. Your suggestions, bug reports, and feedback are always welcome!*
+> P.S.: This software is actively evolving. Your suggestions, bug reports, and feedback are always welcome!
