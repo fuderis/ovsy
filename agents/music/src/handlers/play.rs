@@ -48,7 +48,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         }
 
         session
-            .think(fmt!("Searching for music '{name}'.."))
+            .think(str!("Searching for music '{name}'.."))
             .await
             .ok();
         info!("Search for music '{name}'..");
@@ -71,7 +71,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
 
         // no-play mode:
         if noplay {
-            let found_msg = fmt!(
+            let found_msg = str!(
                 "Found music: {}",
                 json::to_string_pretty(&playlists).unwrap()
             );
@@ -80,10 +80,10 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
         }
 
         // stop audacious app (Linux):
-        #[cfg(unix)]
+        #[cfg(target_os = "linux")]
         {
             session
-                .think("Stopping previous audio player instances...")
+                .think("Killing the active audio player instance...")
                 .await
                 .ok();
             close_audacious().await.ok();
@@ -104,7 +104,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
                     {
                         Command::new("sh")
                             .arg("-c")
-                            .arg(fmt!(
+                            .arg(str!(
                                 "setsid xdg-open '{}' > /dev/null 2>&1 &",
                                 playlist_file.display()
                             ))
@@ -125,7 +125,7 @@ pub async fn handle(Json(mut data): Json<QueryData>) -> impl IntoResponse {
                 match status {
                     Ok(_) => {
                         info!("Play music success");
-                        let success_msg = fmt!("Playing music dirs: {playlists:#?}");
+                        let success_msg = str!("Playing music dirs: {playlists:#?}");
                         session.info(success_msg).await.ok();
                     }
                     Err(e) => {
@@ -198,8 +198,8 @@ async fn search_playlists(data: &QueryData, name: &str) -> Result<Vec<PathBuf>> 
     Ok(playlists)
 }
 
-/// Closes Audacious processes
-#[cfg(unix)]
+/// Closes Audacious processes (on Linux)
+#[cfg(target_os = "linux")]
 async fn close_audacious() -> Result<()> {
     // find audacious process by port:
     let output = Command::new("pgrep")
@@ -276,14 +276,14 @@ where
             .unwrap_or_default()
             .to_string_lossy();
 
-        content.extend_from_slice(fmt!("#EXTINF:-1,{}\n", filename).as_bytes());
+        content.extend_from_slice(str!("#EXTINF:-1,{}\n", filename).as_bytes());
         content.extend_from_slice(unix_path.as_bytes());
         content.extend_from_slice(b"\n");
     }
 
     fs::write(&playlist_path, content)
         .await
-        .map_err(|e| fmt!("Failed to create playlist: {e}"))?;
+        .map_err(|e| str!("Failed to create playlist: {e}"))?;
 
     Ok(playlist_path)
 }

@@ -18,14 +18,14 @@ pub async fn handle(Json(_data): Json<QueryData>) -> impl IntoResponse {
         // we are trying to remove the task from the global state:
         let msg = if let Some(mode) = DEFERRED_POWER_ACTION.lock().await.take() {
             session
-                .think(fmt!("Canceling deferred power action '{mode}'..."))
+                .think(str!("Canceling deferred power action '{mode}'..."))
                 .await
                 .ok();
 
             sleep(Duration::from_secs(2)).await;
-            fmt!("Power action {mode} is canceled!")
+            str!("Power action {mode} is canceled!")
         } else {
-            fmt!("Nothing to cancel.")
+            str!("Nothing to cancel.")
         };
 
         // sending the final response in session style:

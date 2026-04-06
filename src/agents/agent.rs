@@ -88,10 +88,10 @@ impl Agent {
         let mut examples = vec![];
         let mut tools = vec![];
 
-        for (name, action) in manifest.actions.iter() {
+        for (name, tool) in manifest.tools.iter() {
             // gen examples:
-            for exmpl in action.examples.iter() {
-                examples.push(fmt!(
+            for exmpl in tool.examples.iter() {
+                examples.push(str!(
                     r#"* query: "{query}", result: {name} {data}"#,
                     query = exmpl.query,
                     data = json::to_string(&exmpl.data).unwrap(),
@@ -100,7 +100,7 @@ impl Agent {
 
             // create tool & push:
             let mut schema = Schema::object("");
-            for (name, arg) in action.arguments.iter() {
+            for (name, arg) in tool.arguments.iter() {
                 let value = json::to_value(arg).unwrap();
                 schema.set_property(
                     name.clone(),
@@ -108,23 +108,22 @@ impl Agent {
                     !arg.optional,
                 );
             }
-            tools.push(Tool::new(name.clone(), action.description.clone(), schema));
+            tools.push(Tool::new(name.clone(), tool.description.clone(), schema));
         }
 
-        // run tool server (if is server):
+        // run tool server (if it's a server):
         let (port, child) = if manifest.agent.is_server {
             // bind free port:
             let port = utils::get_free_port().await?;
 
-            // create command with argument --port:
+            // create command with --port argument:
             let mut cmd = Command::new(&exec_path);
-            cmd.arg("--port").arg(port.to_string()); // send port
-
+            cmd.arg("--port").arg(port.to_string());
             cmd.stdout(Stdio::null());
             cmd.stderr(Stdio::null());
             cmd.kill_on_drop(true);
 
-            // spawning process:
+            // spawning the agent server process:
             let child = match cmd.spawn() {
                 Ok(c) => c,
                 Err(e) => {
@@ -133,11 +132,12 @@ impl Agent {
                 }
             };
 
-            // waiting for run server:
+            // waiting for running the server:
             sleep(Duration::from_millis(500)).await;
 
             (Some(port), Some(child))
         } else {
+            // NOTE: So, this is a binary agent, no startup required..
             (None, None)
         };
 
@@ -153,9 +153,12 @@ impl Agent {
             child: Arc::new(Mutex::new(child)),
         };
 
+        // capturing the server log file:
         agent.trace().await?;
 
+        // pushing to the agents manager:
         Agents::add(agent).await;
+
         Ok(Some(()))
     }
 
@@ -163,7 +166,7 @@ impl Agent {
     pub async fn health(&self) -> Result<HealthResponse> {
         let client = Client::new();
         let agent_name = &self.manifest.agent.name;
-        let health_url = fmt!("http://127.0.0.1:{}/health", self.port.as_ref().unwrap());
+        let health_url = str!("http://127.0.0.1:{}/health", self.port.as_ref().unwrap());
 
         if let Ok(resp) = client.post(&health_url).send().await {
             if resp.status().is_success() {
@@ -194,7 +197,7 @@ impl Agent {
             sleep(Duration::from_millis(100)).await;
         }
 
-        warn!("Agent '{agent_name}' did not provide log_file path via /health");
+        error!("Agent '{agent_name}' did not provide log_file path via /health");
         Err(Error::AgentHealth(agent_name.clone()).into())
     }
 
@@ -226,7 +229,7 @@ impl Agent {
         match Config::<Manifest>::new(&manifest_path) {
             Ok(new_manifest) => {
                 if !new_manifest.agent.enable {
-                    warn!("Agent '{name}' disabled in manifest, stopping..");
+                    warn!("Agent '{name}' disabled in manifest, finishing work..");
                     Agents::stop(name).await?;
                     return Ok(());
                 }
@@ -305,116 +308,4 @@ impl Agent {
 
         Ok(())
     }
-
-    /* /// Stops the agent server by port
-    pub(super) async fn stop_by_port(&self) -> Result<()> {
-        let port = if let Some(port) = self.port {
-            port
-        } else {
-            return Ok(());
-        };
-
-        info!(
-            "Trying to kill '{}' agent server on {port} port..",
-            &self.manifest.agent.name
-        );
-
-        // kill tool server by port:
-        #[cfg(unix)]
-        {
-            // find server process by port:
-            let output = Command::new("lsof")
-                .args(["-i", &fmt!("TCP:{port}"), "-i", &fmt!("UDP:{port}")])
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-                .await?;
-
-            // parse output:
-            let s = String::from_utf8_lossy(&output.stdout);
-            let mut lines = s.lines();
-            if lines.next().is_none() {
-                info!("Port {port} already is free");
-                return Ok(());
-            }
-
-            // parse PIDs:
-            let pids: Vec<i32> = lines
-                .map(|l| {
-                    let mut spl = l.split_whitespace();
-                    (spl.next(), spl.next())
-                })
-                .filter_map(
-                    |(name, pid)| {
-                        if name.unwrap_or("").starts_with("ovsy-") {
-                            pid.unwrap_or("").trim().parse().ok().filter(|&pid| pid > 1)
-                        } else {
-                            None
-                        }
-                    }, // exclude system ones
-                )
-                .collect();
-
-            if !pids.is_empty() {
-                info!("Found {} processes on port {port}: {pids:?}", pids.len());
-            } else {
-                info!("No processes found on port {port}");
-                return Ok(());
-            }
-
-            // stop all PIDs:
-            for pid in pids {
-                let pid_str = pid.to_string();
-                if Command::new("kill")
-                    .args(["-TERM", &pid_str])
-                    .status()
-                    .await?
-                    .success()
-                {
-                    info!("Graceful stop PID {pid}");
-                } else {
-                    let _ = Command::new("kill").args(["-9", &pid_str]).status().await;
-                    info!("Force kill PID {pid}");
-                }
-            }
-        }
-
-        /* TODO: kill server process on Windows OS..
-        #[cfg(windows)]
-        {
-            // netstat -ano | findstr :PORT
-            let output = Command::new("netstat")
-                .args(["-ano", &format!("|findstr :{}", port)])
-                .stdout(Stdio::piped())
-                .output()?;
-
-            let stdout = String::from_utf8_lossy(&output.stdout);
-            let mut pids = Vec::new();
-
-            for line in stdout.lines() {
-                if let Some(pid_str) = line.split_whitespace().last() {
-                    if let Ok(pid) = pid_str.parse::<u32>() {
-                        pids.push(pid);
-                    }
-                }
-            }
-
-            for pid in pids {
-                // taskkill /PID <pid> /F
-                let status = Command::new("taskkill")
-                    .args(["/PID", &pid.to_string(), "/F"])
-                    .status()?;
-
-                if status.success() {
-                    info!("Killed PID {} on port {}", pid, port);
-                }
-            }
-        }
-        */
-
-        // wait for stop server:
-        sleep(Duration::from_millis(1000)).await;
-
-        Ok(())
-    } */
 }

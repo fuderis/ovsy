@@ -22,7 +22,7 @@ impl Agents {
         AGENTS.get().await.agents.contains_key(name)
     }
 
-    /// Returns agents map
+    /// Retrieves the list of all running agents
     pub async fn get_all() -> Vec<Arc<Agent>> {
         AGENTS
             .get()
@@ -62,7 +62,7 @@ impl Agents {
         let mut list = vec![];
 
         for (name, agent) in AGENTS.get().await.agents.iter() {
-            list.push(fmt!(
+            list.push(str!(
                 "* {name} - {descr}",
                 descr = &agent.manifest.agent.description,
             ));
@@ -77,11 +77,11 @@ impl Agents {
     }
 
     /// Returns an agent use case examples
-    pub async fn exmpls(name: &str) -> Vec<String> {
+    pub async fn examples(name: &str) -> Vec<String> {
         Self::get_agent(name).await.unwrap().examples.clone()
     }
 
-    /// Returns an agent AI tools (actions)
+    /// Returns an agent AI tools
     pub async fn tools(name: &str) -> Vec<Tool> {
         Self::get_agent(name).await.unwrap().tools.clone()
     }
@@ -120,7 +120,6 @@ impl Agents {
             let mut interval = time::interval(Duration::from_millis(timeout));
 
             loop {
-                interval.tick().await;
                 let mut checked = HashSet::new();
 
                 // check & restart existing agents:
@@ -151,7 +150,7 @@ impl Agents {
                                 continue;
                             }
                             if let Err(e) = Agent::run(&dir).await {
-                                trace!("Skipped agent dir '{}': {e}", dir.display());
+                                error!("Ignoring agent dir '{}': {e}", dir.display());
                             }
                         }
                     }
@@ -161,6 +160,9 @@ impl Agents {
                 if !autocheck {
                     break;
                 }
+
+                // wait a while before the next check:
+                interval.tick().await;
             }
         });
     }

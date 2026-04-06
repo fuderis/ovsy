@@ -7,46 +7,46 @@ exec = "music-agent"
 is_server = true
 
 # Play:
-[actions.play]
+[tools.play]
 enable = true
-description = "Play local music by genre, artist, album and song options (prioritize using the artist argument)"
+description = "Play local music by genre, artist, album and song options"
 
-[actions.play.arguments]
+[tools.play.arguments]
 genre = { type = "string", optional = true }
 artist = { type = "string", optional = true }
 album = { type = "string", optional = true }
 song = { type = "string", optional = true }
 
-[[actions.play.examples]]
+[[tools.play.examples]]
 query = "play rock genre"
 data = { genre = "rock" }
 
-[[actions.play.examples]]
+[[tools.play.examples]]
 query = "play Disturbed"
 data = { artist = "Disturbed" }
 
-[[actions.play.examples]]
+[[tools.play.examples]]
 query = "play Disturbed - The Sickness"
 data = { artist = "Disturbed", album = "The Sickness" }
 
 # Volume:
-[actions.volume]
+[tools.volume]
 enable = true
 description = "Set system volume by delta or force value"
 
-[actions.volume.arguments]
+[tools.volume.arguments]
 delta = { type = "integer", optional = false }
 force = { type = "boolean", description = "false by default", optional = true }
 
-[[actions.volume.examples]]
+[[tools.volume.examples]]
 query = "set volume to 50%"
 data = { delta = 50, force = true }
 
-[[actions.volume.examples]]
+[[tools.volume.examples]]
 query = "increase volume by 20%"
 data = { delta = 20 }
 
-[[actions.volume.examples]]
+[[tools.volume.examples]]
 query = "decrease volume by 30%"
 data = { delta = -30 }
 

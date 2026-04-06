@@ -1,6 +1,6 @@
 #![doc = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/README.md"))]
 pub mod error;
-pub use error::{Error, Result, StdResult};
+pub use error::Error;
 pub mod prelude;
 use prelude::{PathBuf, path};
 pub mod settings;

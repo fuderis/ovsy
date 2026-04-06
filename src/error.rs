@@ -1,9 +1,5 @@
-use macron::{Display, Error, From};
+use macron::{Display, Error, From, prelude::DynError};
 use std::path::PathBuf;
-
-/// The result alias
-pub type Result<T> = macron::Result<T>;
-pub type StdResult<T, E> = std::result::Result<T, E>;
 
 // The error
 #[derive(Debug, Display, Error, From)]
@@ -42,5 +38,5 @@ pub enum Error {
     RecursionLimit,
 
     #[display = "Agent execution error: {0}"]
-    ExecutionStop(Box<macron::DynError>),
+    ExecutionStop(Box<DynError>),
 }

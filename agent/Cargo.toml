@@ -4,8 +4,8 @@ edition = "2024"
 
 [dependencies]
 axum = "0.8.8"
-macron = { version = "^0.1.14", features = ["full"] }
-atoman = { version = "^0.2.7", features = ["full"] }
+macron = { version = "^0.1.16", features = ["full"] }
+atoman = { version = "^0.2.9", features = ["full"] }
 reqwest = { version = "0.13.1", features = ["json"] }
 tokio = { version = "1.48.0", features = ["full"] }
 clap = { version = "4.6.0", features = ["derive"] }

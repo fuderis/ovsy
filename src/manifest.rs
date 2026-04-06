@@ -21,7 +21,7 @@ pub struct ManifestExample {
 
 /// The agent handler options
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
-pub struct ManifestAction {
+pub struct ManifestTool {
     pub enable: bool,
     pub description: String,
     pub arguments: HashMap<String, ManifestArgument>,
@@ -64,5 +64,5 @@ pub struct ManifestArgument {
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Manifest {
     pub agent: ManifestAgent,
-    pub actions: HashMap<String, ManifestAction>,
+    pub tools: HashMap<String, ManifestTool>,
 }

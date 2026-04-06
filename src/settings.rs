@@ -148,4 +148,9 @@ impl Settings {
         let path = SETTINGS.unsafe_get().get_path().clone();
         Config::<Settings>::read(path)
     }
+
+    /// Updates settings from file
+    pub async fn update() -> Result<()> {
+        SETTINGS.lock().await.update()
+    }
 }

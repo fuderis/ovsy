@@ -8,7 +8,7 @@ pub async fn handle(
     Json(data): Json<JsonValue>,
 ) -> impl IntoResponse {
     let body = Stream::body(move |tx| async move {
-        handle_action(tx, name, action, data).await;
+        handle_tool(tx, name, action, data).await;
     });
 
     (
@@ -19,15 +19,15 @@ pub async fn handle(
         .into_response()
 }
 
-/// Handles an agent action
-pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String, data: JsonValue) {
+/// Handles an agent tool
+pub async fn handle_tool(st: StreamSender<Bytes>, name: String, action: String, data: JsonValue) {
     // tool search:
     let tool = match Agents::get(&name).await {
         Some(t) => t,
         _ => {
             send_error(
                 &st,
-                fmt!("Agent '{name}' not found"),
+                str!("Agent '{name}' not found"),
                 Error::UnexpectedAgentName(name).to_string(),
             );
             return;
@@ -37,7 +37,7 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
     // execution via HTTP (if a port is specified):
     if let Some(port) = &tool.port {
         let response = match Client::new()
-            .post(fmt!("http://127.0.0.1:{port}/{action}"))
+            .post(str!("http://127.0.0.1:{port}/{action}"))
             .json(&data)
             .send()
             .await
@@ -46,7 +46,7 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
             Err(e) => {
                 send_error(
                     &st,
-                    fmt!("Failed to connect to agent {name}"),
+                    str!("Failed to connect to agent {name}"),
                     e.to_string(),
                 );
                 return;
@@ -71,14 +71,14 @@ pub async fn handle_action(st: StreamSender<Bytes>, name: String, action: String
 
         if let JsonValue::Object(map) = data {
             for (key, value) in map {
-                cmd.arg(fmt!("--{key}")).arg(to_cmd_arg(&value));
+                cmd.arg(str!("--{key}")).arg(to_cmd_arg(&value));
             }
         }
 
         let mut child = match cmd.spawn() {
             Ok(c) => c,
             Err(e) => {
-                send_error(&st, fmt!("Failed to spawn agent {name}"), e.to_string());
+                send_error(&st, str!("Failed to spawn agent {name}"), e.to_string());
                 return;
             }
         };

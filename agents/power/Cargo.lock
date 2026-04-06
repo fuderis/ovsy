@@ -88,9 +88,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.7"
+version = "0.2.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74275b6490633980018eb96e52d522d736effb64a4277793801668e30d47c3da"
+checksum = "918a915246d428622b08add44c349ee2bc7daf1c2c6ce559f74ccdff787d9361"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -907,9 +907,9 @@ checksum = "112b39cec0b298b6c1999fee3e31427f74f676e4cb9879ed1a121b43661a4154"
 
 [[package]]
 name = "macron"
-version = "0.1.14"
+version = "0.1.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "198e43a0ea96c50e8aa3a91f8e2df589ae5d3347fd6ea2c006ca1137771491c6"
+checksum = "b93c109e1c617ea746296693477a06ddb0ece032755f2ca1953e061678d0fb5a"
 dependencies = [
  "macron-collections",
  "macron-impl-display",
@@ -918,7 +918,6 @@ dependencies = [
  "macron-impl-into",
  "macron-input",
  "macron-inputln",
- "macron-map",
  "macron-path",
  "macron-regex",
  "macron-str",
@@ -926,9 +925,9 @@ dependencies = [
 
 [[package]]
 name = "macron-collections"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbaeed222b75e6caeccd2c545ee6f37042313ad72c02eb795ebcfefd28d6c1a2"
+checksum = "c911a66913c3cbb564a7b9cf21be7a506d040f87ad197c51782a6f0670428571"
 dependencies = [
  "macron-map",
 ]
@@ -1000,9 +999,9 @@ dependencies = [
 
 [[package]]
 name = "macron-map"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8fd1e10d314ee9aa76777f1412185fbf51844a438867107f3b617aa2eb03b53"
+checksum = "b61724606afa0d8cdc09cd97154a6cafd6934220bb2073c395f7db48d8e9985c"
 dependencies = [
  "quote",
  "syn",

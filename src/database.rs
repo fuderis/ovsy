@@ -93,17 +93,17 @@ impl Database {
             // safely remove columns by name:
             let id_col = batch
                 .column_by_name("id")
-                .ok_or_else(|| fmt!("Column 'id' not found"))?
+                .ok_or_else(|| str!("Column 'id' not found"))?
                 .as_any()
                 .downcast_ref::<UInt64Array>()
-                .ok_or_else(|| fmt!("Failed to downcast 'id' to UInt64Array"))?;
+                .ok_or_else(|| str!("Failed to downcast 'id' to UInt64Array"))?;
 
             let data_col = batch
                 .column_by_name("data")
-                .ok_or_else(|| fmt!("Column 'data' not found"))?
+                .ok_or_else(|| str!("Column 'data' not found"))?
                 .as_any()
                 .downcast_ref::<StringArray>()
-                .ok_or_else(|| fmt!("Failed to downcast 'data' to StringArray"))?;
+                .ok_or_else(|| str!("Failed to downcast 'data' to StringArray"))?;
 
             let distance_col = batch
                 .column_by_name("_distance")
@@ -222,7 +222,7 @@ impl Database {
         }
 
         let table = db.open_table(table_name).execute().await?;
-        let predicate = fmt!("id = {}", id);
+        let predicate = str!("id = {}", id);
 
         table.delete(&predicate).await?;
 

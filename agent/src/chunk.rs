@@ -16,12 +16,12 @@ impl SessionChunk {
         Self::Thinking { thinking: s.into() }
     }
 
-    /// Creates a `answer` chunk
+    /// Creates an `answer` chunk
     pub fn answer(s: impl Into<String>) -> Self {
         Self::Answer { answer: s.into() }
     }
 
-    /// Creates a `error` chunk
+    /// Creates an `error` chunk
     pub fn error(e: impl Into<String>, s: impl Into<String>) -> Self {
         Self::Error {
             error: e.into(),
@@ -29,7 +29,7 @@ impl SessionChunk {
         }
     }
 
-    /// Creates a `info` chunk
+    /// Creates an `info` chunk
     pub fn info(s: impl Into<String>) -> Self {
         Self::Info { info: s.into() }
     }

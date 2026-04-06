@@ -1,7 +1,7 @@
 pub use macron;
 
 pub mod error;
-pub use error::{Error, Result, StdResult};
+pub use error::Error;
 pub mod prelude;
 
 pub mod chunk;
@@ -20,7 +20,7 @@ use serde_json::{Value, json};
 use std::net::SocketAddr;
 use tokio::net::TcpListener;
 
-/// Стандартные аргументы для всех агентов
+/// Standard arguments for all agents
 #[derive(Parser, Debug)]
 pub struct AgentArgs {
     #[arg(short, long)]
@@ -33,7 +33,7 @@ pub struct AgentServer {
 
 impl AgentServer {
     pub fn new() -> Self {
-        // Базовый роутер с дефолтными эндпоинтами
+        // basic router with default endpoints:
         let router = Router::new()
             .route("/", get(|| async { Html("") }))
             .route("/health", post(Self::health_handler));
@@ -41,7 +41,7 @@ impl AgentServer {
         Self { router }
     }
 
-    /// Добавляет POST маршрут (стандарт для вызова действий агента)
+    /// Adds a POST route (the standard for invoking agent actions)
     pub fn route<H, T>(mut self, path: &str, handler: H) -> Self
     where
         H: axum::handler::Handler<T, ()>,
@@ -51,18 +51,15 @@ impl AgentServer {
         self
     }
 
-    /// Стандартный обработчик здоровья
+    /// The standard health handler
     async fn health_handler() -> Json<Value> {
         Json(json!({
             "log_file": Logger::get_path()
         }))
     }
 
-    /// Запуск сервера с автоматическим парсингом порта
+    /// Launching a server with automatic port parsing
     pub async fn run(self) -> Result<()> {
-        // Инициализация логгера (если еще не сделана)
-        // Logger::init(app_data().join("logs"), 20).ok();
-
         let args = AgentArgs::parse();
         let addr = SocketAddr::from(([127, 0, 0, 1], args.port));
 

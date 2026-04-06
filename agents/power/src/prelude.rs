@@ -1,3 +1,3 @@
 #![allow(unused_imports)]
-pub use crate::{Error, Settings, app_data, utils};
+pub use crate::{Error, Settings, app_data};
 pub use agent::prelude::*;

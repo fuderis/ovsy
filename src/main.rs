@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
         match TcpListener::bind(address).await {
             Ok(r) => break r,
             Err(e) => {
-                warn!("Error with running server: {e}");
+                error!("Error with running server: {e}");
                 sleep(Duration::from_millis(600)).await;
             }
         }

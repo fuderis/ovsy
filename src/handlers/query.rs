@@ -69,8 +69,8 @@ async fn delegate_tasks_cycled(
         sleep(Duration::from_millis(100)).await;
     }
 
-    // summarizing the results:
-    summarize_results(session).await?;
+    // finalizing the query session:
+    finalize_query(session).await?;
 
     Ok(agent_name)
 }
@@ -175,7 +175,7 @@ async fn delegate_tasks_with_ai(
             }
 
             let mut task: AgentTask =
-                json::from_str(&json_str).map_err(|e| fmt!("Incorrect response format: {e}"))?;
+                json::from_str(&json_str).map_err(|e| str!("Incorrect response format: {e}"))?;
             task.name = name;
 
             let session_clone = session.clone();
@@ -276,12 +276,12 @@ async fn handle_query(
     session
         .lock()
         .await
-        .think(fmt!(" Processing ({agent}): {query}"))
+        .think(str!(" Processing ({agent}): {query}"))
         .await?;
 
     let prompt = utils::read_prompt("handle-query")
         .await?
-        .replace("{EXAMPLES}", &Agents::exmpls(agent).await.join("\n"));
+        .replace("{EXAMPLES}", &Agents::examples(agent).await.join("\n"));
 
     let history = session.lock().await.results().clone();
     let mut request = utils::completions()
@@ -322,14 +322,14 @@ async fn handle_action(
         let mut guard = session.lock().await;
         let data_str = json::to_string(&data).unwrap_or_default();
         guard
-            .think(fmt!(" Handling ({agent}): /{action} {data_str}"))
+            .think(str!(" Handling ({agent}): /{action} {data_str}"))
             .await?;
     }
 
     // request to the Agent's API:
     let port = Settings::get().server.port;
     let response = Client::new()
-        .post(fmt!("http://127.0.0.1:{port}/call/{agent}/{action}"))
+        .post(str!("http://127.0.0.1:{port}/call/{agent}/{action}"))
         .json(&data)
         .send()
         .await?;
@@ -350,8 +350,8 @@ async fn handle_action(
     Ok(())
 }
 
-/// Summarizes the execution results
-async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
+/// Finalizes the query session (generates an answer to user)
+async fn finalize_query(session: Arc<Mutex<Session>>) -> Result<()> {
     let history = session.lock().await.results().clone();
 
     let mut response = utils::completions()
@@ -361,10 +361,10 @@ async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
         ])
         .assistant_message(vec![history.join("\n").into()])
         .system_message(vec![utils::read_prompt("final-response").await?.into()])
-        .schema(
-            Schema::object("Response")
-                .required_property("answer", Schema::string("A short answer to user")),
-        )
+        .schema(Schema::object("Response").required_property(
+            "answer",
+            Schema::string("A short useful answer to user (at least 2 words)"),
+        ))
         .send()
         .await?;
 
@@ -380,9 +380,9 @@ async fn summarize_results(session: Arc<Mutex<Session>>) -> Result<()> {
     // output of the final answer directly:
     let mut guard = session.lock().await;
     let dur = guard.exec_time() as f64 / 1000.0;
-    guard.answer(fmt!("\n{answer}")).await?;
+    guard.answer(str!("\n{answer}")).await?;
     guard
-        .info(&fmt!("\n[EOF] Execution time: {dur} sec."))
+        .info(&str!("\n[EOF] Execution time: {dur} sec."))
         .await?;
 
     Ok(())

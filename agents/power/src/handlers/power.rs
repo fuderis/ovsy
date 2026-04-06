@@ -21,7 +21,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
         let mut session = Session::new(tx);
 
         session
-            .think(fmt!("Preparing power operation '{mode}'.."))
+            .think(str!("Preparing power operation '{mode}'.."))
             .await
             .ok();
 
@@ -40,7 +40,7 @@ pub async fn handle(Json(data): Json<QueryData>) -> impl IntoResponse {
 
         // streaming the successful response BEFORE the countdown starts and end the stream:
         session
-            .info(fmt!(
+            .info(str!(
                 "Power operation {mode} scheduled in {timeout} seconds."
             ))
             .await
@@ -90,22 +90,33 @@ async fn power(mode: PowerMode) {
 
     let status = match mode {
         PowerMode::TurnOff => {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
-                Command::new("shutdown").status().await
+                Command::new("shutdown").args(&["-h", "now"]).status().await
             }
-            #[cfg(windows)]
+
+            #[cfg(target_os = "macos")]
+            {
+                Command::new("shutdown").args(&["-h", "now"]).status().await
+            }
+
+            #[cfg(target_os = "windows")]
             {
                 Command::new("shutdown").args(&["/s"]).status().await
             }
         }
-
         PowerMode::Suspend => {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
                 Command::new("systemctl").arg("suspend").status().await
             }
-            #[cfg(windows)]
+
+            #[cfg(target_os = "macos")]
+            {
+                Command::new("pmset").arg("sleepnow").status().await
+            }
+
+            #[cfg(target_os = "windows")]
             {
                 Command::new("rundll32.exe")
                     .args(&["powrprof.dll,SetSuspendState", "0,1,0"])
@@ -113,24 +124,37 @@ async fn power(mode: PowerMode) {
                     .await
             }
         }
-
         PowerMode::Reboot => {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
                 Command::new("reboot").status().await
             }
-            #[cfg(windows)]
+
+            #[cfg(target_os = "macos")]
+            {
+                Command::new("shutdown").args(&["-r", "now"]).status().await
+            }
+
+            #[cfg(target_os = "windows")]
             {
                 Command::new("shutdown").args(&["/r"]).status().await
             }
         }
-
         PowerMode::Lock => {
-            #[cfg(unix)]
+            #[cfg(target_os = "linux")]
             {
                 Command::new("loginctl").arg("lock-session").status().await
             }
-            #[cfg(windows)]
+
+            #[cfg(target_os = "macos")]
+            {
+                Command::new("open")
+                    .args(&["-a", "loginwindow"])
+                    .status()
+                    .await
+            }
+
+            #[cfg(target_os = "windows")]
             {
                 Command::new("rundll32.exe")
                     .args(&["user32.dll,LockWorkStation"])

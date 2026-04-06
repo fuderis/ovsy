@@ -7,26 +7,26 @@ exec = "power-agent"
 is_server = true
 
 # Power:
-[actions.power]
+[tools.power]
 enable = true
 description = "Power operation mode with timeout in seconds (always convert timeout to seconds)"
 
-[actions.power.arguments]
+[tools.power.arguments]
 mode = { type = "string", enum = ["turnoff", "restart", "suspend", "lock"], optional = false }
 timeout = { type = "integer", optional = true }
 
-[[actions.power.examples]]
+[[tools.power.examples]]
 query = "turnoff system after 30 secs"
 data = { mode = "turnoff", timeout = 30 }
 
 # Cancel:
-[actions.cancel]
+[tools.cancel]
 enable = true
 description = "Cancel power operation"
 
-[actions.cancel.arguments]
+[tools.cancel.arguments]
 mode = { type = "string", optional = true }
 
-[[actions.cancel.examples]]
+[[tools.cancel.examples]]
 query = "cancel turnoff system"
 data = {}

@@ -29,22 +29,22 @@ impl Session {
         Ok(())
     }
 
-    /// Push the `thinking` chunk
+    /// Push a `thinking` chunk
     pub async fn think(&mut self, s: impl Into<String>) -> Result<()> {
         self.push(SessionChunk::think(s)).await
     }
 
-    /// Push the `answer` chunk
+    /// Push an `answer` chunk
     pub async fn answer(&mut self, s: impl Into<String>) -> Result<()> {
         self.push(SessionChunk::answer(s)).await
     }
 
-    /// Push the `error` chunk
+    /// Push an `error` chunk
     pub async fn error(&mut self, e: impl Into<String>, s: impl Into<String>) -> Result<()> {
         self.push(SessionChunk::error(e, s)).await
     }
 
-    /// Push the `info` chunk
+    /// Push an `info` chunk
     pub async fn info(&mut self, s: impl Into<String>) -> Result<()> {
         self.push(SessionChunk::info(s)).await
     }
