@@ -1,7 +1,6 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> **Version:** 0.6.5 BETA-Testing<br>
-> **Status:** Active Development<br>
+> **Version:** 0.6.5 BETA-testing<br>
 
 ![Header](/header.png)
 
@@ -72,7 +71,7 @@ bash build.sh
 
 ### 2. Add an Alias (Optional)
 
-For seamless, one-word executions from any terminal directory, add an alias to your ~/.bashrc or ~/.zshrc:
+For seamless, one-word executions from any terminal directory, add an alias to your `~/.bashrc` or `~/.zshrc`:
 ```bash
 alias ovsy="/opt/ovsy/ovsy"
 ```
@@ -99,11 +98,12 @@ ovsy "play music Disturbed and turn off the system after 30 minutes"
 Building for Ovsy is designed to be painless:
  * Create a directory for your agent in `/opt/ovsy/agents` (or add a custom path under `[agents.scan_dirs]` in your `settings.toml`).
  * Drop an `Ovsy.toml` manifest file into the root of your agent's folder.
- * Use the pre-existing system agents at `.../ovsy/agents/[AGENT_NAME]/Ovsy.toml` as blueprints to get started.
+ * Use the pre-existing system agents at `.../ovsy/agents/(AGENT_NAME)/Ovsy.toml` as blueprints to get started.
 
 ## 🕊️ Ovsy is more than software
 
-It is digital liberation for those tired of walled gardens. Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic. Fast, private, and endlessly expandable.
+It is digital liberation for those tired of walled gardens. Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic.
+Fast, private, and endlessly expandable.
 
 ## 📜 License & Credits:
 
@@ -136,4 +136,5 @@ If Ovsy helps you reclaim your digital autonomy and you want to support its acti
 
 > 💎 **TON Wallet:** `UQBq2GVLt_nu6bF8ku0RneWDr_B0AdrBMXVPcRrNmTU6mz65`<br>
 
-<br>*P.S.: This software is actively evolving. Your suggestions, bug reports, and feedback are always welcome!*
+<br>
+*P.S.: This software is actively evolving. Your suggestions, bug reports, and feedback are always welcome!*
