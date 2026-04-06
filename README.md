@@ -105,20 +105,6 @@ Building for Ovsy is designed to be painless:
 It is digital liberation for those tired of walled gardens. Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic.
 Fast, private, and endlessly expandable.
 
-## 📜 License & Credits:
-
-* **License**: Distributed under the [*Apache-2.0*](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
-* **Contacts**:
-  [*GitHub*](https://github.com/fuderis),
-  [*Behance*](https://behance.net/fuderis),
-  [*Telegram*](https://t.me/fuderis),
-  [*Telegram Channel*](https://t.me/fuderis_club),
-  [*VKontakte*](https://vk.com/fuderis).
-* **For a cup of coffee**: 
-> Thank you for your support! =)<br>
-
-**P.s.**: This software is actively evolving, and your suggestions and feedback are always welcome!
-
 ## 📜 License & Credits
 
 Distributed under the **Apache-2.0** License. See [LICENSE](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) for more information.
