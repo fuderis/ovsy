@@ -1,7 +1,7 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> **Version:** 0.6.5
-> **Status:** Active Development / Testing
+> **Version:** 0.6.5<br>
+> **Status:** Active Development / Testing<br>
 
 ![Header](/header.png)
 
@@ -18,10 +18,10 @@ turning your system into a seamless, conversational command center.
 
 ## ✨ Key Features
 
-* 🤖 **AI Agent Task Delegation** — Distributes complex tasks to custom-tailored AI agents that you create.
-* 🔄 **Hot-Reload & Auto-Restart** — Automatically restarts AI agents upon rebuild or update without taking the core server down.
-* ⚡ **High-Performance Async Core** — Runs in a fully asynchronous environment, capable of handling production-grade loads.
-* 📦 **Out-of-the-Box Demos** — Comes with ready-to-use demonstration agents including a System Music Agent and Power Management.
+* 🤖 **AI Agent Task Delegation**: Distributes complex tasks to custom-tailored AI agents that you create.
+* 🔄 **Hot-Reload & Auto-Restart**: Automatically restarts AI agents upon rebuild or update without taking the core server down.
+* ⚡ **High-Performance Async Core**: Runs in a fully asynchronous environment, capable of handling production-grade loads.
+* 📦 **Out-of-the-Box Demos**: Comes with ready-to-use demonstration agents including a System Music Agent and Power Management.
 
 ---
 
@@ -43,9 +43,9 @@ Ovsy is built for cross-platform freedom. Version 0.6.5 brings complete, unified
 
 ### 🧠 Supported AI Backends
 
-* 🏠 **LM Studio** (`100%` ✅) — Run local models entirely offline (e.g., `Qwen`, `Gemma`, `Llama`).
-* 🦅 **Anthropic** (`100%` ✅) — Industry-leading reasoning and coding via `Claude`, `Sonnet`, and `Haiku`.
-* 🚀 **Cerebras** (`100%` ✅) — Ultra-fast inference on wafer-scale chips (up to 3000 tokens/sec).
+* 🏠 **LM Studio** (`100%` ✅): Run local models entirely offline (e.g., `Qwen`, `Gemma`, `Llama`).
+* 🦅 **Anthropic** (`100%` ✅): Industry-leading reasoning and coding via `Claude`, `Sonnet`, and `Haiku`.
+* 🚀 **Cerebras** (`100%` ✅): Ultra-fast inference on wafer-scale chips (up to 3000 tokens/sec).
 
 ---
 
@@ -66,7 +66,7 @@ Ovsy values transparency. All configurations are stored in plain text and are ea
 Clone the repository and run the automated build script. By default, it installs to `/opt/ovsy` (you can modify the `INSTALL_DIR` constant inside `install.sh`).
 
 ```bash
-git clone [https://github.com/fuderis/ovsy.git](https://github.com/fuderis/ovsy.git) && cd ovsy
+git clone https://github.com/fuderis/ovsy.git && cd ovsy
 bash build.sh
 ```
 
@@ -86,7 +86,8 @@ ovsy
 
 ### 4. Configure
 
-Edit the auto-generated ~/.config/ovsy/settings.toml to link your preferred LLM APIs, adjust server ports, and toggle features. Restart the Ovsy server to apply the changes.
+Edit the auto-generated `~/.config/ovsy/settings.toml` to link your preferred LLM APIs, adjust server ports, and toggle features. 
+Restart the Ovsy server to apply the changes.
 
 ### 5. Start Querying
 ```bash
@@ -96,9 +97,9 @@ ovsy "play music Disturbed and turn off the system after 30 minutes"
 ## 🔌 Create Your Own Agents
 
 Building for Ovsy is designed to be painless:
- * Create a directory for your agent in `/opt/ovsy/agents` (or add a custom path under [agents.scan_dirs] in your `settings.toml`).
- * Drop an Ovsy.toml manifest file into the root of your agent's folder.
- * Use the pre-existing system agents at ``.../ovsy/agents/[AGENT_NAME]/Ovsy.toml` as blueprints to get started.
+ * Create a directory for your agent in `/opt/ovsy/agents` (or add a custom path under `[agents.scan_dirs]` in your `settings.toml`).
+ * Drop an `Ovsy.toml` manifest file into the root of your agent's folder.
+ * Use the pre-existing system agents at `.../ovsy/agents/[AGENT_NAME]/Ovsy.toml` as blueprints to get started.
 
 ## 🕊️ Ovsy is more than software
 
@@ -113,7 +114,26 @@ It is digital liberation for those tired of walled gardens. Write your own tools
   [*Telegram*](https://t.me/fuderis),
   [*Telegram Channel*](https://t.me/fuderis_club),
   [*VKontakte*](https://vk.com/fuderis).
-* **For a cup of coffee**: `[TON] UQBq2GVLt_nu6bF8ku0RneWDr_B0AdrBMXVPcRrNmTU6mz65`
+* **For a cup of coffee**: 
 > Thank you for your support! =)<br>
 
 **P.s.**: This software is actively evolving, and your suggestions and feedback are always welcome!
+
+## 📜 License & Credits
+
+Distributed under the **Apache-2.0** License. See [LICENSE](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) for more information.
+
+### 🌐 Let's Connect
+
+* **Code & Projects:** [GitHub](https://github.com/fuderis)
+* **Design Portfolio:** [Behance](https://behance.net/fuderis)
+* **Personal Contact:** [Telegram](https://t.me/fuderis)
+* **Community & Updates:** [Telegram Channel](https://t.me/fuderis_club) | [VKontakte Group](https://vk.com/fuderis_club)
+
+### ☕ Support the Project
+
+If Ovsy helps you reclaim your digital autonomy and you want to support its active evolution, consider buying me a cup of coffee:
+
+> 💎 **TON Wallet:** `UQBq2GVLt_nu6bF8ku0RneWDr_B0AdrBMXVPcRrNmTU6mz65`<br>
+
+<br>*P.S.: This software is actively evolving. Your suggestions, bug reports, and feedback are always welcome!*
