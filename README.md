@@ -1,7 +1,7 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> **Version:** 0.6.5<br>
-> **Status:** Active Development / Testing<br>
+> **Version:** 0.6.5 BETA-Testing<br>
+> **Status:** Active Development<br>
 
 ![Header](/header.png)
 
