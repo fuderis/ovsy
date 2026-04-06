@@ -1,93 +1,110 @@
 # Ovsy — The Open‑Source AI Orchestrator
 
-> Version: 0.6.5 BETA-TESTING
+> **Version:** 0.6.5
+> **Status:** Active Development / Testing
 
 ![Header](/header.png)
 
-In a world dominated by proprietary voice assistants like Alice and Siri, imagine taking back full control.
-Meet Ovsy — an open‑source AI orchestrator that redefines what a personal assistant can be.
-Fully anonymous, fully yours — you decide how to use this power.<br>
+In a world dominated by proprietary, data-harvesting voice assistants, imagine taking back full control. 
+Meet **Ovsy** — an open‑source AI orchestrator that redefines what a personal assistant can be. Fully anonymous, fully private, and completely yours.
+You decide how to harness this power.
 
-Designed as a lightweight core for custom AI agents, Ovsy intelligently routes your natural‑language commands
-to modular tools you build yourself, turning your system into a seamless command center.<br>
+Designed as a lightweight core for custom AI agents, Ovsy intelligently routes your natural‑language commands to modular tools you build yourself,
+turning your system into a seamless, conversational command center.
 
 ![Demo](/demo.gif)
 
-## Features:
+---
 
-* **AI Agent Task Delegation**: Distributes tasks to custom AI agents that you create yourself.
-* **Automatic Agent Restart**: Automatically restarts AI agents upon rebuild or update without downtime.
-* **Async Server Mode**: Runs in fully asynchronous mode and can be used as a production server.
-* **Demo AI Agents Included**: Comes with ready-to-use demonstration agents for testing — Music Agent and System Power Management.
+## ✨ Key Features
 
-## Planned/Implemented:
+* 🤖 **AI Agent Task Delegation** — Distributes complex tasks to custom-tailored AI agents that you create.
+* 🔄 **Hot-Reload & Auto-Restart** — Automatically restarts AI agents upon rebuild or update without taking the core server down.
+* ⚡ **High-Performance Async Core** — Runs in a fully asynchronous environment, capable of handling production-grade loads.
+* 📦 **Out-of-the-Box Demos** — Comes with ready-to-use demonstration agents including a System Music Agent and Power Management.
 
-### Basic tools:
+---
 
-* ✅ **Power Management (100%)**: Issue commands like poweroff, reboot, sleep, or lock session.
-* ✅ **Music Search+Play (100%)**: Pinpoint tracks with fuzzy, "half-word" precision (e.g., "play Disturbed"), then fire them up in your default audio player.
-* ⚙️ **Volume Precision (50%)**: Dial in exact levels (e.g., 75%) for audio tweaks without fumbling through menus.
-* ⏳ **App Launcher/Killer (0%)**: Hunt down and launch or terminate programs by name.
-* ⏳ **Tasks Management (0%)**: Set reminders/alarms, AI-powered scheduling assistance.
-* ⏳ **Web-Search (0%)**: A search assistant for news, weather, currency, stock information, developer tools, and etc.
+## 💻 OS Support Matrix
 
-### AI APIs:
+Ovsy is built for cross-platform freedom. Version 0.6.5 brings complete, unified support across all major operating systems.
 
-* ✅ **LM Studio (100%)**: Local AI models, such as `Qwen`, `Gemma`, `Llama`, and beyond..
-* ✅ **Anthropic (100%)**: Anthropic's safe, powerful LLMs. Flagship `Claude`, `Sonnet` and `Haiku` excels in coding, reasoning, 200K-token context.
-* ✅ **Cerebras (100%)**: Ultra-fast LLM hosting on wafer-scale chips — 3000 tokens/sec for `Llama`, `GPT OSS`, `Qwen3`, `Zai GLM`.
- 
-## System support:
+| Feature / Module      | Progress | 🐧 Linux | 🍎 macOS | 🪟 Windows | Description                                               |
+| :---                  | :---:    | :---:    | :---:    | :---:      | :---                                                      |
+| **Core Orchestrator** | `100%`   | ✅       | ✅       | ✅         | High-performance async routing engine.                    |
+| **Agent Hot-Reload**  | `100%`   | ✅       | ✅       | ✅         | Zero-downtime agent restarts on update.                   |
+| **Custom Agent API**  | `100%`   | ✅       | ✅       | ✅         | Standardized manifest for modular tools.                  |
+| **Power Management**  | `100%`   | ✅       | ✅       | ✅         | Poweroff, reboot, sleep, and session locking.             |
+| **Music Control**     | `100%`   | ✅       | ✅       | ✅         | Fuzzy search and playback in default players.             |
+| **Volume Precision**  | `100%`   | ✅       | ✅       | ✅         | Exact percentage-based audio adjustments.                 |
+| **App Launcher**      | `0%`     | ⏳       | ⏳       | ⏳         | Native program execution and termination.                 |
+| **Task Management**   | `0%`     | ⏳       | ⏳       | ⏳         | AI scheduling, reminders, and alarms.                     |
+| **Web Search**        | `0%`     | ⏳       | ⏳       | ⏳         | Live retrieval for news, weather, and tools.              |
 
-* **Linux**: It's full supported.
-* **MacOS**: It's also supported, but maybe more tests are needed..
-* **Windows**: Partially supported.
+### 🧠 Supported AI Backends
 
-## Configurations:
+* 🏠 **LM Studio** (`100%` ✅) — Run local models entirely offline (e.g., `Qwen`, `Gemma`, `Llama`).
+* 🦅 **Anthropic** (`100%` ✅) — Industry-leading reasoning and coding via `Claude`, `Sonnet`, and `Haiku`.
+* 🚀 **Cerebras** (`100%` ✅) — Ultra-fast inference on wafer-scale chips (up to 3000 tokens/sec).
 
-Automatically, configs are written by paths:
+---
 
-* **Ovsy**: `~/.config/ovsy/settings.toml` 
-* **Agents**: `~/.config/ovsy/agents/[AGENT_NAME]/config.toml`
+## ⚙️ Configuration
 
-On Windows `~/` is located in `C:\Users\UserName`.
+Ovsy values transparency. All configurations are stored in plain text and are easily accessible:
 
-## Installation guide (for Unix):
+* **Ovsy Core:** `~/.config/ovsy/settings.toml`
+* **Agents:** `~/.config/ovsy/agents/[AGENT_NAME]/config.toml`
 
-1. Clone the repo and build project:
+*(On Windows, the user directory `~/` corresponds to `C:\Users\UserName`)*
+
+---
+
+## 🚀 Installation Guide (Unix)
+
+### 1. Clone and Build
+Clone the repository and run the automated build script. By default, it installs to `/opt/ovsy` (you can modify the `INSTALL_DIR` constant inside `install.sh`).
 
 ```bash
-git clone https://github.com/fuderis/ovsy.git && cd ovsy
+git clone [https://github.com/fuderis/ovsy.git](https://github.com/fuderis/ovsy.git) && cd ovsy
 bash build.sh
 ```
-By default, it will be installed in the `/opt/ovsy` directory (you can change it in the `INSTALL_DIR` constant in the `install.sh` file)
 
-2. (Optional) Add a bash alias into `~/.bashrc` for one-word launches:
+### 2. Add an Alias (Optional)
 
+For seamless, one-word executions from any terminal directory, add an alias to your ~/.bashrc or ~/.zshrc:
 ```bash
 alias ovsy="/opt/ovsy/ovsy"
 ```
 
-3. Fire up the server by command: `ovsy`. It spins the core as local server.
+### 3. Spin up the Core
 
-4. Edit the auto-generated `~/.config/ovsy/settings.toml` for ports, 
-AI APIs (e.g., your LM of choice), tool paths, and more. Restart `Ovsy` server to apply.
+Fire up the server to spin the core as a local background daemon:
+```bash
+ovsy
+```
 
-5. Now query away: `ovsy "play music Disturbed and turnoff system after 30 minutes"`. 
+### 4. Configure
 
-## Add your custom agents:
+Edit the auto-generated ~/.config/ovsy/settings.toml to link your preferred LLM APIs, adjust server ports, and toggle features. Restart the Ovsy server to apply the changes.
 
-1. Write your agent in `/opt/ovsy/agents` dir or add the custom path to the agents parent dir in the `settings.toml` in the `[agents.scan_dirs]` parameter.
-2. Put the `Ovsy.toml` manifest in the root of the agent and configure it (see examples in system agents on `.../ovsy/agents/[AGENT_NAME]/Ovsy.toml`).
+### 5. Start Querying
+```bash
+ovsy "play music Disturbed and turn off the system after 30 minutes"
+```
 
-## Ovsy isn't just software:
+## 🔌 Create Your Own Agents
 
-It's liberation for users who tired of walled gardens and the who value their anonymity.<br>
+Building for Ovsy is designed to be painless:
+ * Create a directory for your agent in `/opt/ovsy/agents` (or add a custom path under [agents.scan_dirs] in your `settings.toml`).
+ * Drop an Ovsy.toml manifest file into the root of your agent's folder.
+ * Use the pre-existing system agents at ``.../ovsy/agents/[AGENT_NAME]/Ovsy.toml` as blueprints to get started.
 
-Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic.
-Lightning-Fast Setup on your system.
+## 🕊️ Ovsy is more than software
 
-## License & Credits:
+It is digital liberation for those tired of walled gardens. Write your own tools, drop them in, and watch the orchestrator weave them into conversational magic. Fast, private, and endlessly expandable.
+
+## 📜 License & Credits:
 
 * **License**: Distributed under the [*Apache-2.0*](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
 * **Contacts**:
