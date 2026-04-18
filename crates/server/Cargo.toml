@@ -1,0 +1,11 @@
+[package]
+name = "ovsy-server"
+edition = "2024"
+
+[dependencies]
+ovsy-shared = { workspace = true }
+fuderis-server = { workspace = true }
+anylm = { workspace = true }
+tokio = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

@@ -1,0 +1,20 @@
+[workspace]
+members = ["crates/cli", "crates/server", "crates/shared"]
+default-members = ["crates/cli", "crates/server"]
+resolver = "3"
+
+[workspace.dependencies]
+ovsy-shared = { path = "crates/shared" }
+fuderis-server = { package = "fuderis", path = "../fuderis", features = ["basic", "server"] }
+fuderis-basic = { package = "fuderis", path = "../fuderis", features = ["basic"] }
+anylm = { version = "0.1.12" }
+tokio = { version = "1.51.0", features = ["full"] }
+serde = { version = "1.0.228", features = ["derive"] }
+serde_json = "1.0.149"
+toml = "1.0.0"
+clap = { version = "4.5.53", features = ["derive"] }
+colored = { version = "3.1.1" }
+reqwest = { version = "0.13.1", features = ["json", "stream"] }
+chrono = { version = "0.4.42", features = ["serde"] }
+regex = "1.12.2"
+

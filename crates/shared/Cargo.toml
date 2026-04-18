@@ -1,0 +1,9 @@
+[package]
+name = "ovsy-shared"
+edition = "2024"
+
+[dependencies]
+fuderis-basic = { workspace = true }
+anylm = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }

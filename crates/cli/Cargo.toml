@@ -1,0 +1,14 @@
+[package]
+name = "ovsy-cli"
+edition = "2024"
+
+[dependencies]
+fuderis-basic = { workspace = true }
+ovsy-shared = { workspace = true }
+anylm = { workspace = true }
+tokio = { workspace = true }
+reqwest = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+clap = { workspace = true }
+colored = { workspace = true }
