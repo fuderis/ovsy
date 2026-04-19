@@ -7,6 +7,9 @@ pub use user_query::*;
 pub mod settings;
 pub use settings::Settings;
 
+pub mod response;
+pub use response::*;
+
 // The actual Ovsy version
 pub const VERSION: &str = "0.7.0";
 

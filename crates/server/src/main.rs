@@ -1,6 +1,6 @@
 use anylm::{AiChunk, Completions};
 use ovsy_server::prelude::*;
-use ovsy_shared::{Chunk, UserQuery};
+use ovsy_shared::{Chunk, RefreshResponse, UserQuery};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -11,10 +11,20 @@ async fn main() -> Result<()> {
     // start server:
     Server::new()
         .post("/handle", query_handler)
+        .post("/refresh", refresh_handler)
         .run(([127, 0, 0, 1], 7878))
         .await?;
 
     Ok(())
+}
+
+/// API: Refresh the server settings & agents list
+async fn refresh_handler() -> Response {
+    if let Err(e) = Settings::update().await {
+        Response::ok().json(&RefreshResponse::Error { error: str!("{e}") })
+    } else {
+        Response::ok().json(&RefreshResponse::Success { agents: vec![] })
+    }
 }
 
 /// API: The user query handler

@@ -4,7 +4,6 @@ use tokio::process::Command;
 
 /// Handles the `status` command
 pub async fn status() -> Result<()> {
-    let cyan = Color::Cyan;
     let port = Settings::get().server.port;
 
     // 1. Ovsy Server
@@ -14,12 +13,7 @@ pub async fn status() -> Result<()> {
     } else {
         format!("Online (port {port})").green()
     };
-    println!(
-        " {} {}   {}",
-        "⚡".color(cyan),
-        "Ovsy Server:".bold(),
-        server_status
-    );
+    println!("📡 {} {}", "Checking Ovsy server...", server_status);
 
     // 2. LM Studio Status & Port
     let lms_out = Command::new("lms").args(["status"]).output().await;
@@ -43,12 +37,7 @@ pub async fn status() -> Result<()> {
     } else {
         "Offline".red()
     };
-    println!(
-        " {} {}     {}",
-        "📡".color(cyan),
-        "LM Studio:".bold(),
-        lms_display
-    );
+    println!("📡 {} {}", "Checking LM Studio server...", lms_display);
 
     // loaded models:
     if lms_running {
@@ -60,14 +49,13 @@ pub async fn status() -> Result<()> {
 
             if line.contains("Loaded Models") {
                 in_models_block = true;
-                println!(" {} Loaded Models:", "🧠".color(cyan));
                 continue;
             }
 
             if in_models_block && line.starts_with('·') {
                 found_any = true;
                 let model_info = line.trim_start_matches('·').trim();
-                println!("    {}", model_info.dimmed());
+                println!(" • {}", model_info.dimmed());
             }
         }
 

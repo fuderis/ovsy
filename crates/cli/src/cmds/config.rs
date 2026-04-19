@@ -6,11 +6,7 @@ use tokio::process::Command;
 pub async fn config() -> Result<()> {
     let path = Settings::path();
 
-    println!(
-        " {} Opening config: {}",
-        "→".blue().bold(),
-        path.display().to_string().white()
-    );
+    println!("⚙️  Opening config: {}", path.display().to_string().white());
 
     #[cfg(target_os = "linux")]
     let opener = "xdg-open";

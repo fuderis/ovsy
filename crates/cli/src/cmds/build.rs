@@ -8,11 +8,6 @@ use tokio::process::Command;
 
 /// Handles the `build` command
 pub async fn build() -> Result<()> {
-    let rust_orange = Color::AnsiColor(209);
-    let cyan = Color::Cyan;
-
-    println!("{} {}", "🛠️".color(cyan), "Building Ovsy Ecosystem".bold());
-
     // search root directory:
     if cfg!(debug_assertions) && !Path::new(".git").exists() {
         println!("Root not found, searching parent directories...");
@@ -34,7 +29,7 @@ pub async fn build() -> Result<()> {
     // 2. KILL EXISTING PROCESSES to prevent file locking:
     Settings::init(app_data().join("settings.toml")).await.ok();
     let port = Settings::get().server.port;
-    print!(" {} Cleaning port {}... ", "🧹".color(cyan), port);
+    print!("🧹 Cleaning port {}... ", port);
     io::stdout().flush().ok();
 
     #[cfg(unix)]
@@ -55,10 +50,7 @@ pub async fn build() -> Result<()> {
     }
     println!("{}", "Clean".green());
 
-    println!(
-        " {} Running Cargo Build (Release)...",
-        "📦".color(rust_orange)
-    );
+    println!("🛠️  Running cargo build...",);
     println!(
         "{}",
         "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
@@ -78,7 +70,7 @@ pub async fn build() -> Result<()> {
         "{}",
         "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
     );
-    println!(" {} Deploying binaries...", "🚚".color(cyan));
+    println!("📦 Deploying binaries...");
 
     let install_dir = app_data();
     fs::create_dir_all(&install_dir).ok();
@@ -138,7 +130,7 @@ pub async fn build() -> Result<()> {
             }
 
             println!(
-                "    {} {} -> {}",
+                "   {} {} -> {}",
                 "✔".green(),
                 name.bright_white(),
                 "installed".dimmed()
@@ -152,6 +144,11 @@ pub async fn build() -> Result<()> {
         }
     }
 
-    println!("\n {} {}", "✨".yellow(), "Build successful!".bold());
+    println!(
+        "{}\n{}\n",
+        "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240)),
+        "Build successful!".italic().dimmed()
+    );
+
     Ok(())
 }

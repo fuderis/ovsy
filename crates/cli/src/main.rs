@@ -37,6 +37,9 @@ enum Commands {
         full: bool,
     },
 
+    /// Refresh the server settings & agents list
+    Refresh,
+
     /// Enter interactive AI chat mode
     Chat,
 
@@ -59,15 +62,11 @@ async fn main() -> Result<()> {
         Some(Commands::Start) => cmds::start().await,
         Some(Commands::Stop { full }) => cmds::stop(full).await,
         Some(Commands::Restart { full }) => cmds::restart(full).await,
+        Some(Commands::Refresh) => cmds::refresh().await,
         Some(Commands::Chat) | None => cmds::chat().await,
         Some(Commands::Config) => cmds::config().await,
     } {
-        eprintln!(
-            "\n {} {}: {}",
-            "×".red().bold(),
-            "Error".red().bold(),
-            e.to_string().white()
-        );
+        eprintln!("\n{}: {}", "Error".red().bold(), e.to_string().white());
         std::process::exit(1);
     }
 

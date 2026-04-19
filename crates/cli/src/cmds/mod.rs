@@ -13,6 +13,9 @@ pub use stop::*;
 pub mod restart;
 pub use restart::*;
 
+pub mod refresh;
+pub use refresh::*;
+
 pub mod chat;
 pub use chat::*;
 

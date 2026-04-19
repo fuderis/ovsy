@@ -6,19 +6,6 @@ use tokio::process::Command;
 
 /// Handles the `start` command
 pub async fn start() -> Result<()> {
-    let cyan = Color::Cyan;
-    let dim = Color::AnsiColor(247);
-
-    println!(
-        "{} {}",
-        "🚀".color(cyan),
-        "Starting Ovsy Ecosystem...".bold()
-    );
-    println!(
-        "{}",
-        "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
-    );
-
     let exe = std::env::consts::EXE_SUFFIX;
     let server_path = app_data().join(format!("ovsy-server{exe}"));
 
@@ -29,7 +16,7 @@ pub async fn start() -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     if ai_conf.completions.kind == ApiKind::LmStudio || ai_conf.embeddings.kind == ApiKind::LmStudio
     {
-        print!(" {} Checking LM Studio... ", "📡".color(cyan));
+        print!("📡 Checking LM Studio... ");
         io::stdout().flush().ok();
 
         let server_status = Command::new("lms").args(["status"]).output().await;
@@ -61,11 +48,7 @@ pub async fn start() -> Result<()> {
                 continue;
             }
 
-            print!(
-                " {} Loading model {}... ",
-                "🧠".color(cyan),
-                model.bright_white()
-            );
+            print!(" • Loading model {}... ", model.dimmed());
             io::stdout().flush().ok();
 
             if !model.is_empty() {
@@ -84,7 +67,7 @@ pub async fn start() -> Result<()> {
     }
 
     let port = Settings::get().server.port;
-    print!(" {} Starting Ovsy server... ", "⚡".color(cyan));
+    print!("\n🚀 Starting Ovsy server... ");
     io::stdout().flush().ok();
 
     // check for for busy:
@@ -104,7 +87,7 @@ pub async fn start() -> Result<()> {
         "{}",
         "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
     );
-    println!(" {}\n", "System is ready for requests.".italic().color(dim));
+    println!("{}\n", "System is ready for requests.".italic().dimmed());
 
     Ok(())
 }
