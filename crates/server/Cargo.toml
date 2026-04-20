@@ -4,7 +4,7 @@ edition = "2024"
 
 [dependencies]
 ovsy-shared = { workspace = true }
-fuderis-server = { workspace = true }
+fudes-server = { workspace = true }
 anylm = { workspace = true }
 tokio = { workspace = true }
 serde = { workspace = true }

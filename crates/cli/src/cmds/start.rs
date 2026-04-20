@@ -40,14 +40,21 @@ pub async fn start() -> Result<()> {
             .map(|o| String::from_utf8_lossy(&o.stdout).to_string())
             .unwrap_or_default();
 
-        for (kind, model) in [
-            (&ai_conf.completions.kind, &ai_conf.completions.model),
-            (&ai_conf.embeddings.kind, &ai_conf.embeddings.model),
-        ] {
-            if *kind != ApiKind::LmStudio {
-                continue;
-            }
+        let mut models = vec![];
 
+        if ai_conf.completions.kind.is_lmstudio() {
+            models.push(&ai_conf.completions.model);
+        }
+        if ai_conf.embeddings.kind.is_lmstudio() && Settings::get().cache.enable {
+            models.push(&ai_conf.embeddings.model);
+        }
+        if ai_conf.compression.kind.is_lmstudio()
+            && ai_conf.compression.model != ai_conf.completions.model
+        {
+            models.push(&ai_conf.compression.model);
+        }
+
+        for model in models {
             print!(" • Loading model {}... ", model.dimmed());
             io::stdout().flush().ok();
 

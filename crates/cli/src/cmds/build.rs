@@ -7,7 +7,7 @@ use std::{
 use tokio::process::Command;
 
 /// Handles the `build` command
-pub async fn build() -> Result<()> {
+pub async fn build(start: bool) -> Result<()> {
     // search root directory:
     if cfg!(debug_assertions) && !Path::new(".git").exists() {
         println!("Root not found, searching parent directories...");
@@ -149,6 +149,11 @@ pub async fn build() -> Result<()> {
         "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240)),
         "Build successful!".italic().dimmed()
     );
+
+    // start Ovsy server (if needs):
+    if start {
+        super::start().await?;
+    }
 
     Ok(())
 }

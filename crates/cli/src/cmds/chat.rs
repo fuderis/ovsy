@@ -5,6 +5,9 @@ use ovsy_shared::{Chunk, UserQuery};
 use reqwest::Client;
 use std::io::{self, Write};
 
+/// The maximum count of messages
+const MESSAGES_LIMIT: usize = 15;
+
 /// Helper function to print markdown chunks
 fn print_chunk(
     chunk: &str,
@@ -177,10 +180,12 @@ pub async fn chat() -> Result<()> {
             continue;
         }
 
+        // add new user message:
         messages.push(Message::user(vec![input.into()]));
+        println!("Context: {messages:#?}");
 
         let response = client
-            .post(format!("http://127.0.0.1:{port}/handle"))
+            .post(str!("http://127.0.0.1:{port}/handle"))
             .json(&UserQuery {
                 user_id: 0,
                 messages: messages.clone(),
@@ -189,8 +194,8 @@ pub async fn chat() -> Result<()> {
             .await
             .map_err(|e| str!("Request failed: {e}"))?;
 
-        let mut stream =
-            Stream::read::<Chunk>(response.bytes_stream().map(|c| c.map_err(Into::into)));
+        let bytes_stream = response.bytes_stream().map(|c| c.map_err(Into::into));
+        let mut stream = Stream::read::<Chunk>(bytes_stream);
         let mut full_answer = String::new();
         let mut is_thinking = false;
         let mut first_chunk = true;
@@ -261,10 +266,63 @@ pub async fn chat() -> Result<()> {
             messages.push(Message::assistant(vec![full_answer.into()]));
         }
 
-        // remove extra context messages:
-        if messages.len() > 15 {
-            let start = messages.len() - 15;
-            messages = messages.drain(start..).collect();
+        // compression logic:
+        if messages.len() > MESSAGES_LIMIT + 1 {
+            let total_before = messages.len();
+
+            print!(" {} ", "⚙".yellow());
+            print!("{}", "Compressing context... ".dimmed());
+            io::stdout().flush().ok();
+
+            let compress_count = messages.len() - 4;
+            let to_compress = messages[..compress_count].to_vec();
+
+            let response = client
+                .post(str!("http://127.0.0.1:{port}/compress"))
+                .json(&UserQuery {
+                    user_id: 0,
+                    messages: to_compress.clone(),
+                })
+                .send()
+                .await;
+
+            match response {
+                Ok(res) if res.status().is_success() => {
+                    let bytes_stream = res.bytes_stream().map(|c| c.map_err(Into::into));
+                    let mut stream = Stream::read::<Chunk>(bytes_stream);
+                    let mut summary = String::new();
+
+                    while let Some(chunk) = stream.read().await? {
+                        if let Chunk::Answer { answer } = chunk {
+                            summary.push_str(&answer);
+                        }
+                    }
+
+                    if !summary.trim().is_empty() {
+                        let new_msgs = messages[compress_count..].to_vec();
+                        messages = vec![Message::system(vec![
+                            str!("Summarized context: {}", summary.trim()).into(),
+                        ])];
+                        messages.extend(new_msgs);
+
+                        let total_after = messages.len();
+                        println!("{}", "Done".green());
+                        println!(
+                            " • {} {} {} {} {}",
+                            "Context optimized:".dimmed(),
+                            total_before.to_string().red(),
+                            "→".dimmed(),
+                            total_after.to_string().green(),
+                            format!("(saved {} msgs)", total_before - total_after).color(dim)
+                        );
+                    } else {
+                        println!("{}", "Failed (empty summary)".red());
+                    }
+                }
+                _ => {
+                    println!("{}", "Failed (server error)".red());
+                }
+            }
         }
     }
 

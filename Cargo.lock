@@ -78,10 +78,11 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "anylm"
-version = "0.1.12"
+version = "0.1.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a3e3860fd31035f8f15a31ca32b30f80fe8b89d60ac30c125eb913d69a68df26"
+checksum = "a41cff90e138c8464b8a4ab694f277f00d5bcb6394dd987a62f97d1614c5ac5b"
 dependencies = [
+ "atoman",
  "base64",
  "bytes",
  "futures",
@@ -105,9 +106,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.17"
+version = "0.2.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbde83c19fd00da371517fb36436c47060e577571eac9273a052c3229ba62b9"
+checksum = "32c753643d20085a0bdec9ab608d4790fe00621f211e8fbc6a8606ddacd9f920"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -491,7 +492,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "42703706b716c37f96a77aea830392ad231f44c9e9a67872fa5548707e11b11c"
 
 [[package]]
-name = "fuderis"
+name = "fudes"
 version = "0.1.0"
 dependencies = [
  "atoman",
@@ -1228,7 +1229,7 @@ dependencies = [
  "anylm",
  "clap",
  "colored",
- "fuderis",
+ "fudes",
  "ovsy-shared",
  "reqwest",
  "serde",
@@ -1241,7 +1242,7 @@ name = "ovsy-server"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "fuderis",
+ "fudes",
  "ovsy-shared",
  "serde",
  "serde_json",
@@ -1253,7 +1254,7 @@ name = "ovsy-shared"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "fuderis",
+ "fudes",
  "serde",
  "serde_json",
 ]

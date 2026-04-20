@@ -16,7 +16,10 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     /// Build and install Ovsy to app_data
-    Build,
+    Build {
+        #[arg(short, long)]
+        start: bool,
+    },
 
     /// Check the status of all ecosystem components
     Status,
@@ -57,7 +60,7 @@ async fn main() -> Result<()> {
     Settings::init(app_data().join("settings.toml")).await.ok();
 
     if let Err(e) = match cli.command {
-        Some(Commands::Build) => cmds::build().await,
+        Some(Commands::Build { start }) => cmds::build(start).await,
         Some(Commands::Status) => cmds::status().await,
         Some(Commands::Start) => cmds::start().await,
         Some(Commands::Stop { full }) => cmds::stop(full).await,

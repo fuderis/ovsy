@@ -3,7 +3,7 @@ name = "ovsy-cli"
 edition = "2024"
 
 [dependencies]
-fuderis-basic = { workspace = true }
+fudes-basic = { workspace = true }
 ovsy-shared = { workspace = true }
 anylm = { workspace = true }
 tokio = { workspace = true }

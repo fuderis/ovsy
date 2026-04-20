@@ -15,7 +15,7 @@ pub const VERSION: &str = "0.7.0";
 
 /// Returns the app data dir
 pub fn app_data() -> std::path::PathBuf {
-    fuderis_basic::path!("~/.ovsy")
+    fudes_basic::path!("~/.ovsy")
 }
 
 /// Returns the app version

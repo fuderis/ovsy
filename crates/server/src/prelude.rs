@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
-pub use fuderis_server::*;
-pub use ovsy_shared::{Settings, app_data};
+pub use fudes_server::*;
+pub use ovsy_shared::{app_data, Settings};
 
 pub use serde::{Deserialize, Serialize};
 pub use serde_json::json;
