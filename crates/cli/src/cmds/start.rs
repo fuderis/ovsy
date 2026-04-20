@@ -1,7 +1,10 @@
 use crate::{UNDERLINE_COUNT, prelude::*};
 use anylm::ApiKind;
 use colored::*;
-use std::io::{self, Write};
+use std::{
+    io::{self, Write},
+    process::Stdio,
+};
 use tokio::process::Command;
 
 /// Handles the `start` command
@@ -62,10 +65,13 @@ pub async fn start() -> Result<()> {
                 if !loaded_models.contains(model) {
                     Command::new("lms")
                         .args(["load", model])
+                        .stdout(Stdio::null())
+                        .stderr(Stdio::null())
+                        .stdin(Stdio::null())
                         .status()
                         .await
                         .ok();
-                    // println!("{}", "Done".green());
+                    println!("{}", "Done".green());
                 } else {
                     println!("{}", "Ready".green());
                 }

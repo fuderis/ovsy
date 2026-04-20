@@ -5,9 +5,6 @@ use ovsy_shared::{Chunk, UserQuery};
 use reqwest::Client;
 use std::io::{self, Write};
 
-/// The maximum count of messages
-const MESSAGES_LIMIT: usize = 15;
-
 /// Helper function to print markdown chunks
 fn print_chunk(
     chunk: &str,
@@ -165,6 +162,9 @@ pub async fn chat() -> Result<()> {
         "Ready to assist. Type 'exit' to leave.".italic().color(dim)
     );
 
+    let max_messages = Settings::get().assistant.max_messages * 2;
+    let messages_limit = max_messages * 2;
+
     loop {
         print!("{} ", "  →".cyan().bold());
         io::stdout().flush().ok();
@@ -267,14 +267,14 @@ pub async fn chat() -> Result<()> {
         }
 
         // compression logic:
-        if messages.len() > MESSAGES_LIMIT + 1 {
+        if messages.len() >= messages_limit {
             let total_before = messages.len();
 
             print!(" {} ", "⚙".yellow());
             print!("{}", "Compressing context... ".dimmed());
             io::stdout().flush().ok();
 
-            let compress_count = messages.len() - 4;
+            let compress_count = messages.len() - max_messages;
             let to_compress = messages[..compress_count].to_vec();
 
             let response = client

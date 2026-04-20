@@ -88,6 +88,7 @@ impl ::std::default::Default for ServerOptions {
 /// The AI prompt options
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssistantOptions {
+    pub max_messages: usize,
     pub assist_prompt: String,
     pub compress_prompt: String,
     pub completions: AiOptions,
@@ -111,6 +112,7 @@ impl ::std::default::Default for AssistantOptions {
         compression.temperature.replace(0.5);
 
         Self {
+            max_messages: 4,
             assist_prompt: str!(ASSISTING_PROMPT),
             compress_prompt: str!(COMPRESSING_PROMPT),
             completions,
