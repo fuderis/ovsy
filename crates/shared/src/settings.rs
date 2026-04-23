@@ -73,14 +73,14 @@ static SETTINGS: State<Config<Settings>> = State::new();
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerOptions {
     pub port: u16,
-    pub log_files: usize,
+    pub logs_limit: usize,
 }
 
 impl ::std::default::Default for ServerOptions {
     fn default() -> Self {
         Self {
             port: 7878,
-            log_files: 1000,
+            logs_limit: 1000,
         }
     }
 }

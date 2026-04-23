@@ -182,7 +182,6 @@ pub async fn chat() -> Result<()> {
 
         // add new user message:
         messages.push(Message::user(vec![input.into()]));
-        println!("Context: {messages:#?}");
 
         let response = client
             .post(str!("http://127.0.0.1:{port}/handle"))

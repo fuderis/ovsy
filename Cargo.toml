@@ -5,8 +5,8 @@ resolver = "3"
 
 [workspace.dependencies]
 ovsy-shared = { path = "crates/shared" }
-fudes-server = { package = "fudes", path = "../fudes", features = ["basic", "server"] }
-fudes-basic = { package = "fudes", path = "../fudes", features = ["basic"] }
+fudes-server = { package = "fudes", version = "0.1.1", features = ["basic", "server"] }
+fudes-basic = { package = "fudes", version = "0.1.1", features = ["basic"] }
 anylm = { version = "0.1.13" }
 tokio = { version = "1.51.0", features = ["full"] }
 serde = { version = "1.0.228", features = ["derive"] }
