@@ -15,4 +15,3 @@ colored = { workspace = true }
 ratatui = { workspace = true }
 crossterm = { workspace = true }
 textwrap = { workspace = true }
-hyperrat = { workspace = true }
