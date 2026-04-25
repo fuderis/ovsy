@@ -20,6 +20,7 @@ use tokio::sync::mpsc;
 /// The user interface app
 struct App {
     input: String,
+    cursor_position: usize,
     messages: Vec<Message>,
     is_thinking: bool,
     scroll_offset: u16,
@@ -127,6 +128,7 @@ pub async fn handle() -> Result<()> {
 
     let mut app = App {
         input: String::new(),
+        cursor_position: 0,
         messages: Vec::new(),
         is_thinking: false,
         scroll_offset: 0,
@@ -193,10 +195,50 @@ where
                 // keyboard events:
                 Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
                     KeyCode::Esc => return Ok(()),
-                    KeyCode::Char(c) => app.input.push(c),
-                    KeyCode::Backspace => {
-                        app.input.pop();
+                    KeyCode::Left => {
+                        if app.cursor_position > 0 {
+                            app.cursor_position = app
+                                .input
+                                .char_indices()
+                                .filter(|&(i, _)| i < app.cursor_position)
+                                .last()
+                                .map(|(i, _)| i)
+                                .unwrap_or(0);
+                        }
                     }
+                    KeyCode::Right => {
+                        if let Some((i, c)) = app
+                            .input
+                            .char_indices()
+                            .find(|&(i, _)| i == app.cursor_position)
+                        {
+                            app.cursor_position = i + c.len_utf8();
+                        }
+                    }
+                    KeyCode::Char(c) => {
+                        app.input.insert(app.cursor_position, c);
+                        app.cursor_position += c.len_utf8();
+                    }
+                    KeyCode::Backspace => {
+                        if app.cursor_position > 0 {
+                            if let Some((i, _c)) = app
+                                .input
+                                .char_indices()
+                                .filter(|&(i, _)| i < app.cursor_position)
+                                .last()
+                            {
+                                app.input.remove(i);
+                                app.cursor_position = i;
+                            }
+                        }
+                    }
+                    KeyCode::Delete => {
+                        if app.cursor_position < app.input.len() {
+                            app.input.remove(app.cursor_position);
+                        }
+                    }
+                    KeyCode::End => app.cursor_position = app.input.len(),
+                    KeyCode::Home => app.cursor_position = 0,
                     KeyCode::PageUp => app.scroll_offset = app.scroll_offset.saturating_sub(5),
                     KeyCode::PageDown => app.scroll_offset = app.scroll_offset.saturating_add(5),
                     KeyCode::Up => app.scroll_offset = app.scroll_offset.saturating_sub(1),
@@ -206,8 +248,10 @@ where
                         app.messages.push(Message::user(vec![cmd.clone().into()]));
                         let _ = app.tx.send(cmd);
                         app.input.clear();
+                        app.cursor_position = 0;
                         app.scroll_offset = u16::MAX;
                     }
+
                     _ => {}
                 },
                 // mouse events:
@@ -328,7 +372,8 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         chat_area,
     );
 
-    // input block:
+    // --- INPUT BLOCK ---
+    let input_area = chunks[2];
     let input_style = if app.is_thinking {
         Style::default().fg(Color::Yellow)
     } else {
@@ -348,9 +393,24 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
                 .title(Span::styled(input_title, Style::default().bold()))
                 .border_style(input_style),
         ),
-        chunks[2],
+        input_area,
     );
 
+    // --- CURSOR POSITIONING ---
+    // x: the beginning of the block + prefix indentation (4) + cursor position in the line
+    // y: the beginning of the block + 1 (offset from the upper border of the frame)
+    if !app.is_thinking {
+        use unicode_width::UnicodeWidthStr;
+
+        let text_before_cursor = &app.input[..app.cursor_position];
+        let visual_width = text_before_cursor.width();
+
+        let x_offset = input_area.x + 1 + 4;
+
+        f.set_cursor_position((x_offset + (visual_width as u16), input_area.y + 1));
+    }
+
+    // --- FOOTER ---
     let help = Line::from(vec![
         " /clear ".bold().cyan(),
         "Clean context ".dim(),
