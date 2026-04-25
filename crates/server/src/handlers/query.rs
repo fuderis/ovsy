@@ -3,7 +3,7 @@ use anylm::{AiChunk, Completions};
 use ovsy_shared::{Chunk, UserQuery};
 
 /// API: The user query handler
-pub async fn query_handler(data: Json<UserQuery>) -> Response {
+pub async fn handle(data: Json<UserQuery>) -> Response {
     let body = Stream::body(move |tx| async move {
         if let Err(e) = handle_query(tx.clone(), data.0).await {
             tx.send(Chunk::error(str!("{e}"))).ok();

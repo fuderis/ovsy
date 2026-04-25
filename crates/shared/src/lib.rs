@@ -7,6 +7,12 @@ pub use user_query::*;
 pub mod settings;
 pub use settings::Settings;
 
+pub mod manifest;
+pub use manifest::Manifest;
+
+pub mod agent_info;
+pub use agent_info::AgentInfo;
+
 pub mod response;
 pub use response::*;
 

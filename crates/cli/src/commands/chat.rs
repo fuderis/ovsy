@@ -140,7 +140,7 @@ fn print_chunk(
 }
 
 /// Handles the `chat` command
-pub async fn chat() -> Result<()> {
+pub async fn handle() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::new();
     let mut messages: Vec<Message> = Vec::new();

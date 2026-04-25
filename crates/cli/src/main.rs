@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use colored::*;
-use ovsy_cli::{cmds, prelude::*};
+use ovsy_cli::{commands, prelude::*};
 
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
@@ -60,14 +60,14 @@ async fn main() -> Result<()> {
     Settings::init(app_data().join("settings.toml")).await.ok();
 
     if let Err(e) = match cli.command {
-        Some(Commands::Build { start }) => cmds::build(start).await,
-        Some(Commands::Status) => cmds::status().await,
-        Some(Commands::Start) => cmds::start().await,
-        Some(Commands::Stop { full }) => cmds::stop(full).await,
-        Some(Commands::Restart { full }) => cmds::restart(full).await,
-        Some(Commands::Refresh) => cmds::refresh().await,
-        Some(Commands::Chat) | None => cmds::chat().await,
-        Some(Commands::Config) => cmds::config().await,
+        Some(Commands::Build { start }) => commands::build::handle(start).await,
+        Some(Commands::Status) => commands::status::handle().await,
+        Some(Commands::Start) => commands::start::handle().await,
+        Some(Commands::Stop { full }) => commands::stop::handle(full).await,
+        Some(Commands::Restart { full }) => commands::restart::handle(full).await,
+        Some(Commands::Refresh) => commands::refresh::handle().await,
+        Some(Commands::Chat) | None => commands::chat::handle().await,
+        Some(Commands::Config) => commands::config::handle().await,
     } {
         eprintln!("\n{}: {}", "Error".red().bold(), e.to_string().white());
         std::process::exit(1);

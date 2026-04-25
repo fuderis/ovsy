@@ -3,7 +3,7 @@ use colored::*;
 use tokio::process::Command;
 
 /// Handles the `config` command
-pub async fn config() -> Result<()> {
+pub async fn handle() -> Result<()> {
     let path = Settings::path();
 
     println!("⚙️  Opening config: {}", path.display().to_string().white());

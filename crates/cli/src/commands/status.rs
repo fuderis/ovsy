@@ -1,0 +1,93 @@
+use crate::prelude::*;
+use colored::*;
+use ovsy_shared::{AgentInfo, StatusResponse};
+use reqwest::Client;
+use tokio::process::Command;
+
+pub async fn handle() -> Result<()> {
+    let port = Settings::get().server.port;
+    let client = Client::new();
+
+    // 1. Ovsy Server Check
+    let res = client
+        .get(format!("http://127.0.0.1:{port}/status"))
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            println!(
+                "📡 {} {}",
+                "Ovsy server:".bold(),
+                format!("Online (port {port})").green()
+            );
+
+            // Парсим агентов
+            if let Ok(data) = response.json::<StatusResponse>().await {
+                match data {
+                    StatusResponse::Success { agents } => {
+                        if agents.is_empty() {
+                            println!("   {}", "No agents loaded".yellow().dimmed());
+                        } else {
+                            for AgentInfo { name, .. } in agents {
+                                println!(" • {}", name.dimmed());
+                            }
+                        }
+                    }
+                    StatusResponse::Error { error } => {
+                        println!("   {} {}", "Error:".red(), error.dimmed());
+                    }
+                }
+            }
+        }
+        Err(_) => {
+            println!("📡 {} {}", "Ovsy server:".bold(), "Offline".red());
+        }
+    }
+
+    // 2. LM Studio Status
+    let lms_out = Command::new("lms").args(["status"]).output().await;
+    let lms_raw = match lms_out {
+        Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
+        _ => String::new(),
+    };
+
+    let lms_running = lms_raw.contains("ON");
+    let lms_port = lms_raw
+        .lines()
+        .find(|l| l.contains("port:"))
+        .and_then(|l| l.split("port:").last())
+        .map(|p| p.trim_matches(|c: char| !c.is_numeric()))
+        .unwrap_or("unknown");
+
+    let lms_display = if lms_running {
+        format!("Online (port {lms_port})").green()
+    } else {
+        "Offline".red()
+    };
+
+    println!("\n📡 {} {}", "LM Studio:".bold(), lms_display);
+
+    if lms_running {
+        let mut in_models_block = false;
+        let mut found_any = false;
+
+        for line in lms_raw.lines() {
+            let line = line.trim();
+            if line.contains("Loaded Models") {
+                in_models_block = true;
+                continue;
+            }
+            if in_models_block && line.starts_with('·') {
+                found_any = true;
+                let model_info = line.trim_start_matches('·').trim();
+                println!(" • {}", model_info.dimmed());
+            }
+        }
+        if !found_any && in_models_block {
+            println!("   {}", "None".yellow().dimmed());
+        }
+    }
+
+    Ok(())
+}

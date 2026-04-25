@@ -6,9 +6,6 @@ use std::{
     sync::Arc,
 };
 
-/// The config update check timeout
-const CHECK_TIMEOUT: u64 = 2500;
-
 /// The default assistant prompt
 const ASSISTING_PROMPT: &'static str = r#"РОЛЬ: Ты — Ovsy. Высокотехнологичный ассистент с характером «цифрового дворецкого» и аналитическим умом бизнес-консультанта.
 
@@ -79,14 +76,14 @@ static SETTINGS: State<Config<Settings>> = State::new();
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct ServerOptions {
     pub port: u16,
-    pub logs_limit: usize,
+    pub max_logs: usize,
 }
 
 impl ::std::default::Default for ServerOptions {
     fn default() -> Self {
         Self {
             port: 7878,
-            logs_limit: 1000,
+            max_logs: 1000,
         }
     }
 }
@@ -184,10 +181,12 @@ impl Settings {
         Config::<Settings>::read(path).await
     }
 
-    /// Updates settings from file
+    /// Reads actual settings from file
     pub async fn update() -> Result<bool> {
-        if SETTINGS.dirty_get().check(CHECK_TIMEOUT).await? {
-            SETTINGS.lock().await.update().await
+        let mut cfg = SETTINGS.lock().await;
+
+        if cfg.check(0).await? {
+            cfg.update().await
         } else {
             Ok(false)
         }

@@ -1,9 +1,10 @@
+use crate::AgentInfo;
 use serde::{Deserialize, Serialize};
 
-/// The /refresh response structure
+/// The /status response structure
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(untagged)]
-pub enum RefreshResponse {
+pub enum StatusResponse {
     Error { error: String },
-    Success { agents: Vec<(String, bool)> },
+    Success { agents: Vec<AgentInfo> },
 }

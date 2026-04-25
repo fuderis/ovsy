@@ -8,7 +8,7 @@ use std::{
 use tokio::process::Command;
 
 /// Handles the `start` command
-pub async fn start() -> Result<()> {
+pub async fn handle() -> Result<()> {
     let exe = std::env::consts::EXE_SUFFIX;
     let server_path = app_data().join(format!("ovsy-server{exe}"));
 
@@ -19,7 +19,7 @@ pub async fn start() -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     if ai_conf.completions.kind == ApiKind::LmStudio || ai_conf.embeddings.kind == ApiKind::LmStudio
     {
-        print!("📡 Checking LM Studio... ");
+        print!("📡 Checking LM Studio server... ");
         io::stdout().flush().ok();
 
         let server_status = Command::new("lms").args(["status"]).output().await;
@@ -71,10 +71,8 @@ pub async fn start() -> Result<()> {
                         .status()
                         .await
                         .ok();
-                    println!("{}", "Done".green());
-                } else {
-                    println!("{}", "Ready".green());
                 }
+                println!("{}", "Loaded".green());
             }
         }
     }
@@ -90,11 +88,8 @@ pub async fn start() -> Result<()> {
             .current_dir(app_data())
             .kill_on_drop(false)
             .spawn()?;
-
-        println!("{}", "Running".green());
-    } else {
-        println!("{}", "Already running".cyan());
     }
+    println!("{}", "Online".green());
 
     println!(
         "{}",
