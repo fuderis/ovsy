@@ -1086,6 +1086,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "hyperrat"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "37557996ae7874ea39a1312e5baf2f41bff8c28f447ca3b0ee04420f479b64f5"
+dependencies = [
+ "ratatui-core",
+ "textwrap",
+]
+
+[[package]]
 name = "iana-time-zone"
 version = "0.1.65"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1738,6 +1748,7 @@ dependencies = [
  "colored",
  "crossterm",
  "fudes",
+ "hyperrat",
  "ovsy-shared",
  "ratatui",
  "reqwest",

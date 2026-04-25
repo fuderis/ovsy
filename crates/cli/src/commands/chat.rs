@@ -232,7 +232,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(7), // header
+            Constraint::Length(6), // header
             Constraint::Min(1),    // chat
             Constraint::Length(3), // input
             Constraint::Length(1), // footer
@@ -364,12 +364,13 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     f.render_widget(Paragraph::new(help), chunks[3]);
 }
 
+/// Renders the header
 fn render_header(f: &mut ratatui::Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(" Ovsy Assistant ");
+        .title(format!(" Ovsy Assistant {} ", app_version()));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -388,10 +389,10 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
     let content_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(3),      // left gap
+            Constraint::Length(2),      // left gap
             Constraint::Percentage(40), // left info block
-            Constraint::Percentage(55), // right info block
-            Constraint::Length(3),      // right gap
+            Constraint::Percentage(60), // right info block
+            Constraint::Length(2),      // right gap
         ])
         .split(layout[1]);
 
@@ -402,10 +403,6 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
 
     // left info block:
     let left_text = Text::from(vec![
-        Line::from(vec![
-            Span::styled("Version: ", Style::default().white().bold()),
-            Span::styled(format!("{}", app_version()), Style::default().gray()),
-        ]),
         Line::from(vec![
             Span::styled("Model: ", Style::default().white().bold()),
             Span::styled(
@@ -423,7 +420,6 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
     let right_text = Text::from(
         vec![
             Line::from("Digital liberation through local-first orchestration."),
-            Line::from("No telemetry, mo constraints, pure Rust autonomy."),
             Line::from("Reclaim your data, build your own intelligence."),
         ]
         .iter()
@@ -586,6 +582,70 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
 
             while let Some(c) = chars.next() {
                 match c {
+                    '[' if !state.is_inline_code => {
+                        if !current_text.is_empty() {
+                            push_text_with_urls(
+                                &mut spans,
+                                &current_text,
+                                get_style(&state, base_style),
+                            );
+                            current_text.clear();
+                        }
+
+                        let mut link_text = String::new();
+                        while let Some(&next_c) = chars.peek() {
+                            if next_c == ']' {
+                                chars.next();
+                                break;
+                            }
+                            link_text.push(chars.next().unwrap());
+                        }
+
+                        if chars.peek() == Some(&'(') {
+                            chars.next();
+                            let mut url = String::new();
+                            while let Some(&next_c) = chars.peek() {
+                                if next_c == ')' {
+                                    chars.next();
+                                    break;
+                                }
+                                url.push(chars.next().unwrap());
+                            }
+
+                            let is_duplicate = url.contains(&link_text)
+                                || link_text
+                                    .contains(&url.replace("https://", "").replace("http://", ""));
+
+                            if is_duplicate {
+                                spans.push(Span::styled(
+                                    url,
+                                    get_style(&state, base_style).fg(Color::Cyan).underlined(),
+                                ));
+                            } else {
+                                spans.push(Span::styled(link_text, get_style(&state, base_style)));
+                                spans.push(Span::styled(" (", get_style(&state, base_style)));
+                                spans.push(Span::styled(
+                                    url,
+                                    get_style(&state, base_style).fg(Color::Cyan).underlined(),
+                                ));
+                                spans.push(Span::styled(")", get_style(&state, base_style)));
+                            }
+                        } else {
+                            let is_url = link_text.starts_with("http");
+                            let style = if is_url {
+                                get_style(&state, base_style).fg(Color::Cyan).underlined()
+                            } else {
+                                get_style(&state, base_style).fg(Color::Cyan)
+                            };
+
+                            let display = if is_url {
+                                link_text
+                            } else {
+                                format!("[{}]", link_text)
+                            };
+                            spans.push(Span::styled(display, style));
+                        }
+                    }
                     '~' if chars.peek() == Some(&'~') => {
                         chars.next();
                         if !current_text.is_empty() {
@@ -628,12 +688,9 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
                 }
             }
             if !current_text.is_empty() {
-                spans.push(Span::styled(
-                    current_text.clone(),
-                    get_style(&state, base_style),
-                ));
+                push_text_with_urls(&mut spans, &current_text, get_style(&state, base_style));
             }
-            lines.push(Line::from(spans));
+            lines.push(Line::from(spans))
         }
     }
     lines
@@ -660,4 +717,21 @@ fn get_style(state: &ParserState, base: Style) -> Style {
         }
     }
     s
+}
+
+/// Push a text with URL links
+fn push_text_with_urls(spans: &mut Vec<Span<'static>>, text: &str, base_style: Style) {
+    let words = text.split_inclusive(|c: char| c.is_whitespace());
+
+    for word in words {
+        let trimmed = word.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            spans.push(Span::styled(
+                word.to_string(),
+                base_style.fg(Color::Cyan).underlined(),
+            ));
+        } else {
+            spans.push(Span::styled(word.to_string(), base_style));
+        }
+    }
 }
