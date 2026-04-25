@@ -13,3 +13,5 @@ serde_json = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 ratatui = { workspace = true }
+crossterm = { workspace = true }
+textwrap = { workspace = true }

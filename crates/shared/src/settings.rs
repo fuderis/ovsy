@@ -103,7 +103,7 @@ impl ::std::default::Default for AssistantOptions {
     fn default() -> Self {
         let mut completions = AiOptions::default();
         completions.kind = ApiKind::LmStudio;
-        completions.model = str!("qwen/qwen3-vl-4b");
+        completions.model = str!("qwen/qwen3-vl-8b");
         completions.temperature.replace(0.7);
         completions.max_tokens.replace(8096);
 

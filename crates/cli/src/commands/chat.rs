@@ -1,329 +1,663 @@
-use crate::{UNDERLINE_COUNT, prelude::*};
-use anylm::Message;
-use colored::*;
+use crate::prelude::*;
+use anylm::{Content, Message, Role};
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEventKind},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
+};
 use ovsy_shared::{Chunk, UserQuery};
-use reqwest::Client;
-use std::io::{self, Write};
+use ratatui::{
+    Terminal,
+    backend::Backend,
+    layout::{Constraint, Direction, Layout, Rect},
+    style::{Color, Style, Stylize},
+    text::{Line, Span, Text},
+    widgets::{Block, BorderType, Borders, Paragraph},
+};
+use std::io;
+use tokio::sync::mpsc;
 
-/// Helper function to print markdown chunks
-fn print_chunk(
-    chunk: &str,
-    in_code: &mut bool,
-    backtick_count: &mut usize,
-    is_header: &mut bool,
-    is_bold: &mut bool,
-    is_italic: &mut bool,
-    start_of_line: &mut bool,
-    is_inline_code: &mut bool,
-    minus_count: &mut usize,
-) {
-    let block_code_color = Color::BrightMagenta;
-    let inline_code_color = Color::AnsiColor(81);
-    let header_color = Color::BrightMagenta;
-    let default_color = Color::BrightWhite;
-    let line_color = Color::AnsiColor(240);
-    let mut star_count = 0;
-
-    for c in chunk.chars() {
-        // --- 1. BACKTICKS ---
-        if c == '`' {
-            *backtick_count += 1;
-            continue;
-        }
-
-        if *backtick_count > 0 {
-            if *backtick_count == 3 {
-                *in_code = !*in_code;
-                print!("{}", "```".color(block_code_color).bold());
-                if !*in_code {
-                    *start_of_line = false;
-                }
-            } else {
-                *is_inline_code = !*is_inline_code;
-                let b_color = if *is_header {
-                    header_color
-                } else {
-                    inline_code_color
-                };
-                print!("{}", "`".color(b_color));
-            }
-            *backtick_count = 0;
-            if c == '`' {
-                continue;
-            }
-        }
-
-        // --- 2. CODE BLOCK ---
-        if *in_code {
-            print!("{}", c.to_string().color(block_code_color));
-            if c == '\n' {
-                *start_of_line = true;
-            }
-            continue;
-        }
-
-        // --- 3. GORIZONTAL LINE ---
-        if *start_of_line && c == '-' {
-            *minus_count += 1;
-            if *minus_count == 3 {
-                print!("\r{}", "─".repeat(UNDERLINE_COUNT).color(line_color));
-                *minus_count = 0;
-            }
-            continue;
-        } else if *minus_count > 0 {
-            print!("{}", "-".repeat(*minus_count));
-            *minus_count = 0;
-            *start_of_line = false;
-        }
-
-        // --- 4. HEADERS & STARS ---
-        if *start_of_line && c == '#' {
-            *is_header = true;
-            continue;
-        }
-
-        if c == '*' {
-            star_count += 1;
-            if star_count == 2 {
-                *is_bold = !*is_bold;
-                star_count = 0;
-            }
-            continue;
-        }
-        if star_count == 1 {
-            *is_italic = !*is_italic;
-            star_count = 0;
-        }
-
-        // --- 5. FINAL PRINT ---
-        match c {
-            '\n' => {
-                print!("\n");
-                *is_header = false;
-                *start_of_line = true;
-                *is_bold = false;
-                *is_italic = false;
-                *is_inline_code = false;
-            }
-            _ => {
-                if *is_header && *start_of_line && c == ' ' {
-                    continue;
-                }
-
-                // header:
-                let styled = if *is_header {
-                    c.to_string().color(header_color).bold()
-                }
-                // code block:
-                else if *is_inline_code {
-                    c.to_string().color(inline_code_color)
-                }
-                // simple text:
-                else {
-                    let mut styled = c.to_string().color(default_color);
-                    if *is_bold {
-                        styled = styled.bold()
-                    }
-                    if *is_italic {
-                        styled = styled.italic();
-                    }
-                    styled
-                };
-
-                print!("{styled}");
-                if c != ' ' && c != '\t' {
-                    *start_of_line = false;
-                }
-            }
-        }
-    }
+/// The user interface app
+struct App {
+    input: String,
+    messages: Vec<Message>,
+    is_thinking: bool,
+    scroll_offset: u16,
+    tx: mpsc::UnboundedSender<String>,
 }
 
 /// Handles the `chat` command
 pub async fn handle() -> Result<()> {
-    let port = Settings::get().server.port;
-    let client = Client::new();
-    let mut messages: Vec<Message> = Vec::new();
+    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<String>();
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
 
-    let dim = Color::AnsiColor(247);
-    let bold_white = Color::BrightWhite;
-    let cyan = Color::Cyan;
+    // spawn workers:
+    let worker_ui_tx = ui_tx.clone();
+    tokio::spawn(async move {
+        let mut messages: Vec<Message> = Vec::new();
+        let port = Settings::get().server.port;
+        let client = reqwest::Client::new();
 
-    print!("\x1b[2J\x1b[1;1H");
-    println!(
-        " {} {} {}",
-        "💎".color(cyan),
-        "Ovsy Assistant".color(bold_white).bold(),
-        format!("v{}", app_version()).color(dim)
-    );
-    println!("{}", "─".repeat(UNDERLINE_COUNT).color(dim));
-    println!(
-        " {}\n",
-        "Ready to assist. Type 'exit' to leave.".italic().color(dim)
-    );
+        let max_messages = Settings::get().assistant.max_messages * 2;
+        let messages_limit = max_messages * 2;
 
-    let max_messages = Settings::get().assistant.max_messages * 2;
-    let messages_limit = max_messages * 2;
-
-    loop {
-        print!("{} ", "  →".cyan().bold());
-        io::stdout().flush().ok();
-
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).ok();
-        let input = input.trim();
-
-        if input == "exit" || input == "quit" {
-            break;
-        }
-        if input.is_empty() {
-            continue;
-        }
-
-        // add new user message:
-        messages.push(Message::user(vec![input.into()]));
-
-        let response = client
-            .post(str!("http://127.0.0.1:{port}/handle"))
-            .json(&UserQuery {
-                user_id: 0,
-                messages: messages.clone(),
-            })
-            .send()
-            .await
-            .map_err(|e| str!("Request failed: {e}"))?;
-
-        let bytes_stream = response.bytes_stream().map(|c| c.map_err(Into::into));
-        let mut stream = Stream::read::<Chunk>(bytes_stream);
-        let mut full_answer = String::new();
-        let mut is_thinking = false;
-        let mut first_chunk = true;
-
-        // helper format variables:
-        let mut in_code_block = false;
-        let mut is_header = false;
-        let mut is_bold = false;
-        let mut is_italic = false;
-        let mut start_of_line = true;
-        let mut is_inline_code = false;
-        let mut minus_count = 0;
-        let mut backtick_count = 0;
-
-        while let Some(chunk_result) = stream.read().await? {
-            match chunk_result {
-                Chunk::Think { think } => {
-                    if !is_thinking {
-                        print!("{} ", "● Thinking:".blue());
-                        is_thinking = true;
-                    }
-                    print!("{}", think.blue());
-                    io::stdout().flush().ok();
-                }
-                Chunk::Answer { answer } => {
-                    if is_thinking {
-                        print!("\x1b[2K\r");
-                        is_thinking = false;
-                    }
-                    if first_chunk {
-                        print!("{} ", "  →".magenta().bold());
-                        first_chunk = false;
-                    }
-
-                    // print AI answer chunk:
-                    print_chunk(
-                        &answer,
-                        &mut in_code_block,
-                        &mut backtick_count,
-                        &mut is_header,
-                        &mut is_bold,
-                        &mut is_italic,
-                        &mut start_of_line,
-                        &mut is_inline_code,
-                        &mut minus_count,
-                    );
-
-                    io::stdout().flush().ok();
-                    full_answer.push_str(&answer);
-                }
-                Chunk::Error { error } => {
-                    if is_thinking {
-                        println!();
-                        is_thinking = false;
-                    }
-                    eprintln!("\n{} {}", "Error:".red().bold(), error);
-                }
+        while let Some(input) = input_rx.recv().await {
+            if input == "/clear" {
+                messages.clear();
+                let _ = worker_ui_tx.send(Chunk::Answer {
+                    answer: "── Context Cleared ──".into(),
+                });
+                continue;
             }
-        }
 
-        println!(
-            "\n{}",
-            "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
-        );
+            messages.push(Message::user(vec![input.into()]));
 
-        // add final answer to context:
-        if !full_answer.is_empty() {
-            messages.push(Message::assistant(vec![full_answer.into()]));
-        }
-
-        // compression logic:
-        if messages.len() >= messages_limit {
-            let total_before = messages.len();
-
-            print!(" {} ", "⚙".yellow());
-            print!("{}", "Compressing context... ".dimmed());
-            io::stdout().flush().ok();
-
-            let compress_count = messages.len() - max_messages;
-            let to_compress = messages[..compress_count].to_vec();
-
-            let response = client
-                .post(str!("http://127.0.0.1:{port}/compress"))
+            let res = client
+                .post(format!("http://127.0.0.1:{port}/handle"))
                 .json(&UserQuery {
                     user_id: 0,
-                    messages: to_compress.clone(),
+                    messages: messages.clone(),
                 })
                 .send()
                 .await;
 
-            match response {
-                Ok(res) if res.status().is_success() => {
+            if let Ok(response) = res {
+                let bytes_stream = response.bytes_stream().map(|c| c.map_err(Into::into));
+                let mut stream = Stream::read::<Chunk>(bytes_stream);
+                let mut full_answer = String::new();
+
+                while let Ok(Some(chunk)) = stream.read().await {
+                    if let Chunk::Answer { ref answer } = chunk {
+                        full_answer.push_str(answer);
+                    }
+                    // send chunk to ui:
+                    let _ = worker_ui_tx.send(chunk);
+                }
+
+                if !full_answer.is_empty() {
+                    messages.push(Message::assistant(vec![full_answer.into()]));
+                }
+            }
+
+            // compressing dialog:
+            if messages.len() >= messages_limit {
+                let _ = worker_ui_tx.send(Chunk::Think {
+                    think: "⚙ Compressing...".into(),
+                });
+
+                let compress_count = messages.len() - max_messages;
+                let to_compress = messages[..compress_count].to_vec();
+
+                let res = client
+                    .post(format!("http://127.0.0.1:{port}/compress"))
+                    .json(&UserQuery {
+                        user_id: 0,
+                        messages: to_compress,
+                    })
+                    .send()
+                    .await;
+
+                if let Ok(res) = res {
                     let bytes_stream = res.bytes_stream().map(|c| c.map_err(Into::into));
                     let mut stream = Stream::read::<Chunk>(bytes_stream);
                     let mut summary = String::new();
 
-                    while let Some(chunk) = stream.read().await? {
-                        if let Chunk::Answer { answer } = chunk {
-                            summary.push_str(&answer);
-                        }
+                    while let Ok(Some(Chunk::Answer { answer })) = stream.read().await {
+                        summary.push_str(&answer);
                     }
 
                     if !summary.trim().is_empty() {
                         let new_msgs = messages[compress_count..].to_vec();
                         messages = vec![Message::system(vec![
-                            str!("Summarized context: {}", summary.trim()).into(),
+                            format!("Summarized context: {}", summary.trim()).into(),
                         ])];
                         messages.extend(new_msgs);
-
-                        let total_after = messages.len();
-                        println!("{}", "Done".green());
-                        println!(
-                            " • {} {} {} {} {}",
-                            "Context optimized:".dimmed(),
-                            total_before.to_string().red(),
-                            "→".dimmed(),
-                            total_after.to_string().green(),
-                            format!("(saved {} msgs)", total_before - total_after).color(dim)
-                        );
-                    } else {
-                        println!("{}", "Failed (empty summary)".red());
                     }
-                }
-                _ => {
-                    println!("{}", "Failed (server error)".red());
                 }
             }
         }
+    });
+
+    // setup user interface:
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = ratatui::backend::CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+
+    let mut app = App {
+        input: String::new(),
+        messages: Vec::new(),
+        is_thinking: false,
+        scroll_offset: 0,
+        tx: input_tx,
+    };
+
+    // run interface:
+    let _ = run_app(&mut terminal, &mut app, &mut ui_rx).await;
+
+    // restore mode & events:
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    Ok(())
+}
+
+/// Runs the UI app
+async fn run_app<B: Backend>(
+    terminal: &mut Terminal<B>,
+    app: &mut App,
+    ui_rx: &mut mpsc::UnboundedReceiver<Chunk>,
+) -> Result<()>
+where
+    B::Error: std::fmt::Display,
+{
+    loop {
+        terminal
+            .draw(|f| ui(f, app))
+            .map_err(|e| str!(e.to_string()))?;
+
+        // read a new chunks:
+        while let Ok(chunk) = ui_rx.try_recv() {
+            match chunk {
+                Chunk::Think { .. } => app.is_thinking = true,
+                Chunk::Answer { answer } => {
+                    app.is_thinking = false;
+
+                    match app.messages.last_mut() {
+                        Some(msg) if msg.role.is_assistant() => {
+                            if let Some(Content::Text { text }) = msg.content.get_mut(0) {
+                                text.push_str(&answer);
+                            }
+                        }
+                        _ => app.messages.push(Message::assistant(vec![answer.into()])),
+                    }
+
+                    app.scroll_offset = app.scroll_offset.saturating_add(1);
+                }
+                Chunk::Error { error } => {
+                    app.is_thinking = false;
+                    app.messages
+                        .push(Message::system(vec![format!("Error: {error}").into()]));
+                }
+            }
+        }
+
+        // handle events:
+        if event::poll(std::time::Duration::from_millis(16))? {
+            match event::read()? {
+                // terminal resize:
+                Event::Resize(_, _) => {
+                    terminal.autoresize().ok();
+                }
+
+                // keyboard events:
+                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
+                    KeyCode::Esc => return Ok(()),
+                    KeyCode::Char(c) => app.input.push(c),
+                    KeyCode::Backspace => {
+                        app.input.pop();
+                    }
+                    KeyCode::PageUp => app.scroll_offset = app.scroll_offset.saturating_sub(5),
+                    KeyCode::PageDown => app.scroll_offset = app.scroll_offset.saturating_add(5),
+                    KeyCode::Up => app.scroll_offset = app.scroll_offset.saturating_sub(1),
+                    KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_add(1),
+                    KeyCode::Enter if !app.input.is_empty() => {
+                        let cmd = app.input.trim().to_string();
+                        app.messages.push(Message::user(vec![cmd.clone().into()]));
+                        let _ = app.tx.send(cmd);
+                        app.input.clear();
+                        app.scroll_offset = u16::MAX;
+                    }
+                    _ => {}
+                },
+                // mouse events:
+                Event::Mouse(mouse_event) => match mouse_event.kind {
+                    event::MouseEventKind::ScrollUp => {
+                        app.scroll_offset = app.scroll_offset.saturating_sub(3);
+                    }
+                    event::MouseEventKind::ScrollDown => {
+                        app.scroll_offset = app.scroll_offset.saturating_add(3);
+                    }
+                    _ => {}
+                },
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Renderers the user interface
+fn ui(f: &mut ratatui::Frame, app: &mut App) {
+    let area = f.area();
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(7), // header
+            Constraint::Min(1),    // chat
+            Constraint::Length(3), // input
+            Constraint::Length(1), // footer
+        ])
+        .split(area);
+
+    render_header(f, chunks[0]);
+
+    let chat_area = chunks[1];
+    let max_width = chat_area.width.saturating_sub(2) as usize;
+
+    let mut history: Vec<Line> = Vec::new();
+
+    for msg in &app.messages {
+        let (role_name, color) = match msg.role {
+            Role::User => (" USER ", Color::Cyan),
+            Role::Assistant => (" OVSY ", Color::Cyan),
+            _ => (" SYSTEM ", Color::Cyan),
+        };
+
+        let text_content = msg
+            .content
+            .iter()
+            .filter_map(|p| {
+                if let Content::Text { text } = p {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<String>();
+
+        // parsing a message:
+        let mut msg_lines = parse_markdown(&text_content, max_width);
+
+        // add a message role prefix:
+        if let Some(first_line) = msg_lines.get_mut(0) {
+            let mut new_spans = vec![
+                Span::styled(
+                    role_name,
+                    Style::default().bg(color).fg(Color::Black).bold(),
+                ),
+                Span::raw(" "),
+            ];
+            new_spans.extend(first_line.spans.clone());
+            *first_line = Line::from(new_spans);
+        }
+
+        history.extend(msg_lines);
+
+        // add spacing between messages:
+        if msg.role.is_assistant() {
+            history.push(Line::raw(""));
+        }
     }
 
-    Ok(())
+    let chat_height = chat_area.height.saturating_sub(2) as usize;
+    let total_lines = history.len();
+    let max_scroll = total_lines.saturating_sub(chat_height) as u16;
+
+    if app.scroll_offset > max_scroll {
+        app.scroll_offset = max_scroll;
+    }
+
+    // calculate scroll lines:
+    let current_line = if total_lines <= chat_height {
+        total_lines
+    } else {
+        (app.scroll_offset as usize + chat_height).min(total_lines)
+    };
+
+    f.render_widget(
+        Paragraph::new(history)
+            .scroll((app.scroll_offset, 0))
+            .block(
+                Block::default()
+                    .borders(Borders::LEFT)
+                    .border_style(Style::default().dim())
+                    .title(format!(
+                        " [Lines: {}/{}] ",
+                        if current_line > 0 {
+                            current_line - 1
+                        } else {
+                            current_line
+                        },
+                        if total_lines > 0 {
+                            total_lines - 1
+                        } else {
+                            total_lines
+                        }
+                    )),
+            ),
+        chat_area,
+    );
+
+    // input block:
+    let input_style = if app.is_thinking {
+        Style::default().fg(Color::Yellow)
+    } else {
+        Style::default().fg(Color::Cyan)
+    };
+    let input_title = if app.is_thinking {
+        " Thinking... "
+    } else {
+        " Input "
+    };
+
+    f.render_widget(
+        Paragraph::new(format!("  → {}", app.input)).block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(Span::styled(input_title, Style::default().bold()))
+                .border_style(input_style),
+        ),
+        chunks[2],
+    );
+
+    let help = Line::from(vec![
+        " /clear ".bold().cyan(),
+        "Clean context ".dim(),
+        " /compact ".bold().cyan(),
+        "Shrink context ".dim(),
+        " /summary ".bold().cyan(),
+        "Summarize talk ".dim(),
+        " ESC ".bold().red(),
+        "Exit ".dim(),
+    ]);
+    f.render_widget(Paragraph::new(help), chunks[3]);
+}
+
+fn render_header(f: &mut ratatui::Frame, area: Rect) {
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(Color::Cyan))
+        .title(" Ovsy Assistant ");
+
+    let inner = block.inner(area);
+    f.render_widget(block, area);
+
+    // vertical layout:
+    let layout = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Min(1),
+            Constraint::Length(1),
+        ])
+        .split(inner);
+
+    // gorizontal layout:
+    let content_area = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(3),      // left gap
+            Constraint::Percentage(40), // left info block
+            Constraint::Percentage(55), // right info block
+            Constraint::Length(3),      // right gap
+        ])
+        .split(layout[1]);
+
+    // get current directory:
+    let current_path = std::env::current_dir()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|_| "Unknown".to_string());
+
+    // left info block:
+    let left_text = Text::from(vec![
+        Line::from(vec![
+            Span::styled("Version: ", Style::default().white().bold()),
+            Span::styled(format!("{}", app_version()), Style::default().gray()),
+        ]),
+        Line::from(vec![
+            Span::styled("Model: ", Style::default().white().bold()),
+            Span::styled(
+                Settings::get().assistant.completions.model.clone(),
+                Style::default().gray(),
+            ),
+        ]),
+        Line::from(vec![
+            Span::styled("Directory: ", Style::default().white().bold()),
+            Span::styled(current_path, Style::default().gray()),
+        ]),
+    ]);
+
+    // right info block:
+    let right_text = Text::from(
+        vec![
+            Line::from("Digital liberation through local-first orchestration."),
+            Line::from("No telemetry, mo constraints, pure Rust autonomy."),
+            Line::from("Reclaim your data, build your own intelligence."),
+        ]
+        .iter()
+        .map(|l| Line::from(l.to_string().dim()))
+        .collect::<Vec<_>>(),
+    );
+
+    f.render_widget(Paragraph::new(left_text), content_area[1]);
+    f.render_widget(
+        Paragraph::new(right_text).alignment(ratatui::layout::Alignment::Right),
+        content_area[2],
+    );
+}
+
+//        MARKDOWN:
+
+/// The parser state
+struct ParserState {
+    in_code_block: bool,
+    is_bold: bool,
+    is_italic: bool,
+    is_inline_code: bool,
+    is_crossed: bool,
+}
+
+/// Parses the markdown format
+fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
+    let mut lines = Vec::new();
+    let mut state = ParserState {
+        in_code_block: false,
+        is_bold: false,
+        is_italic: false,
+        is_inline_code: false,
+        is_crossed: false,
+    };
+
+    for raw_line in text.lines() {
+        // --- CODE-BLOCKS ---
+        if raw_line.starts_with("```") {
+            state.in_code_block = !state.in_code_block;
+
+            if state.in_code_block {
+                // parse lang name (as example, "rust" from "```rust")
+                let lang = raw_line.trim_start_matches('`').trim();
+                let display_lang = if lang.is_empty() { "code" } else { lang };
+
+                // draw lang name:
+                lines.push(Line::from(vec![Span::styled(
+                    format!(" {} ", display_lang.to_lowercase()),
+                    Style::default()
+                        .bg(Color::Rgb(20, 20, 20))
+                        .fg(Color::DarkGray)
+                        .bold(),
+                )]));
+            }
+            continue;
+        }
+
+        if state.in_code_block {
+            let wrapped = textwrap::wrap(raw_line, max_width);
+            if wrapped.is_empty() {
+                // draw empty lines also:
+                lines.push(Line::from(vec![Span::styled(
+                    " ",
+                    Style::default().bg(Color::Rgb(45, 45, 45)),
+                )]));
+            } else {
+                for part in wrapped {
+                    lines.push(Line::from(vec![Span::styled(
+                        part.into_owned(),
+                        Style::default().bg(Color::Rgb(45, 45, 45)).fg(Color::White),
+                    )]));
+                }
+            }
+            continue;
+        }
+
+        // --- GORIZONTAL LINE ---
+        if raw_line.starts_with("---") {
+            lines.push(Line::from(vec![Span::styled(
+                "─".repeat(max_width),
+                Style::default().fg(Color::DarkGray),
+            )]));
+            continue;
+        }
+
+        // --- HEADERS, LISTS & QUOTES ---
+        let is_quote = raw_line.starts_with("> ");
+        let is_unordered_list = raw_line.starts_with("- ");
+        let is_ordered_list = raw_line
+            .chars()
+            .next()
+            .map_or(false, |c| c.is_ascii_digit())
+            && raw_line.contains(". ");
+
+        let (content, base_style, prefix) = if raw_line.starts_with("# ") {
+            (
+                raw_line.trim_start_matches("#").trim(),
+                Style::default().fg(Color::Cyan).bold().underlined(),
+                None,
+            )
+        } else if raw_line.starts_with("## ") || raw_line.starts_with("### ") {
+            (
+                raw_line.trim_start_matches("#").trim(),
+                Style::default().fg(Color::Cyan).bold(),
+                None,
+            )
+        } else if raw_line.starts_with("#### ") {
+            (
+                raw_line.trim_start_matches("####").trim(),
+                Style::default().fg(Color::Cyan).bold().italic(),
+                None,
+            )
+        } else if raw_line.starts_with("##### ") || raw_line.starts_with("###### ") {
+            (
+                raw_line.trim_start_matches("#").trim(),
+                Style::default().fg(Color::Cyan).italic(),
+                None,
+            )
+        } else if is_quote {
+            (
+                raw_line.trim_start_matches("> ").trim(),
+                Style::default()
+                    .bg(Color::Rgb(45, 45, 45))
+                    .fg(Color::Rgb(200, 200, 200))
+                    .italic(),
+                None,
+            )
+        } else if is_unordered_list {
+            (
+                raw_line.trim_start_matches("- ").trim(),
+                Style::default().fg(Color::White),
+                Some(Span::styled(" • ", Style::default().fg(Color::Cyan).bold())),
+            )
+        } else if is_ordered_list {
+            let parts: Vec<&str> = raw_line.splitn(2, ". ").collect();
+            (
+                parts.get(1).unwrap_or(&"").trim(),
+                Style::default().fg(Color::White),
+                Some(Span::styled(
+                    format!(" {}. ", parts[0]),
+                    Style::default().fg(Color::Cyan).bold(),
+                )),
+            )
+        } else {
+            (raw_line, Style::default().fg(Color::White), None)
+        };
+
+        // --- INLINE PARSING ---
+        let wrapped_lines = textwrap::wrap(content, max_width);
+        for wrapped_row in wrapped_lines {
+            let mut spans = Vec::new();
+            if let Some(ref p) = prefix {
+                spans.push(p.clone());
+            }
+
+            let mut current_text = String::new();
+            let owned_row = wrapped_row.into_owned();
+            let mut chars = owned_row.chars().peekable();
+
+            while let Some(c) = chars.next() {
+                match c {
+                    '~' if chars.peek() == Some(&'~') => {
+                        chars.next();
+                        if !current_text.is_empty() {
+                            spans.push(Span::styled(
+                                current_text.clone(),
+                                get_style(&state, base_style),
+                            ));
+                            current_text.clear();
+                        }
+                    }
+                    '`' => {
+                        if !current_text.is_empty() {
+                            spans.push(Span::styled(
+                                current_text.clone(),
+                                get_style(&state, base_style),
+                            ));
+                            current_text.clear();
+                        }
+                        state.is_inline_code = !state.is_inline_code;
+                    }
+                    '*' => {
+                        let is_double = chars.peek() == Some(&'*');
+                        if is_double {
+                            chars.next();
+                        }
+                        if !current_text.is_empty() {
+                            spans.push(Span::styled(
+                                current_text.clone(),
+                                get_style(&state, base_style),
+                            ));
+                            current_text.clear();
+                        }
+                        if is_double {
+                            state.is_bold = !state.is_bold;
+                        } else {
+                            state.is_italic = !state.is_italic;
+                        }
+                    }
+                    _ => current_text.push(c),
+                }
+            }
+            if !current_text.is_empty() {
+                spans.push(Span::styled(
+                    current_text.clone(),
+                    get_style(&state, base_style),
+                ));
+            }
+            lines.push(Line::from(spans));
+        }
+    }
+    lines
+}
+
+// Helper function for style
+fn get_style(state: &ParserState, base: Style) -> Style {
+    let mut s = base;
+
+    // crossed text:
+    if state.is_crossed {
+        s = s.crossed_out();
+    }
+
+    // inline code:
+    if state.is_inline_code {
+        s = s.fg(Color::Cyan).bg(Color::Rgb(40, 40, 40));
+    } else {
+        if state.is_bold {
+            s = s.bold();
+        }
+        if state.is_italic {
+            s = s.italic();
+        }
+    }
+    s
 }
