@@ -16,6 +16,7 @@ use ratatui::{
 };
 use std::io;
 use tokio::sync::mpsc;
+use unicode_width::UnicodeWidthStr;
 
 /// The user interface app
 struct App {
@@ -415,8 +416,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     // x: the beginning of the block + prefix indentation (4) + cursor position in the line
     // y: the beginning of the block + 1 (offset from the upper border of the frame)
     if !app.is_thinking {
-        use unicode_width::UnicodeWidthStr;
-
         let text_before_cursor = &app.input[..app.cursor_position];
         let visual_width = text_before_cursor.width();
 
@@ -518,6 +517,8 @@ struct ParserState {
     is_italic: bool,
     is_inline_code: bool,
     is_crossed: bool,
+    in_table: bool,
+    table_rows: Vec<Vec<String>>,
 }
 
 /// Parses the markdown format
@@ -529,6 +530,8 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
         is_italic: false,
         is_inline_code: false,
         is_crossed: false,
+        in_table: false,
+        table_rows: vec![],
     };
 
     for raw_line in text.lines() {
@@ -572,7 +575,31 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
             continue;
         }
 
-        // --- GORIZONTAL LINE ---
+        // --- TABLES ---
+        let is_table_row = raw_line.trim().starts_with('|');
+
+        if is_table_row && !state.in_code_block {
+            state.in_table = true;
+            let cells: Vec<String> = raw_line
+                .split('|')
+                .filter(|s| !s.trim().is_empty() || raw_line.contains("||"))
+                .map(|s| s.trim().to_string())
+                .collect();
+
+            if !cells
+                .iter()
+                .all(|c| c.chars().all(|ch| ch == '-' || ch == ':'))
+            {
+                state.table_rows.push(cells);
+            }
+            continue;
+        } else if state.in_table {
+            render_collected_table(&mut lines, &mut state, max_width);
+            state.in_table = false;
+            state.table_rows.clear();
+        }
+
+        // --- GORIZONTAL LINES ---
         if raw_line.starts_with("---") {
             lines.push(Line::from(vec![Span::styled(
                 "─".repeat(max_width),
@@ -768,6 +795,11 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
             lines.push(Line::from(spans))
         }
     }
+
+    if state.in_table {
+        render_collected_table(&mut lines, &mut state, max_width);
+    }
+
     lines
 }
 
@@ -808,5 +840,134 @@ fn push_text_with_urls(spans: &mut Vec<Span<'static>>, text: &str, base_style: S
         } else {
             spans.push(Span::styled(word.to_string(), base_style));
         }
+    }
+}
+
+/// Renders the table
+fn render_collected_table(lines: &mut Vec<Line>, state: &mut ParserState, max_width: usize) {
+    if state.table_rows.is_empty() {
+        return;
+    }
+
+    let col_count = state.table_rows[0].len();
+    let mut ideal_widths = vec![0; col_count];
+
+    for row in &state.table_rows {
+        for (i, cell) in row.iter().enumerate() {
+            if i < col_count {
+                ideal_widths[i] = ideal_widths[i].max(cell.width());
+            }
+        }
+    }
+
+    let borders_overhead = 2 + (col_count * 3);
+    let available_width = max_width.saturating_sub(borders_overhead);
+    let total_ideal_width: usize = ideal_widths.iter().sum();
+
+    let mut final_widths = ideal_widths.clone();
+    if total_ideal_width > available_width && available_width > 0 {
+        for i in 0..col_count {
+            final_widths[i] = (ideal_widths[i] * available_width) / total_ideal_width;
+            if final_widths[i] == 0 {
+                final_widths[i] = 1;
+            }
+        }
+    }
+
+    let rows_len = state.table_rows.len();
+
+    // top line:
+    let mut top_line = Vec::new();
+    top_line.push(Span::styled("┌", Style::default().dim()));
+
+    for (i, &w) in final_widths.iter().enumerate() {
+        top_line.push(Span::styled("─".repeat(w + 2), Style::default().dim()));
+        if i < col_count - 1 {
+            top_line.push(Span::styled("┬", Style::default().dim()));
+        }
+    }
+    top_line.push(Span::styled("┐", Style::default().dim()));
+    lines.push(Line::from(top_line));
+
+    for (r_idx, row) in state.table_rows.iter().enumerate() {
+        // calculate cell sizes:
+        let mut wrapped_cells: Vec<Vec<String>> = Vec::new();
+        let mut max_cell_lines = 1;
+
+        for (i, cell) in row.iter().enumerate() {
+            if i >= col_count {
+                break;
+            }
+            let wrapped = textwrap::wrap(cell, final_widths[i]);
+            let wrapped_strings: Vec<String> =
+                wrapped.into_iter().map(|s| s.into_owned()).collect();
+            max_cell_lines = max_cell_lines.max(wrapped_strings.len());
+            wrapped_cells.push(wrapped_strings);
+        }
+
+        // table content:
+        for line_idx in 0..max_cell_lines {
+            let mut line_spans = Vec::new();
+            line_spans.push(Span::styled("│ ", Style::default().dim()));
+
+            for (i, wrapped_lines) in wrapped_cells.iter().enumerate() {
+                let content = wrapped_lines.get(line_idx).cloned().unwrap_or_default();
+                let content_w = content.width();
+                let padding = " ".repeat(final_widths[i].saturating_sub(content_w));
+
+                let cell_style = if r_idx == 0 {
+                    Style::default().bold().cyan() // header
+                } else {
+                    Style::default().white()
+                };
+
+                line_spans.push(Span::styled(content, cell_style));
+                line_spans.push(Span::styled(padding, cell_style));
+                line_spans.push(Span::styled(" │ ", Style::default().dim()));
+            }
+            lines.push(Line::from(line_spans));
+        }
+
+        // line splitter:
+        if r_idx < rows_len - 1 {
+            let mut sep = Vec::new();
+
+            let (left, mid, right, line_char) = if r_idx == 0 {
+                ("├", "┼", "┤", "━") // for headers
+            } else {
+                ("├", "┼", "┤", "─") // for text
+            };
+
+            sep.push(Span::styled(left, Style::default().dim()));
+            for (i, &w) in final_widths.iter().enumerate() {
+                sep.push(Span::styled(
+                    line_char.repeat(w + 2),
+                    Style::default().dim(),
+                ));
+                if i < col_count - 1 {
+                    sep.push(Span::styled(mid, Style::default().dim()));
+                }
+            }
+            sep.push(Span::styled(right, Style::default().dim()));
+            lines.push(Line::from(sep));
+        }
+    }
+
+    // bottom line:
+    if !state.table_rows.is_empty() {
+        let mut bottom_line = Vec::new();
+
+        bottom_line.push(Span::styled("└", Style::default().dim()));
+
+        for (i, &w) in final_widths.iter().enumerate() {
+            bottom_line.push(Span::styled("─".repeat(w + 2), Style::default().dim()));
+
+            if i < col_count - 1 {
+                bottom_line.push(Span::styled("┴", Style::default().dim()));
+            }
+        }
+
+        bottom_line.push(Span::styled("┘", Style::default().dim()));
+        lines.push(Line::from(bottom_line));
     }
 }
