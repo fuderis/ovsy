@@ -103,24 +103,24 @@ impl ::std::default::Default for AssistantOptions {
     fn default() -> Self {
         let mut completions = AiOptions::default();
         completions.kind = ApiKind::LmStudio;
-        completions.model = str!("qwen/qwen3-vl-8b");
-        completions.temperature.replace(0.7);
+        completions.model = str!("qwen/qwen2.5-vl-7b");
+        completions.temperature.replace(0.6);
         completions.max_tokens.replace(8096);
+
+        let mut compression = completions.clone();
+        compression.temperature.replace(0.3);
 
         let mut embeddings = AiOptions::default();
         embeddings.kind = ApiKind::LmStudio;
         embeddings.model = str!("text-embedding-nomic-embed-text-v1.5@q8_0");
-
-        let mut compression = completions.clone();
-        compression.temperature.replace(0.5);
 
         Self {
             max_messages: 4,
             assist_prompt: str!(ASSISTING_PROMPT),
             compress_prompt: str!(COMPRESSING_PROMPT),
             completions,
-            embeddings,
             compression,
+            embeddings,
         }
     }
 }

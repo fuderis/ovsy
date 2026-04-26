@@ -22,12 +22,12 @@ impl Agent {
         let manifest = Config::<Manifest>::new(manif_path).await?;
 
         // check agent for already running:
-        if Manager::contains(arc!(manifest.name.clone())).await {
+        if Manager::contains(arc!(manifest.agent.name.clone())).await {
             return Ok(None);
         }
 
         // run agent server:
-        let child = Command::new(dir.join(&manifest.exec_path))
+        let child = Command::new(dir.join(&manifest.agent.exec_path))
             .arg("--port")
             .arg(str!(crate::free_port().await?))
             .kill_on_drop(true)

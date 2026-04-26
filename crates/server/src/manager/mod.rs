@@ -57,8 +57,8 @@ impl Manager {
             .agents
             .iter()
             .map(|(_, agent)| AgentInfo {
-                name: agent.manifest.name.clone(),
-                description: agent.manifest.description.clone(),
+                name: agent.manifest.agent.name.clone(),
+                description: agent.manifest.agent.description.clone(),
             })
             .collect()
     }
@@ -66,7 +66,7 @@ impl Manager {
     /// Runs the agent server
     pub async fn run(dir: impl Into<PathBuf>) -> Result<()> {
         if let Some(agent) = Agent::run(dir).await? {
-            let name = arc!(agent.manifest.name.clone());
+            let name = arc!(agent.manifest.agent.name.clone());
 
             if !Self::contains(name.clone()).await {
                 MANAGER.lock().await.agents.insert(name, arc!(agent));
