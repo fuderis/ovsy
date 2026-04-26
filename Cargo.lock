@@ -84,13 +84,14 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "anylm"
-version = "0.1.13"
+version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a41cff90e138c8464b8a4ab694f277f00d5bcb6394dd987a62f97d1614c5ac5b"
+checksum = "fa8d0ed9009efe760f0a7aa93348a45f461c679961810c907bc59f8c449cfb09"
 dependencies = [
  "atoman",
  "base64",
  "bytes",
+ "chrono",
  "futures",
  "macron",
  "regex",
@@ -1734,6 +1735,7 @@ name = "ovsy-cli"
 version = "0.0.0"
 dependencies = [
  "anylm",
+ "chrono",
  "clap",
  "colored",
  "crossterm",

@@ -16,3 +16,4 @@ ratatui = { workspace = true }
 crossterm = { workspace = true }
 textwrap = { workspace = true }
 unicode-width = { workspace = true }
+chrono = { workspace = true }

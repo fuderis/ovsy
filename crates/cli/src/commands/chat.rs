@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use anylm::{Content, Message, Role};
+use anylm::{Content, Message};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
@@ -291,11 +291,25 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     let mut history: Vec<Line> = Vec::new();
 
     for msg in &app.messages {
-        let (role_name, color) = match msg.role {
-            Role::User => (" USER ", Color::Cyan),
-            Role::Assistant => (" OVSY ", Color::Cyan),
-            _ => (" SYSTEM ", Color::Cyan),
-        };
+        // metadata line:
+        let meta_line = Line::from(vec![if msg.role.is_user() {
+            Span::styled(
+                format!(
+                    "[{}]",
+                    msg.timestamp
+                        .map(|t| {
+                            t.with_timezone(&chrono::Local)
+                                .format("%Y-%m-%dT%H:%M:%S")
+                                .to_string()
+                        })
+                        .unwrap_or_else(|| "??:??:??".to_string())
+                ),
+                Style::default().bg(Color::Cyan).fg(Color::Black).bold(),
+            )
+        } else {
+            Span::styled(str!(), Style::default())
+        }]);
+        history.push(meta_line);
 
         let text_content = msg
             .content
@@ -310,24 +324,25 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
             .collect::<String>();
 
         // parsing a message:
-        let mut msg_lines = parse_markdown(&text_content, max_width);
+        let msg_lines = parse_markdown(&text_content, max_width);
 
-        // add a message role prefix:
-        if let Some(first_line) = msg_lines.get_mut(0) {
-            let mut new_spans = vec![
-                Span::styled(
-                    role_name,
-                    Style::default().bg(color).fg(Color::Black).bold(),
-                ),
-                Span::raw(" "),
-            ];
-            new_spans.extend(first_line.spans.clone());
-            *first_line = Line::from(new_spans);
+        if msg.role.is_user() {
+            for line in msg_lines {
+                let styled_line = line.clone();
+                history.push(
+                    styled_line.patch_style(
+                        Style::default()
+                            .bg(Color::Rgb(20, 20, 20))
+                            .fg(Color::DarkGray),
+                    ),
+                );
+            }
+        } else {
+            history.extend(msg_lines);
         }
 
-        history.extend(msg_lines);
-
         // add spacing between messages:
+        // history.push(Line::raw(""));
         if msg.role.is_assistant() {
             history.push(Line::raw(""));
         }
