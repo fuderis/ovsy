@@ -18,80 +18,188 @@ use std::io;
 use tokio::sync::mpsc;
 use unicode_width::UnicodeWidthStr;
 
-/// The user interface app
-struct App {
+/// The app state
+struct AppState {
     input: String,
     cursor_position: usize,
-    messages: Vec<Message>,
+    messages: Arc<State<Vec<Message>>>,
     is_thinking: bool,
     scroll_offset: u16,
     tx: mpsc::UnboundedSender<String>,
+    tick_count: u64,
+    commands: Vec<(&'static str, &'static str)>,
+    is_busy: Arc<Flag>,
+}
+
+impl AppState {
+    /// Creates a new app state
+    pub fn new(tx: mpsc::UnboundedSender<String>) -> Self {
+        Self {
+            input: String::new(),
+            cursor_position: 0,
+            messages: arc!(State::new()),
+            is_thinking: false,
+            scroll_offset: 0,
+            tx,
+            tick_count: 0,
+            commands: vec![
+                ("/clear", "Clear the dialog context"),
+                ("/compact", "Compress the dialog context"),
+                ("/exit", "Exit the assistant"),
+            ],
+            is_busy: arc!(Flag::new()),
+        }
+    }
+
+    /// Checks if the input is a command and processes it.
+    async fn handle_input(&mut self) {
+        let trimmed = self.input.trim();
+        if trimmed.is_empty() {
+            return;
+        }
+
+        // command:
+        if trimmed.starts_with('/') {
+            match trimmed {
+                "/exit" => { /* the output is processed in the main loop via return */ }
+                "/clear" => {
+                    self.messages.set(vec![]).await;
+                    let _ = self.tx.send(trimmed.to_string());
+                }
+                _ => {
+                    let _ = self.tx.send(trimmed.to_string());
+                }
+            }
+        }
+        // message:
+        else {
+            self.messages
+                .lock()
+                .await
+                .push(Message::user(vec![trimmed.to_string().into()]));
+            let _ = self.tx.send(trimmed.to_string());
+        }
+
+        self.input.clear();
+        self.cursor_position = 0;
+        self.scroll_offset = u16::MAX;
+    }
 }
 
 /// Handles the `chat` command
 pub async fn handle() -> Result<()> {
-    let (input_tx, mut input_rx) = mpsc::unbounded_channel::<String>();
-    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
+    let port = Settings::get().server.port;
+    let client = reqwest::Client::new();
 
-    // spawn workers:
-    let worker_ui_tx = ui_tx.clone();
-    tokio::spawn(async move {
-        let mut messages: Vec<Message> = Vec::new();
-        let port = Settings::get().server.port;
-        let client = reqwest::Client::new();
+    // checking the server:
+    print!("🚀 Checking Ovsy server on port {}... ", port);
 
-        let max_messages = Settings::get().assistant.max_messages * 2;
-        let messages_limit = max_messages * 2;
+    let status_url = format!("http://127.0.0.1:{port}/status");
 
-        while let Some(input) = input_rx.recv().await {
-            if input == "/clear" {
-                messages.clear();
-                let _ = worker_ui_tx.send(Chunk::Answer {
-                    answer: "── Context Cleared ──".into(),
-                });
-                continue;
-            }
+    if client.get(&status_url).send().await.is_err() {
+        println!("{}\nStarting backend...", colored::Colorize::red("Offline"));
 
-            messages.push(Message::user(vec![input.into()]));
+        // define the binary extension:
+        let ext = if cfg!(windows) { "exe" } else { "" };
+        let bin_path = path!("~/.ovsy/ovsy-server{ext}");
 
-            let res = client
-                .post(format!("http://127.0.0.1:{port}/handle"))
-                .json(&UserQuery {
-                    user_id: 0,
-                    messages: messages.clone(),
-                })
-                .send()
-                .await;
+        // starting the server:
+        let spawn_res = std::process::Command::new(bin_path).arg("start").spawn();
 
-            if let Ok(response) = res {
-                let bytes_stream = response.bytes_stream().map(|c| c.map_err(Into::into));
-                let mut stream = Stream::read::<Chunk>(bytes_stream);
-                let mut full_answer = String::new();
-
-                while let Ok(Some(chunk)) = stream.read().await {
-                    if let Chunk::Answer { ref answer } = chunk {
-                        full_answer.push_str(answer);
+        match spawn_res {
+            Ok(_) => {
+                // wait server initializing:
+                let mut started = false;
+                for _ in 0..10 {
+                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    if client.get(&status_url).send().await.is_ok() {
+                        started = true;
+                        break;
                     }
-                    // send chunk to ui:
-                    let _ = worker_ui_tx.send(chunk);
                 }
 
-                if !full_answer.is_empty() {
-                    messages.push(Message::assistant(vec![full_answer.into()]));
+                if !started {
+                    eprintln!("❌ Timeout: Server started but is not responding.");
+                    return Ok(());
                 }
             }
+            Err(e) => {
+                eprintln!("❌ Failed to execute server binary: {e}");
+                return Ok(());
+            }
+        }
+    } else {
+        println!("{}", colored::Colorize::green("Online"));
+    }
 
-            // compressing dialog:
-            if messages.len() >= messages_limit {
-                let _ = worker_ui_tx.send(Chunk::Think {
-                    think: "⚙ Compressing...".into(),
-                });
+    let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
+    let mut app = AppState::new(input_tx);
 
-                let compress_count = messages.len() - max_messages;
-                let to_compress = messages[..compress_count].to_vec();
+    // spawn network worker:
+    tokio::spawn(chat_worker(
+        input_rx,
+        ui_tx,
+        app.messages.clone(),
+        app.is_busy.clone(),
+    ));
+
+    // setup user interface:
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let mut terminal = Terminal::new(ratatui::backend::CrosstermBackend::new(stdout))?;
+
+    let res = run_app(&mut terminal, &mut app, &mut ui_rx).await;
+
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    res
+}
+
+/// A worker for networking
+async fn chat_worker(
+    mut input_rx: mpsc::UnboundedReceiver<String>,
+    ui_tx: mpsc::UnboundedSender<Chunk>,
+    messages: Arc<State<Vec<Message>>>,
+    is_busy: Arc<Flag>,
+) {
+    let port = Settings::get().server.port;
+    let client = reqwest::Client::new();
+    let base_url = format!("http://127.0.0.1:{port}");
+
+    let max_messages = Settings::get().assistant.max_messages * 2;
+    let messages_limit = max_messages * 2;
+
+    while let Some(input) = input_rx.recv().await {
+        is_busy.set(true);
+        let trimmed = input.trim();
+
+        if trimmed == "/clear" {
+            messages.set(vec![]).await;
+            is_busy.set(false);
+            continue;
+        }
+
+        // --- COMPRESS LOGIC ---
+        let is_manual = trimmed == "/compact";
+        let len = messages.get().await.len();
+        if is_manual || len >= messages_limit {
+            let _ = ui_tx.send(Chunk::Think {
+                think: "⚙ Compacting context...".into(),
+            });
+
+            let compress_count = if is_manual {
+                len.saturating_sub(2)
+            } else {
+                len.saturating_sub(max_messages)
+            };
+
+            if compress_count > 0 {
+                let to_compress = messages.get().await.clone()[..compress_count].to_vec();
 
                 let res = client
-                    .post(format!("http://127.0.0.1:{port}/compress"))
+                    .post(format!("{base_url}/compact"))
                     .json(&UserQuery {
                         user_id: 0,
                         messages: to_compress,
@@ -109,175 +217,170 @@ pub async fn handle() -> Result<()> {
                     }
 
                     if !summary.trim().is_empty() {
-                        let new_msgs = messages[compress_count..].to_vec();
-                        messages = vec![Message::system(vec![
-                            format!("Summarized context: {}", summary.trim()).into(),
+                        let preserved_msgs =
+                            messages.get().await.clone()[compress_count..].to_vec();
+
+                        let mut messages_temp = vec![Message::assistant(vec![
+                            format!("**Summarized**: {}\n---\n", summary.trim()).into(),
                         ])];
-                        messages.extend(new_msgs);
+                        messages_temp.extend(preserved_msgs);
+                        messages.set(messages_temp).await;
                     }
                 }
             }
+            if is_manual {
+                is_busy.set(false);
+                continue;
+            }
         }
-    });
 
-    // setup user interface:
-    enable_raw_mode()?;
-    let mut stdout = io::stdout();
-    execute!(stdout, EnterAlternateScreen)?;
-    let backend = ratatui::backend::CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+        let res = client
+            .post(format!("{base_url}/handle"))
+            .json(&UserQuery {
+                user_id: 0,
+                messages: (*messages.get().await).clone(),
+            })
+            .send()
+            .await;
 
-    let mut app = App {
-        input: String::new(),
-        cursor_position: 0,
-        messages: Vec::new(),
-        is_thinking: false,
-        scroll_offset: 0,
-        tx: input_tx,
-    };
+        match res {
+            Ok(response) => {
+                let mut full_answer = String::new();
+                let mut stream =
+                    Stream::read::<Chunk>(response.bytes_stream().map(|c| c.map_err(Into::into)));
 
-    // run interface:
-    let _ = run_app(&mut terminal, &mut app, &mut ui_rx).await;
+                while let Ok(Some(chunk)) = stream.read().await {
+                    if let Chunk::Answer { ref answer } = chunk {
+                        full_answer.push_str(answer);
+                    }
+                    let _ = ui_tx.send(chunk);
+                }
+            }
+            Err(e) => {
+                let _ = ui_tx.send(Chunk::Error {
+                    error: format!("Connection error: {}", e),
+                });
+            }
+        }
 
-    // restore mode & events:
-    disable_raw_mode()?;
-    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
-    Ok(())
+        is_busy.set(false);
+    }
 }
 
-/// Runs the UI app
+/// Runs the terminal app
 async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
-    app: &mut App,
+    app: &mut AppState,
     ui_rx: &mut mpsc::UnboundedReceiver<Chunk>,
-) -> Result<()>
-where
-    B::Error: std::fmt::Display,
-{
+) -> Result<()> {
     loop {
-        terminal
-            .draw(|f| ui(f, app))
-            .map_err(|e| str!(e.to_string()))?;
+        app.tick_count += 1;
+        terminal.draw(|f| ui(f, app)).map_err(|e| e.to_string())?;
 
-        // read a new chunks:
+        // read server chunks:
         while let Ok(chunk) = ui_rx.try_recv() {
             match chunk {
                 Chunk::Think { .. } => app.is_thinking = true,
                 Chunk::Answer { answer } => {
                     app.is_thinking = false;
 
-                    match app.messages.last_mut() {
+                    let mut msgs = app.messages.lock().await;
+
+                    match msgs.last_mut() {
                         Some(msg) if msg.role.is_assistant() => {
                             if let Some(Content::Text { text }) = msg.content.get_mut(0) {
                                 text.push_str(&answer);
                             }
                         }
-                        _ => app.messages.push(Message::assistant(vec![answer.into()])),
+                        _ => {
+                            msgs.push(Message::assistant(vec![answer.into()]));
+                        }
                     }
-
                     app.scroll_offset = app.scroll_offset.saturating_add(1);
                 }
                 Chunk::Error { error } => {
                     app.is_thinking = false;
                     app.messages
+                        .lock()
+                        .await
                         .push(Message::system(vec![format!("Error: {error}").into()]));
                 }
+                Chunk::Spec { spec: _ } => {}
             }
         }
 
-        // handle events:
+        // init keyboard events:
         if event::poll(std::time::Duration::from_millis(16))? {
-            match event::read()? {
-                // terminal resize:
-                Event::Resize(_, _) => {
-                    terminal.autoresize().ok();
-                }
-
-                // keyboard events:
-                Event::Key(key) if key.kind == KeyEventKind::Press => match key.code {
-                    KeyCode::Esc => return Ok(()),
-                    KeyCode::Left => {
-                        if app.cursor_position > 0 {
-                            app.cursor_position = app
-                                .input
-                                .char_indices()
-                                .filter(|&(i, _)| i < app.cursor_position)
-                                .last()
-                                .map(|(i, _)| i)
-                                .unwrap_or(0);
-                        }
-                    }
-                    KeyCode::Right => {
-                        if let Some((i, c)) = app
-                            .input
-                            .char_indices()
-                            .find(|&(i, _)| i == app.cursor_position)
-                        {
-                            app.cursor_position = i + c.len_utf8();
-                        }
-                    }
-                    KeyCode::Char(c) => {
-                        app.input.insert(app.cursor_position, c);
-                        app.cursor_position += c.len_utf8();
-                    }
-                    KeyCode::Backspace => {
-                        if app.cursor_position > 0 {
-                            if let Some((i, _c)) = app
-                                .input
-                                .char_indices()
-                                .filter(|&(i, _)| i < app.cursor_position)
-                                .last()
-                            {
-                                app.input.remove(i);
-                                app.cursor_position = i;
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Esc => return Ok(()),
+                        KeyCode::Enter => {
+                            if !app.is_busy.get() {
+                                if app.input.trim() == "/exit" {
+                                    return Ok(());
+                                }
+                                app.handle_input().await;
                             }
                         }
-                    }
-                    KeyCode::Delete => {
-                        if app.cursor_position < app.input.len() {
-                            app.input.remove(app.cursor_position);
+                        KeyCode::Char(c) => {
+                            app.input.insert(app.cursor_position, c);
+                            app.cursor_position += c.len_utf8();
                         }
+                        KeyCode::Backspace => {
+                            if app.cursor_position > 0 {
+                                if let Some((i, _)) = app
+                                    .input
+                                    .char_indices()
+                                    .filter(|&(i, _)| i < app.cursor_position)
+                                    .last()
+                                {
+                                    app.input.remove(i);
+                                    app.cursor_position = i;
+                                }
+                            }
+                        }
+                        KeyCode::Left => {
+                            if app.cursor_position > 0 {
+                                app.cursor_position = app
+                                    .input
+                                    .char_indices()
+                                    .filter(|&(i, _)| i < app.cursor_position)
+                                    .last()
+                                    .map(|(i, _)| i)
+                                    .unwrap_or(0);
+                            }
+                        }
+                        KeyCode::Right => {
+                            if let Some((i, c)) = app
+                                .input
+                                .char_indices()
+                                .find(|&(i, _)| i == app.cursor_position)
+                            {
+                                app.cursor_position = i + c.len_utf8();
+                            }
+                        }
+                        KeyCode::Up => app.scroll_offset = app.scroll_offset.saturating_sub(1),
+                        KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_add(1),
+                        KeyCode::PageUp => app.scroll_offset = app.scroll_offset.saturating_sub(5),
+                        KeyCode::PageDown => {
+                            app.scroll_offset = app.scroll_offset.saturating_add(5)
+                        }
+                        _ => {}
                     }
-                    KeyCode::End => app.cursor_position = app.input.len(),
-                    KeyCode::Home => app.cursor_position = 0,
-                    KeyCode::PageUp => app.scroll_offset = app.scroll_offset.saturating_sub(5),
-                    KeyCode::PageDown => app.scroll_offset = app.scroll_offset.saturating_add(5),
-                    KeyCode::Up => app.scroll_offset = app.scroll_offset.saturating_sub(1),
-                    KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_add(1),
-                    KeyCode::Enter if !app.input.is_empty() => {
-                        let cmd = app.input.trim().to_string();
-                        app.messages.push(Message::user(vec![cmd.clone().into()]));
-                        let _ = app.tx.send(cmd);
-                        app.input.clear();
-                        app.cursor_position = 0;
-                        app.scroll_offset = u16::MAX;
-                    }
-
-                    _ => {}
-                },
-                // mouse events:
-                Event::Mouse(mouse_event) => match mouse_event.kind {
-                    event::MouseEventKind::ScrollUp => {
-                        app.scroll_offset = app.scroll_offset.saturating_sub(3);
-                    }
-                    event::MouseEventKind::ScrollDown => {
-                        app.scroll_offset = app.scroll_offset.saturating_add(3);
-                    }
-                    _ => {}
-                },
-                _ => {}
+                }
             }
         }
     }
 }
 
 /// Renderers the user interface
-fn ui(f: &mut ratatui::Frame, app: &mut App) {
+fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let area = f.area();
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(6), // header
+            Constraint::Length(4), // header
             Constraint::Min(1),    // chat
             Constraint::Length(3), // input
             Constraint::Length(1), // footer
@@ -291,7 +394,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     let mut history: Vec<Line> = Vec::new();
 
-    for msg in &app.messages {
+    for msg in app.messages.dirty_get().iter() {
         // metadata line:
         let meta_line = Line::from(vec![if msg.role.is_user() {
             Span::styled(
@@ -343,7 +446,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
         }
 
         // add spacing between messages:
-        // history.push(Line::raw(""));
         if msg.role.is_assistant() {
             history.push(Line::raw(""));
         }
@@ -390,24 +492,25 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
 
     // --- INPUT BLOCK ---
     let input_area = chunks[2];
-    let input_style = if app.is_thinking {
-        Style::default().fg(Color::Yellow)
-    } else {
-        Style::default().fg(Color::Cyan)
-    };
-    let input_title = if app.is_thinking {
-        " Thinking... "
-    } else {
-        " Input "
-    };
+    let dots_count = (app.tick_count / 30) % 4;
+    let dots = ".".repeat(dots_count as usize);
+    let thinking_text = format!(" Thinking{dots:<3} ");
 
     f.render_widget(
         Paragraph::new(format!("  → {}", app.input)).block(
             Block::default()
                 .borders(Borders::ALL)
                 .border_type(BorderType::Rounded)
-                .title(Span::styled(input_title, Style::default().bold()))
-                .border_style(input_style),
+                .title(if app.is_busy.get() {
+                    Span::styled(thinking_text, Style::default().fg(Color::White).italic())
+                } else {
+                    Span::styled(" Input ", Style::default().fg(Color::Cyan))
+                })
+                .border_style(Style::default().fg(if app.is_busy.get() {
+                    Color::White
+                } else {
+                    Color::Cyan
+                })),
         ),
         input_area,
     );
@@ -425,20 +528,30 @@ fn ui(f: &mut ratatui::Frame, app: &mut App) {
     }
 
     // --- FOOTER ---
-    let help = Line::from(vec![
-        " /clear ".bold().cyan(),
-        "Clean context ".dim(),
-        " /compact ".bold().cyan(),
-        "Shrink context ".dim(),
-        " /summary ".bold().cyan(),
-        "Summarize talk ".dim(),
-        " ESC ".bold().red(),
-        "Exit ".dim(),
-    ]);
-    f.render_widget(Paragraph::new(help), chunks[3]);
+    render_footer(f, chunks[3], app);
 }
 
-/// Renders the header
+/// Renders the footer section
+fn render_footer(f: &mut ratatui::Frame, area: Rect, app: &AppState) {
+    let commands = &app.commands;
+
+    let index = (app.tick_count / 200) as usize % commands.len();
+    let (cmd, desc) = commands[index];
+
+    let help_line = Line::from(vec![
+        " Tips: ".dim(),
+        cmd.bold().cyan(),
+        " ".into(),
+        desc.gray().italic(),
+    ]);
+
+    f.render_widget(
+        Paragraph::new(help_line).alignment(ratatui::layout::Alignment::Left),
+        area,
+    );
+}
+
+/// Renders the header section
 fn render_header(f: &mut ratatui::Frame, area: Rect) {
     let block = Block::default()
         .borders(Borders::ALL)
@@ -452,11 +565,7 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
     // vertical layout:
     let layout = Layout::default()
         .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(1),
-            Constraint::Min(1),
-            Constraint::Length(1),
-        ])
+        .constraints([Constraint::Length(3)])
         .split(inner);
 
     // gorizontal layout:
@@ -464,11 +573,11 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
         .direction(Direction::Horizontal)
         .constraints([
             Constraint::Length(2),      // left gap
-            Constraint::Percentage(40), // left info block
-            Constraint::Percentage(60), // right info block
+            Constraint::Percentage(60), // left info block
+            Constraint::Percentage(40), // right info block
             Constraint::Length(2),      // right gap
         ])
-        .split(layout[1]);
+        .split(layout[0]);
 
     // get current directory:
     let current_path = std::env::current_dir()
@@ -492,13 +601,10 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
 
     // right info block:
     let right_text = Text::from(
-        vec![
-            Line::from("Digital liberation through local-first orchestration."),
-            Line::from("Reclaim your data, build your own intelligence."),
-        ]
-        .iter()
-        .map(|l| Line::from(l.to_string().dim()))
-        .collect::<Vec<_>>(),
+        vec![Line::from(""), Line::from("")]
+            .iter()
+            .map(|l| Line::from(l.to_string().dim()))
+            .collect::<Vec<_>>(),
     );
 
     f.render_widget(Paragraph::new(left_text), content_area[1]);
@@ -513,10 +619,6 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
 /// The parser state
 struct ParserState {
     in_code_block: bool,
-    is_bold: bool,
-    is_italic: bool,
-    is_inline_code: bool,
-    is_crossed: bool,
     in_table: bool,
     table_rows: Vec<Vec<String>>,
 }
@@ -526,10 +628,6 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut state = ParserState {
         in_code_block: false,
-        is_bold: false,
-        is_italic: false,
-        is_inline_code: false,
-        is_crossed: false,
         in_table: false,
         table_rows: vec![],
     };
@@ -575,10 +673,15 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
             continue;
         }
 
+        // --- NEW LINE <br> ---
+        if raw_line.contains("<br>") || raw_line.contains("<br/>") {
+            lines.push(Line::from(" "));
+            continue;
+        }
+
         // --- TABLES ---
         let is_table_row = raw_line.trim().starts_with('|');
-
-        if is_table_row && !state.in_code_block {
+        if is_table_row {
             state.in_table = true;
             let cells: Vec<String> = raw_line
                 .split('|')
@@ -599,7 +702,7 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
             state.table_rows.clear();
         }
 
-        // --- GORIZONTAL LINES ---
+        // --- HORIZONTAL LINES ---
         if raw_line.starts_with("---") {
             lines.push(Line::from(vec![Span::styled(
                 "─".repeat(max_width),
@@ -609,39 +712,49 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
         }
 
         // --- HEADERS, LISTS & QUOTES ---
-        let is_quote = raw_line.starts_with("> ");
-        let is_unordered_list = raw_line.starts_with("- ");
-        let is_ordered_list = raw_line
-            .chars()
-            .next()
-            .map_or(false, |c| c.is_ascii_digit())
-            && raw_line.contains(". ");
-
         let (content, base_style, prefix) = if raw_line.starts_with("# ") {
             (
-                raw_line.trim_start_matches("#").trim(),
+                raw_line.trim_start_matches("# ").trim(),
                 Style::default().fg(Color::Cyan).bold().underlined(),
                 None,
             )
-        } else if raw_line.starts_with("## ") || raw_line.starts_with("### ") {
+        } else if raw_line.starts_with("## ") {
             (
-                raw_line.trim_start_matches("#").trim(),
+                raw_line.trim_start_matches("## ").trim(),
+                Style::default().fg(Color::Cyan).bold(),
+                None,
+            )
+        } else if raw_line.starts_with("### ") {
+            (
+                raw_line.trim_start_matches("### ").trim(),
                 Style::default().fg(Color::Cyan).bold(),
                 None,
             )
         } else if raw_line.starts_with("#### ") {
             (
-                raw_line.trim_start_matches("####").trim(),
-                Style::default().fg(Color::Cyan).bold().italic(),
+                raw_line.trim_start_matches("#### ").trim(),
+                Style::default().fg(Color::White).bold(),
                 None,
             )
-        } else if raw_line.starts_with("##### ") || raw_line.starts_with("###### ") {
+        } else if raw_line.starts_with("##### ") {
             (
-                raw_line.trim_start_matches("#").trim(),
-                Style::default().fg(Color::Cyan).italic(),
+                raw_line.trim_start_matches("##### ").trim(),
+                Style::default().fg(Color::White).bold().italic(),
                 None,
             )
-        } else if is_quote {
+        } else if raw_line.starts_with("###### ") {
+            (
+                raw_line.trim_start_matches("###### ").trim(),
+                Style::default().fg(Color::White).italic(),
+                None,
+            )
+        } else if raw_line.starts_with("- ") {
+            (
+                raw_line.trim_start_matches("- ").trim(),
+                Style::default().fg(Color::White),
+                Some(Span::styled(" • ", Style::default().fg(Color::Cyan).bold())),
+            )
+        } else if raw_line.starts_with("> ") {
             (
                 raw_line.trim_start_matches("> ").trim(),
                 Style::default()
@@ -650,197 +763,25 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
                     .italic(),
                 None,
             )
-        } else if is_unordered_list {
-            (
-                raw_line.trim_start_matches("- ").trim(),
-                Style::default().fg(Color::White),
-                Some(Span::styled(" • ", Style::default().fg(Color::Cyan).bold())),
-            )
-        } else if is_ordered_list {
-            let parts: Vec<&str> = raw_line.splitn(2, ". ").collect();
-            (
-                parts.get(1).unwrap_or(&"").trim(),
-                Style::default().fg(Color::White),
-                Some(Span::styled(
-                    format!(" {}. ", parts[0]),
-                    Style::default().fg(Color::Cyan).bold(),
-                )),
-            )
         } else {
             (raw_line, Style::default().fg(Color::White), None)
         };
 
-        // --- INLINE PARSING ---
         let wrapped_lines = textwrap::wrap(content, max_width);
         for wrapped_row in wrapped_lines {
             let mut spans = Vec::new();
             if let Some(ref p) = prefix {
                 spans.push(p.clone());
             }
-
-            let mut current_text = String::new();
-            let owned_row = wrapped_row.into_owned();
-            let mut chars = owned_row.chars().peekable();
-
-            while let Some(c) = chars.next() {
-                match c {
-                    '[' if !state.is_inline_code => {
-                        if !current_text.is_empty() {
-                            push_text_with_urls(
-                                &mut spans,
-                                &current_text,
-                                get_style(&state, base_style),
-                            );
-                            current_text.clear();
-                        }
-
-                        let mut link_text = String::new();
-                        while let Some(&next_c) = chars.peek() {
-                            if next_c == ']' {
-                                chars.next();
-                                break;
-                            }
-                            link_text.push(chars.next().unwrap());
-                        }
-
-                        if chars.peek() == Some(&'(') {
-                            chars.next();
-                            let mut url = String::new();
-                            while let Some(&next_c) = chars.peek() {
-                                if next_c == ')' {
-                                    chars.next();
-                                    break;
-                                }
-                                url.push(chars.next().unwrap());
-                            }
-
-                            let is_duplicate = url.contains(&link_text)
-                                || link_text
-                                    .contains(&url.replace("https://", "").replace("http://", ""));
-
-                            if is_duplicate {
-                                spans.push(Span::styled(
-                                    url,
-                                    get_style(&state, base_style).fg(Color::Cyan).underlined(),
-                                ));
-                            } else {
-                                spans.push(Span::styled(link_text, get_style(&state, base_style)));
-                                spans.push(Span::styled(" (", get_style(&state, base_style)));
-                                spans.push(Span::styled(
-                                    url,
-                                    get_style(&state, base_style).fg(Color::Cyan).underlined(),
-                                ));
-                                spans.push(Span::styled(")", get_style(&state, base_style)));
-                            }
-                        } else {
-                            let is_url = link_text.starts_with("http");
-                            let style = if is_url {
-                                get_style(&state, base_style).fg(Color::Cyan).underlined()
-                            } else {
-                                get_style(&state, base_style).fg(Color::Cyan)
-                            };
-
-                            let display = if is_url {
-                                link_text
-                            } else {
-                                format!("[{}]", link_text)
-                            };
-                            spans.push(Span::styled(display, style));
-                        }
-                    }
-                    '~' if chars.peek() == Some(&'~') => {
-                        chars.next();
-                        if !current_text.is_empty() {
-                            spans.push(Span::styled(
-                                current_text.clone(),
-                                get_style(&state, base_style),
-                            ));
-                            current_text.clear();
-                        }
-                    }
-                    '`' => {
-                        if !current_text.is_empty() {
-                            spans.push(Span::styled(
-                                current_text.clone(),
-                                get_style(&state, base_style),
-                            ));
-                            current_text.clear();
-                        }
-                        state.is_inline_code = !state.is_inline_code;
-                    }
-                    '*' => {
-                        let is_double = chars.peek() == Some(&'*');
-                        if is_double {
-                            chars.next();
-                        }
-                        if !current_text.is_empty() {
-                            spans.push(Span::styled(
-                                current_text.clone(),
-                                get_style(&state, base_style),
-                            ));
-                            current_text.clear();
-                        }
-                        if is_double {
-                            state.is_bold = !state.is_bold;
-                        } else {
-                            state.is_italic = !state.is_italic;
-                        }
-                    }
-                    _ => current_text.push(c),
-                }
-            }
-            if !current_text.is_empty() {
-                push_text_with_urls(&mut spans, &current_text, get_style(&state, base_style));
-            }
-            lines.push(Line::from(spans))
+            spans.extend(parse_inline_styles(&wrapped_row, base_style));
+            lines.push(Line::from(spans));
         }
     }
 
     if state.in_table {
         render_collected_table(&mut lines, &mut state, max_width);
     }
-
     lines
-}
-
-// Helper function for style
-fn get_style(state: &ParserState, base: Style) -> Style {
-    let mut s = base;
-
-    // crossed text:
-    if state.is_crossed {
-        s = s.crossed_out();
-    }
-
-    // inline code:
-    if state.is_inline_code {
-        s = s.fg(Color::Cyan).bg(Color::Rgb(40, 40, 40));
-    } else {
-        if state.is_bold {
-            s = s.bold();
-        }
-        if state.is_italic {
-            s = s.italic();
-        }
-    }
-    s
-}
-
-/// Push a text with URL links
-fn push_text_with_urls(spans: &mut Vec<Span<'static>>, text: &str, base_style: Style) {
-    let words = text.split_inclusive(|c: char| c.is_whitespace());
-
-    for word in words {
-        let trimmed = word.trim();
-        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
-            spans.push(Span::styled(
-                word.to_string(),
-                base_style.fg(Color::Cyan).underlined(),
-            ));
-        } else {
-            spans.push(Span::styled(word.to_string(), base_style));
-        }
-    }
 }
 
 /// Renders the table
@@ -852,10 +793,11 @@ fn render_collected_table(lines: &mut Vec<Line>, state: &mut ParserState, max_wi
     let col_count = state.table_rows[0].len();
     let mut ideal_widths = vec![0; col_count];
 
+    // calculate width:
     for row in &state.table_rows {
         for (i, cell) in row.iter().enumerate() {
             if i < col_count {
-                ideal_widths[i] = ideal_widths[i].max(cell.width());
+                ideal_widths[i] = ideal_widths[i].max(strip_markdown(cell).width());
             }
         }
     }
@@ -874,12 +816,8 @@ fn render_collected_table(lines: &mut Vec<Line>, state: &mut ParserState, max_wi
         }
     }
 
-    let rows_len = state.table_rows.len();
-
-    // top line:
-    let mut top_line = Vec::new();
-    top_line.push(Span::styled("┌", Style::default().dim()));
-
+    // draw borders:
+    let mut top_line = vec![Span::styled("┌", Style::default().dim())];
     for (i, &w) in final_widths.iter().enumerate() {
         top_line.push(Span::styled("─".repeat(w + 2), Style::default().dim()));
         if i < col_count - 1 {
@@ -889,8 +827,8 @@ fn render_collected_table(lines: &mut Vec<Line>, state: &mut ParserState, max_wi
     top_line.push(Span::styled("┐", Style::default().dim()));
     lines.push(Line::from(top_line));
 
+    let rows_len = state.table_rows.len();
     for (r_idx, row) in state.table_rows.iter().enumerate() {
-        // calculate cell sizes:
         let mut wrapped_cells: Vec<Vec<String>> = Vec::new();
         let mut max_cell_lines = 1;
 
@@ -898,76 +836,159 @@ fn render_collected_table(lines: &mut Vec<Line>, state: &mut ParserState, max_wi
             if i >= col_count {
                 break;
             }
-            let wrapped = textwrap::wrap(cell, final_widths[i]);
-            let wrapped_strings: Vec<String> =
-                wrapped.into_iter().map(|s| s.into_owned()).collect();
-            max_cell_lines = max_cell_lines.max(wrapped_strings.len());
-            wrapped_cells.push(wrapped_strings);
+            let clean_cell = strip_markdown(cell);
+            let wrapped = textwrap::wrap(&clean_cell, final_widths[i]);
+            let strings: Vec<String> = wrapped.into_iter().map(|s| s.into_owned()).collect();
+            max_cell_lines = max_cell_lines.max(strings.len());
+            wrapped_cells.push(strings);
         }
 
-        // table content:
         for line_idx in 0..max_cell_lines {
-            let mut line_spans = Vec::new();
-            line_spans.push(Span::styled("│ ", Style::default().dim()));
-
+            let mut line_spans = vec![Span::styled("│ ", Style::default().dim())];
             for (i, wrapped_lines) in wrapped_cells.iter().enumerate() {
                 let content = wrapped_lines.get(line_idx).cloned().unwrap_or_default();
                 let content_w = content.width();
-                let padding = " ".repeat(final_widths[i].saturating_sub(content_w));
 
-                let cell_style = if r_idx == 0 {
-                    Style::default().bold().cyan() // header
+                let base_style = if r_idx == 0 {
+                    Style::default().cyan().bold()
                 } else {
                     Style::default().white()
                 };
 
-                line_spans.push(Span::styled(content, cell_style));
-                line_spans.push(Span::styled(padding, cell_style));
+                line_spans.extend(parse_inline_styles(&content, base_style));
+
+                let padding = " ".repeat(final_widths[i].saturating_sub(content_w));
+                line_spans.push(Span::styled(padding, base_style));
                 line_spans.push(Span::styled(" │ ", Style::default().dim()));
             }
             lines.push(Line::from(line_spans));
         }
 
-        // line splitter:
+        // splitter:
         if r_idx < rows_len - 1 {
-            let mut sep = Vec::new();
-
-            let (left, mid, right, line_char) = if r_idx == 0 {
-                ("├", "┼", "┤", "━") // for headers
-            } else {
-                ("├", "┼", "┤", "─") // for text
-            };
-
-            sep.push(Span::styled(left, Style::default().dim()));
+            let mut sep = vec![Span::styled("├", Style::default().dim())];
+            let line_char = if r_idx == 0 { "━" } else { "─" };
             for (i, &w) in final_widths.iter().enumerate() {
                 sep.push(Span::styled(
                     line_char.repeat(w + 2),
                     Style::default().dim(),
                 ));
                 if i < col_count - 1 {
-                    sep.push(Span::styled(mid, Style::default().dim()));
+                    sep.push(Span::styled("┼", Style::default().dim()));
                 }
             }
-            sep.push(Span::styled(right, Style::default().dim()));
+            sep.push(Span::styled("┤", Style::default().dim()));
             lines.push(Line::from(sep));
         }
     }
 
-    // bottom line:
-    if !state.table_rows.is_empty() {
-        let mut bottom_line = Vec::new();
-
-        bottom_line.push(Span::styled("└", Style::default().dim()));
-
-        for (i, &w) in final_widths.iter().enumerate() {
-            bottom_line.push(Span::styled("─".repeat(w + 2), Style::default().dim()));
-
-            if i < col_count - 1 {
-                bottom_line.push(Span::styled("┴", Style::default().dim()));
-            }
+    // bottom borders:
+    let mut bottom_line = vec![Span::styled("└", Style::default().dim())];
+    for (i, &w) in final_widths.iter().enumerate() {
+        bottom_line.push(Span::styled("─".repeat(w + 2), Style::default().dim()));
+        if i < col_count - 1 {
+            bottom_line.push(Span::styled("┴", Style::default().dim()));
         }
-
-        bottom_line.push(Span::styled("┘", Style::default().dim()));
-        lines.push(Line::from(bottom_line));
     }
+    bottom_line.push(Span::styled("┘", Style::default().dim()));
+    lines.push(Line::from(bottom_line));
+}
+
+/// Inline style parsing (bold, italics, code, links)
+fn parse_inline_styles(content: &str, base_style: Style) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    let mut current_text = String::new();
+    let mut chars = content.chars().peekable();
+
+    let mut is_bold = false;
+    let mut is_italic = false;
+    let mut is_inline_code = false;
+
+    while let Some(c) = chars.next() {
+        match c {
+            '`' => {
+                if !current_text.is_empty() {
+                    spans.extend(push_text_with_urls(
+                        &current_text,
+                        get_active_style(base_style, is_bold, is_italic, is_inline_code),
+                    ));
+                    current_text.clear();
+                }
+                is_inline_code = !is_inline_code;
+            }
+            '*' => {
+                let is_double = chars.peek() == Some(&'*');
+                if is_double {
+                    chars.next();
+                }
+
+                if !current_text.is_empty() {
+                    spans.extend(push_text_with_urls(
+                        &current_text,
+                        get_active_style(base_style, is_bold, is_italic, is_inline_code),
+                    ));
+                    current_text.clear();
+                }
+
+                if is_double {
+                    is_bold = !is_bold;
+                } else {
+                    is_italic = !is_italic;
+                }
+            }
+            _ => current_text.push(c),
+        }
+    }
+
+    if !current_text.is_empty() {
+        spans.extend(push_text_with_urls(
+            &current_text,
+            get_active_style(base_style, is_bold, is_italic, is_inline_code),
+        ));
+    }
+
+    spans
+}
+
+/// Helper function to return the text style
+fn get_active_style(mut s: Style, bold: bool, italic: bool, code: bool) -> Style {
+    if code {
+        s = s.fg(Color::Cyan).bg(Color::Rgb(40, 40, 40));
+    } else {
+        if bold {
+            s = s.bold();
+        }
+        if italic {
+            s = s.italic();
+        }
+    }
+    s
+}
+
+/// Push a text with URL links
+fn push_text_with_urls(text: &str, base_style: Style) -> Vec<Span<'static>> {
+    let mut spans = Vec::new();
+    for word in text.split_inclusive(|c: char| c.is_whitespace()) {
+        let trimmed = word.trim();
+        if trimmed.starts_with("http://") || trimmed.starts_with("https://") {
+            spans.push(Span::styled(
+                word.to_string(),
+                base_style.fg(Color::Cyan).underlined(),
+            ));
+        } else {
+            spans.push(Span::styled(word.to_string(), base_style));
+        }
+    }
+    spans
+}
+
+/// Helper function for clearing text from markdown tags (for calculating width)
+fn strip_markdown(text: &str) -> String {
+    text.replace("**", "")
+        .replace("__", "")
+        .replace("*", "")
+        .replace("_", "")
+        .replace("`", "")
+        .replace("<br>", "")
+        .replace("<br/>", "")
 }

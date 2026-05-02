@@ -1,4 +1,5 @@
 use ovsy_server::{Manager, handlers, prelude::*};
+use pearce::Server;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -12,10 +13,10 @@ async fn main() -> Result<()> {
     // start server:
     Server::new()
         .post("/handle", handlers::query::handle)
-        .post("/compress", handlers::compress::handle)
+        .post("/compact", handlers::compact::handle)
         .post("/status", handlers::status::handle)
         .post("/refresh", handlers::refresh::handle)
-        .run(([127, 0, 0, 1], Settings::get().server.port))
+        .run(Settings::get().server.port)
         .await?;
 
     Ok(())

@@ -3,9 +3,11 @@ name = "ovsy-server"
 edition = "2024"
 
 [dependencies]
-ovsy-shared = { workspace = true }
-fudes-server = { workspace = true }
-anylm = { workspace = true }
-tokio = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
+ovsy-shared.workspace = true
+atoman.workspace = true
+macron.workspace = true
+pearce.workspace = true
+anylm.workspace = true
+tokio.workspace = true
+serde.workspace = true
+serde_json.workspace = true

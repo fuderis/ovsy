@@ -28,7 +28,7 @@ async fn handle_query(tx: Sender, data: UserQuery) -> Result<()> {
     while let Some(chunk) = response.next().await {
         match chunk? {
             AiChunk::Text { text } => {
-                tx.send(Chunk::answer(text))?;
+                tx.send(Chunk::answer_bytes(text))?;
             }
             AiChunk::Tool { name, json_str } => {
                 // TODO: ...

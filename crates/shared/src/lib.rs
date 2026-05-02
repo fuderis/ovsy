@@ -1,3 +1,6 @@
+pub mod result;
+pub use result::*;
+
 pub mod chunk;
 pub use chunk::*;
 
@@ -21,7 +24,7 @@ pub const VERSION: &str = "0.7.0";
 
 /// Returns the app data dir
 pub fn app_data() -> std::path::PathBuf {
-    fudes_basic::path!("~/.ovsy")
+    macron::path!("~/.ovsy")
 }
 
 /// Returns the app version

@@ -3,17 +3,18 @@ name = "ovsy-cli"
 edition = "2024"
 
 [dependencies]
-fudes-basic = { workspace = true }
-ovsy-shared = { workspace = true }
-anylm = { workspace = true }
-tokio = { workspace = true }
-reqwest = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-clap = { workspace = true }
-colored = { workspace = true }
-ratatui = { workspace = true }
-crossterm = { workspace = true }
-textwrap = { workspace = true }
-unicode-width = { workspace = true }
-chrono = { workspace = true }
+ovsy-shared.workspace = true
+atoman.workspace = true
+macron.workspace = true
+anylm.workspace = true
+tokio.workspace = true
+reqwest.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+clap.workspace = true
+colored.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+textwrap.workspace = true
+unicode-width.workspace = true
+chrono.workspace = true
