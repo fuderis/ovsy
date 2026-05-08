@@ -6,7 +6,7 @@ use ovsy_cli::{commands, prelude::*};
 #[derive(Parser)]
 #[command(name = "ovsy")]
 #[command(version = "0.7.0")]
-#[command(about = "Ovsy AI Ecosystem Controller & Client", long_about = None)]
+#[command(about = "Ovsy Assistant - Ecosystem Controller & Client", long_about = None)]
 struct Cli {
     #[command(subcommand)]
     command: Option<Commands>,
@@ -15,33 +15,31 @@ struct Cli {
 /// The Ovsy CLI commands
 #[derive(Subcommand)]
 enum Commands {
-    /// Build and install Ovsy to app_data
-    Build {
-        #[arg(short, long)]
-        start: bool,
-    },
-
     /// Check the status of all ecosystem components
     Status,
 
     /// Start the Ovsy server in the background
-    Start,
+    Start {
+        /// Also run the LM Studio server and load models
+        #[arg(short, long)]
+        lms: bool,
+    },
 
     /// Stop the Ovsy server by killing the port process
     Stop {
         /// Also stop the LM Studio server and unload models
         #[arg(short, long)]
-        full: bool,
+        lms: bool,
     },
 
     /// Restart the ecosystem (stop -> start)
     Restart {
         #[arg(short, long)]
-        full: bool,
+        lms: bool,
     },
 
-    /// Refresh the server settings & agents list
-    Refresh,
+    /// Update the server settings & agents list
+    Update,
 
     /// Enter interactive AI chat mode
     Chat,
@@ -57,15 +55,16 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // initialize settings:
-    Settings::init(app_data().join("settings.toml")).await.ok();
+    Settings::init(macron::path!("$/../config/settings.toml"))
+        .await
+        .ok();
 
     if let Err(e) = match cli.command {
-        Some(Commands::Build { start }) => commands::build::handle(start).await,
         Some(Commands::Status) => commands::status::handle().await,
-        Some(Commands::Start) => commands::start::handle().await,
-        Some(Commands::Stop { full }) => commands::stop::handle(full).await,
-        Some(Commands::Restart { full }) => commands::restart::handle(full).await,
-        Some(Commands::Refresh) => commands::refresh::handle().await,
+        Some(Commands::Start { lms }) => commands::start::handle(lms).await,
+        Some(Commands::Stop { lms }) => commands::stop::handle(lms).await,
+        Some(Commands::Restart { lms }) => commands::restart::handle(lms).await,
+        Some(Commands::Update) => commands::update::handle().await,
         Some(Commands::Chat) | None => commands::chat::handle().await,
         Some(Commands::Config) => commands::config::handle().await,
     } {

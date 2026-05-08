@@ -4,33 +4,31 @@ use ovsy_shared::{AgentInfo, StatusResponse};
 use reqwest::Client;
 use std::io::{self, Write};
 
+/// Handles the `udpate` command
 pub async fn handle() -> Result<()> {
     let dim = Color::AnsiColor(247);
     let port = Settings::get().server.port;
 
-    // Начало вывода
-    print!("📡 {} ", "Refreshing Ovsy server...".bold());
+    print!("{} ", "Updating Ovsy server...".bold());
     io::stdout().flush().ok();
 
     let client = Client::new();
     let res = client
-        .post(format!("http://127.0.0.1:{port}/refresh"))
+        .post(str!("http://127.0.0.1:{port}/update"))
         .send()
         .await;
 
     match res {
         Ok(response) => {
-            // Если сервер ответил, значит он Online
-            println!("{}", format!("Online (port {port})").green());
+            println!("{}", str!("Online (port {port})").green());
 
             let data: StatusResponse = response
                 .json()
                 .await
-                .map_err(|e| str!(format!("Failed to parse response: {e}")))?;
+                .map_err(|e| str!(str!("Failed to parse response: {e}")))?;
 
             match data {
                 StatusResponse::Success { agents } => {
-                    // Вывод агентов в стиле списка LM Studio
                     if agents.is_empty() {
                         println!("   {}", "No agents loaded".yellow().dimmed());
                     } else {
@@ -39,21 +37,19 @@ pub async fn handle() -> Result<()> {
                         }
                     }
 
-                    println!("\n⚙️  {}", "Settings synchronized.".bright_white());
+                    println!("\n{}", "Settings synchronized.".bright_white());
                 }
                 StatusResponse::Error { error } => {
-                    println!("   {} {}", "❌ Error:".red(), error.red());
+                    println!("   {} {}", "Error:".red().bold(), error.white());
                 }
             }
         }
         Err(_) => {
-            // Если сервер не отвечает
             println!("{}", "Offline".red());
             return Err(str!("Server is not responding. Check if it's running.").into());
         }
     }
 
-    // Футер
     println!(
         "{}",
         "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))

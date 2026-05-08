@@ -572,10 +572,9 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
     let content_area = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([
-            Constraint::Length(2),      // left gap
-            Constraint::Percentage(60), // left info block
-            Constraint::Percentage(40), // right info block
-            Constraint::Length(2),      // right gap
+            Constraint::Length(2),       // left gap
+            Constraint::Percentage(100), // info block
+            Constraint::Length(2),       // right gap
         ])
         .split(layout[0]);
 
@@ -594,24 +593,12 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
             ),
         ]),
         Line::from(vec![
-            Span::styled("Directory: ", Style::default().white().bold()),
+            Span::styled("Dir: ", Style::default().white().bold()),
             Span::styled(current_path, Style::default().gray()),
         ]),
     ]);
 
-    // right info block:
-    let right_text = Text::from(
-        vec![Line::from(""), Line::from("")]
-            .iter()
-            .map(|l| Line::from(l.to_string().dim()))
-            .collect::<Vec<_>>(),
-    );
-
     f.render_widget(Paragraph::new(left_text), content_area[1]);
-    f.render_widget(
-        Paragraph::new(right_text).alignment(ratatui::layout::Alignment::Right),
-        content_area[2],
-    );
 }
 
 //        MARKDOWN:

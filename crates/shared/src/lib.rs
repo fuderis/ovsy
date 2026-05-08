@@ -19,9 +19,6 @@ pub use agent_info::AgentInfo;
 pub mod response;
 pub use response::*;
 
-// The actual Ovsy version
-pub const VERSION: &str = "0.7.0";
-
 /// Returns the app data dir
 pub fn app_data() -> std::path::PathBuf {
     macron::path!("~/.ovsy")
@@ -29,5 +26,5 @@ pub fn app_data() -> std::path::PathBuf {
 
 /// Returns the app version
 pub fn app_version() -> &'static str {
-    VERSION
+    "0.7.0"
 }

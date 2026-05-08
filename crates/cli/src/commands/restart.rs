@@ -1,19 +1,14 @@
 use crate::prelude::*;
-use colored::*;
 use tokio::time;
 
 /// Handles the `restart` command
-pub async fn handle(full: bool) -> Result<()> {
-    let cyan = Color::Cyan;
-
-    println!("{} {}", "🔄".color(cyan), "Restarting Ecosystem...".bold());
-
+pub async fn handle(restart_lms: bool) -> Result<()> {
     // stop server:
-    super::stop::handle(full).await?;
+    super::stop::handle(restart_lms).await?;
     time::sleep(time::Duration::from_millis(800)).await;
 
     // starting away:
-    super::start::handle().await?;
+    super::start::handle(restart_lms).await?;
 
     Ok(())
 }

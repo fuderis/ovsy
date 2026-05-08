@@ -17,10 +17,18 @@ pub async fn handle(data: Json<UserQuery>) -> Response {
 async fn handle_query(tx: Sender, data: UserQuery) -> Result<()> {
     let ai_conf = Settings::get().assistant.clone();
 
+    // prepare prompt:
+    let dt = Utc::now().format("%Y-%m-%dT%H:%M:%SZ").to_string();
+    let prompt = ai_conf
+        .assist_prompt
+        .replace("{AGENTS_LIST}", &Manager::agents_list_doc().await)
+        .replace("{DATETIME_UTC}", &dt);
+
     // create request to ai:
     let mut request = Completions::try_from(ai_conf.completions)?
-        .system_message(vec![ai_conf.assist_prompt.into()])
-        .messages(data.messages);
+        .system_message(vec![prompt.into()])
+        .messages(data.messages)
+        .tool(Manager::task_tool().await);
 
     // send request:
     let mut response = request.send().await?;
@@ -32,7 +40,9 @@ async fn handle_query(tx: Sender, data: UserQuery) -> Result<()> {
             }
             AiChunk::Tool { name, json_str } => {
                 // TODO: ...
-                dbg!(name, json_str);
+                tx.send(Chunk::answer_bytes(str!(
+                    "**Tool call:** {name}({json_str})"
+                )))?;
             }
         }
     }

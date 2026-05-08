@@ -1,7 +1,11 @@
 pub mod agent;
 pub use agent::Agent;
 
+pub mod task;
+pub use task::TaskTool;
+
 use crate::prelude::*;
+use anylm::{Schema, Tool};
 use ovsy_shared::AgentInfo;
 use std::fmt::Write;
 use tokio::task::JoinSet;
@@ -14,6 +18,7 @@ pub static MANAGER: State<Manager> = State::new();
 pub struct Manager {
     pub agents: HashMap<Arc<String>, Arc<Agent>>,
     pub agents_doc: Arc<String>,
+    pub task_tool: Arc<Tool>,
 }
 
 impl Manager {
@@ -52,7 +57,36 @@ impl Manager {
             }
         }
 
+        // gen task delegation tool:
+        Self::gen_task_tool().await;
+
         Ok(())
+    }
+
+    /// Generates & sets the task schema
+    pub async fn gen_task_tool() {
+        let tool = Tool::new(
+            "delegate_task",
+            "Delegates a task to a specific AI agent for execution.",
+        )
+        .required_property(
+            "task_id",
+            Schema::integer("A unique identifier for the task (starting from 1)."),
+        )
+        .required_property(
+            "agent_name",
+            Schema::string("The name of the agent to handle the task."),
+        )
+        .required_property(
+            "task_query",
+            Schema::string("The actual instruction or data for the agent."),
+        )
+        .optional_property(
+            "wait_for",
+            Schema::integer("Optional identifier of task that must be completed before this one."),
+        );
+
+        MANAGER.lock().await.task_tool = arc!(tool);
     }
 
     /// Runs the AI agent server
@@ -115,11 +149,6 @@ impl Manager {
         Ok(())
     }
 
-    /// Returns the agents list prompt part
-    pub async fn get_doc() -> Arc<String> {
-        MANAGER.get().await.agents_doc.clone()
-    }
-
     /// Updates the agents list prompt part
     pub async fn update_doc() -> Result<()> {
         let guard = MANAGER.get().await;
@@ -148,11 +177,6 @@ impl Manager {
         Ok(())
     }
 
-    /// Returns true if agent with this name is already on running
-    pub async fn contains(name: Arc<String>) -> bool {
-        MANAGER.get().await.agents.contains_key(&name)
-    }
-
     /// Returns the all agents list
     pub async fn agents_list() -> Vec<AgentInfo> {
         MANAGER
@@ -166,5 +190,29 @@ impl Manager {
                 description: agent.manifest.agent.description.clone(),
             })
             .collect()
+    }
+
+    /// Returns true if agent with this name is already on running
+    pub async fn contains(name: Arc<String>) -> bool {
+        MANAGER.get().await.agents.contains_key(&name)
+    }
+
+    /// Returns the agents list prompt part
+    pub async fn agents_list_doc() -> Arc<String> {
+        MANAGER.get().await.agents_doc.clone()
+    }
+
+    /// Returns the task delegation tool
+    pub async fn task_tool() -> Tool {
+        (*MANAGER.get().await.task_tool).clone()
+    }
+
+    /// Returns the tools list by agent name
+    pub async fn agent_tools(name: &Arc<String>) -> Option<Vec<Tool>> {
+        if let Some(agent) = MANAGER.get().await.agents.get(name) {
+            Some(agent.manifest.tools.clone())
+        } else {
+            None
+        }
     }
 }

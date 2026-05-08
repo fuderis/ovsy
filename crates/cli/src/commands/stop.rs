@@ -1,4 +1,4 @@
-use crate::{UNDERLINE_COUNT, prelude::*};
+use crate::prelude::*;
 use anylm::ApiKind;
 use colored::*;
 use std::{
@@ -8,11 +8,11 @@ use std::{
 use tokio::process::Command;
 
 /// Handles the `stop` command
-pub async fn handle(full: bool) -> Result<()> {
+pub async fn handle(stop_lms: bool) -> Result<()> {
     let port = Settings::get().server.port;
 
-    println!("🔌 {}", "Shutting down...".bold());
-    print!(" • Stopping Ovsy Server (port {})... ", port);
+    // stop Ovsy server:
+    print!("Shutting down Ovsy Server... ");
     io::stdout().flush().ok();
 
     #[cfg(unix)]
@@ -30,42 +30,40 @@ pub async fn handle(full: bool) -> Result<()> {
         );
         let _ = Command::new("cmd").args(["/C", &cmd]).output().await;
     }
-    println!("{}", "Stopped".red());
+    println!("{}", "Offline".red());
 
+    // stop LMS server:
+    print!("Shutting down LMS server... ");
+    io::stdout().flush().ok();
+
+    Command::new("lms")
+        .args(["server", "stop"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
+        .await
+        .ok();
+    println!("{}", "Offline".red());
+
+    // unload LMS models:
     let ai_conf = &Settings::get().assistant;
-    if full
+    if stop_lms
         && (ai_conf.completions.kind == ApiKind::LmStudio
             || ai_conf.embeddings.kind == ApiKind::LmStudio)
     {
-        print!(" • Unloading all models from VRAM... ");
+        print!(" ∟ Unloading models... ");
         io::stdout().flush().ok();
 
         // unload all LM Studio models:
         let _ = Command::new("lms").args(["unload", "--all"]).output().await;
-        println!("{}", "Cleared".red());
-
-        // stop LM Studio server:
-        print!(" • Shutting down LM Studio server... ");
-        io::stdout().flush().ok();
-
-        Command::new("lms")
-            .args(["server", "stop"])
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .await
-            .ok();
-        println!("{}", "Offline".red());
+        println!("{}", "Unloaded".red());
     }
 
-    println!(
-        "{}",
-        "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
-    );
+    super::underline();
     println!(
         " {}\n",
-        "All processes terminated."
+        "Processes terminated."
             .italic()
             .color(Color::AnsiColor(247))
     );

@@ -9,7 +9,7 @@ use tokio::process::{Child, Command};
 pub struct Agent {
     pub dir: PathBuf,
     pub manifest: Config<Manifest>,
-    _child: Arc<Option<Child>>,
+    _child: Arc<Mutex<Option<Child>>>,
 }
 
 impl Agent {
@@ -27,7 +27,12 @@ impl Agent {
         }
 
         // run agent server:
-        let child = Command::new(dir.join(&manifest.agent.exec_path))
+        let exec_path = dir.join(&str!(
+            "{}{}",
+            &manifest.agent.name,
+            if cfg!(windows) { ".exe" } else { "" }
+        ));
+        let child = Command::new(exec_path)
             .arg("--port")
             .arg(str!(crate::free_port().await?))
             .kill_on_drop(true)
@@ -36,7 +41,7 @@ impl Agent {
         let agent = Self {
             dir,
             manifest,
-            _child: arc!(Some(child)),
+            _child: arc_mutex!(Some(child)),
         };
 
         Ok(Some(agent))

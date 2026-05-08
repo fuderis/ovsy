@@ -4,25 +4,25 @@ use ovsy_shared::{AgentInfo, StatusResponse};
 use reqwest::Client;
 use tokio::process::Command;
 
+/// Handles the `status` command
 pub async fn handle() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::new();
 
-    // 1. Ovsy Server Check
+    // checking Ovsy server:
     let res = client
-        .get(format!("http://127.0.0.1:{port}/status"))
+        .get(str!("http://127.0.0.1:{port}/status"))
         .send()
         .await;
 
     match res {
         Ok(response) => {
             println!(
-                "📡 {} {}",
-                "Ovsy server:".bold(),
-                format!("Online (port {port})").green()
+                "Checking Ovsy server... {}",
+                str!("Online ({port})").green()
             );
 
-            // Парсим агентов
+            // parsing agents list:
             if let Ok(data) = response.json::<StatusResponse>().await {
                 match data {
                     StatusResponse::Success { agents } => {
@@ -41,11 +41,11 @@ pub async fn handle() -> Result<()> {
             }
         }
         Err(_) => {
-            println!("📡 {} {}", "Ovsy server:".bold(), "Offline".red());
+            println!("Checking Ovsy server... {}", "Offline".red());
         }
     }
 
-    // 2. LM Studio Status
+    // checking LMS server:
     let lms_out = Command::new("lms").args(["status"]).output().await;
     let lms_raw = match lms_out {
         Ok(out) => String::from_utf8_lossy(&out.stdout).to_string(),
@@ -61,12 +61,12 @@ pub async fn handle() -> Result<()> {
         .unwrap_or("unknown");
 
     let lms_display = if lms_running {
-        format!("Online (port {lms_port})").green()
+        str!("Online ({lms_port})").green()
     } else {
         "Offline".red()
     };
 
-    println!("\n📡 {} {}", "LM Studio:".bold(), lms_display);
+    println!("Checking LMS server... {}", lms_display);
 
     if lms_running {
         let mut in_models_block = false;
@@ -81,7 +81,7 @@ pub async fn handle() -> Result<()> {
             if in_models_block && line.starts_with('·') {
                 found_any = true;
                 let model_info = line.trim_start_matches('·').trim();
-                println!(" • {}", model_info.dimmed());
+                println!(" ∟ {}", model_info.dimmed());
             }
         }
         if !found_any && in_models_block {

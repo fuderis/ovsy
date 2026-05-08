@@ -5,6 +5,7 @@ pub use atoman::*;
 pub use macron::*;
 
 pub use std::{
+    collections::HashMap,
     path::{Path, PathBuf},
     sync::Arc,
 };
