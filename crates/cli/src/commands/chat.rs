@@ -12,10 +12,13 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph},
+    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
-use std::io;
-use tokio::sync::mpsc;
+use std::{io, process::Command};
+use tokio::{
+    sync::mpsc,
+    time::{self, Duration},
+};
 use unicode_width::UnicodeWidthStr;
 
 /// The app state
@@ -25,14 +28,16 @@ struct AppState {
     messages: Arc<State<Vec<Message>>>,
     is_thinking: bool,
     scroll_offset: u16,
+    input_scroll_offset: u16,
     tx: mpsc::UnboundedSender<String>,
     tick_count: u64,
     commands: Vec<(&'static str, &'static str)>,
     is_busy: Arc<Flag>,
+    chat_area: ratatui::layout::Rect,
+    input_area: ratatui::layout::Rect,
 }
 
 impl AppState {
-    /// Creates a new app state
     pub fn new(tx: mpsc::UnboundedSender<String>) -> Self {
         Self {
             input: String::new(),
@@ -40,6 +45,7 @@ impl AppState {
             messages: arc!(State::new()),
             is_thinking: false,
             scroll_offset: 0,
+            input_scroll_offset: 0,
             tx,
             tick_count: 0,
             commands: vec![
@@ -48,20 +54,20 @@ impl AppState {
                 ("/exit", "Exit the assistant"),
             ],
             is_busy: arc!(Flag::new()),
+            chat_area: Default::default(),
+            input_area: Default::default(),
         }
     }
 
-    /// Checks if the input is a command and processes it.
     async fn handle_input(&mut self) {
         let trimmed = self.input.trim();
         if trimmed.is_empty() {
             return;
         }
 
-        // command:
         if trimmed.starts_with('/') {
             match trimmed {
-                "/exit" => { /* the output is processed in the main loop via return */ }
+                "/exit" => {}
                 "/clear" => {
                     self.messages.set(vec![]).await;
                     let _ = self.tx.send(trimmed.to_string());
@@ -70,9 +76,7 @@ impl AppState {
                     let _ = self.tx.send(trimmed.to_string());
                 }
             }
-        }
-        // message:
-        else {
+        } else {
             self.messages
                 .lock()
                 .await
@@ -82,6 +86,7 @@ impl AppState {
 
         self.input.clear();
         self.cursor_position = 0;
+        self.input_scroll_offset = 0;
         self.scroll_offset = u16::MAX;
     }
 }
@@ -91,27 +96,19 @@ pub async fn handle() -> Result<()> {
     let port = Settings::get().server.port;
     let client = reqwest::Client::new();
 
-    // checking the server:
-    print!("🚀 Checking Ovsy server on port {}... ", port);
-
-    let status_url = format!("http://127.0.0.1:{port}/status");
-
+    // check the server:
+    let status_url = str!("http://127.0.0.1:{port}/update");
     if client.get(&status_url).send().await.is_err() {
-        println!("{}\nStarting backend...", colored::Colorize::red("Offline"));
-
-        // define the binary extension:
-        let ext = if cfg!(windows) { "exe" } else { "" };
-        let bin_path = path!("~/.ovsy/ovsy-server{ext}");
-
         // starting the server:
-        let spawn_res = std::process::Command::new(bin_path).arg("start").spawn();
+        let bin_path = path!("$/ovsy-server{}", if cfg!(windows) { "exe" } else { "" });
+        let spawn_res = Command::new(bin_path).arg("start").spawn();
 
         match spawn_res {
             Ok(_) => {
                 // wait server initializing:
                 let mut started = false;
                 for _ in 0..10 {
-                    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+                    time::sleep(Duration::from_millis(500)).await;
                     if client.get(&status_url).send().await.is_ok() {
                         started = true;
                         break;
@@ -119,17 +116,18 @@ pub async fn handle() -> Result<()> {
                 }
 
                 if !started {
-                    eprintln!("❌ Timeout: Server started but is not responding.");
+                    eprintln!(
+                        "{}: Server started but is not responding.",
+                        "Timeout".red().bold()
+                    );
                     return Ok(());
                 }
             }
             Err(e) => {
-                eprintln!("❌ Failed to execute server binary: {e}");
+                eprintln!("{}: Failed to execute server: {e}", "Error".red().bold());
                 return Ok(());
             }
         }
-    } else {
-        println!("{}", colored::Colorize::green("Online"));
     }
 
     let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
@@ -166,76 +164,79 @@ async fn chat_worker(
 ) {
     let port = Settings::get().server.port;
     let client = reqwest::Client::new();
-    let base_url = format!("http://127.0.0.1:{port}");
-
-    let max_messages = Settings::get().assistant.max_messages * 2;
-    let messages_limit = max_messages * 2;
+    let base_url = str!("http://127.0.0.1:{port}");
 
     while let Some(input) = input_rx.recv().await {
         is_busy.set(true);
+
+        // commands handler:
         let trimmed = input.trim();
-
-        if trimmed == "/clear" {
-            messages.set(vec![]).await;
-            is_busy.set(false);
-            continue;
-        }
-
-        // --- COMPRESS LOGIC ---
-        let is_manual = trimmed == "/compact";
-        let len = messages.get().await.len();
-        if is_manual || len >= messages_limit {
-            let _ = ui_tx.send(Chunk::Think {
-                think: "⚙ Compacting context...".into(),
-            });
-
-            let compress_count = if is_manual {
-                len.saturating_sub(2)
-            } else {
-                len.saturating_sub(max_messages)
-            };
-
-            if compress_count > 0 {
-                let to_compress = messages.get().await.clone()[..compress_count].to_vec();
-
-                let res = client
-                    .post(format!("{base_url}/compact"))
-                    .json(&UserQuery {
-                        user_id: 0,
-                        messages: to_compress,
-                    })
-                    .send()
-                    .await;
-
-                if let Ok(res) = res {
-                    let bytes_stream = res.bytes_stream().map(|c| c.map_err(Into::into));
-                    let mut stream = Stream::read::<Chunk>(bytes_stream);
-                    let mut summary = String::new();
-
-                    while let Ok(Some(Chunk::Answer { answer })) = stream.read().await {
-                        summary.push_str(&answer);
-                    }
-
-                    if !summary.trim().is_empty() {
-                        let preserved_msgs =
-                            messages.get().await.clone()[compress_count..].to_vec();
-
-                        let mut messages_temp = vec![Message::assistant(vec![
-                            format!("**Summarized**: {}\n---\n", summary.trim()).into(),
-                        ])];
-                        messages_temp.extend(preserved_msgs);
-                        messages.set(messages_temp).await;
-                    }
+        if trimmed.starts_with("/") {
+            match trimmed.to_lowercase().as_ref() {
+                // Clear context:
+                "/clear" | "/clean" => {
+                    messages.set(vec![]).await;
+                    is_busy.set(false);
+                    continue;
                 }
-            }
-            if is_manual {
-                is_busy.set(false);
-                continue;
+
+                // Compress context:
+                "/compact" | "/compress" => {
+                    let _ = ui_tx.send(Chunk::Think {
+                        think: "⚙ Compressing context...".into(),
+                    });
+
+                    let messages_count = messages.get().await.len();
+                    let max_messages = Settings::get().assistant.max_messages * 2;
+                    let compress_count = (messages_count.saturating_sub(max_messages) / 2) * 2;
+
+                    if messages_count > 2 && compress_count > 0 {
+                        let to_compress = messages.get().await[..compress_count].to_vec();
+
+                        let res = client
+                            .post(str!("{base_url}/compact"))
+                            .json(&UserQuery {
+                                user_id: 0,
+                                messages: to_compress,
+                            })
+                            .send()
+                            .await;
+
+                        if let Ok(res) = res {
+                            let bytes_stream = res.bytes_stream().map(|c| c.map_err(Into::into));
+                            let mut stream = Stream::read::<Chunk>(bytes_stream);
+                            let mut summary = String::new();
+
+                            while let Ok(Some(Chunk::Answer { answer })) = stream.read().await {
+                                summary.push_str(&answer);
+                            }
+
+                            if !summary.trim().is_empty() {
+                                let preserved_msgs =
+                                    messages.get().await.clone()[compress_count..].to_vec();
+
+                                let mut messages_temp = vec![Message::assistant(vec![
+                                    str!("**Summarized**: {}\n---\n", summary.trim()).into(),
+                                ])];
+                                messages_temp.extend(preserved_msgs);
+                                messages.set(messages_temp).await;
+                            }
+                        }
+                    }
+
+                    is_busy.set(false);
+                    continue;
+                }
+
+                _ => {
+                    is_busy.set(false);
+                    continue;
+                }
             }
         }
 
         let res = client
-            .post(format!("{base_url}/handle"))
+            .post(str!("{base_url}/handle"))
             .json(&UserQuery {
                 user_id: 0,
                 messages: (*messages.get().await).clone(),
@@ -258,7 +259,7 @@ async fn chat_worker(
             }
             Err(e) => {
                 let _ = ui_tx.send(Chunk::Error {
-                    error: format!("Connection error: {}", e),
+                    error: str!("Connection error: {}", e),
                 });
             }
         }
@@ -273,17 +274,19 @@ async fn run_app<B: Backend>(
     app: &mut AppState,
     ui_rx: &mut mpsc::UnboundedReceiver<Chunk>,
 ) -> Result<()> {
+    // enabling mouse capture (usually done in main, but duplicating the logic):
+    execute!(std::io::stdout(), event::EnableMouseCapture)?;
+
     loop {
         app.tick_count += 1;
         terminal.draw(|f| ui(f, app)).map_err(|e| e.to_string())?;
 
-        // read server chunks:
+        // 1. Processing incoming data from the server:
         while let Ok(chunk) = ui_rx.try_recv() {
             match chunk {
                 Chunk::Think { .. } => app.is_thinking = true,
                 Chunk::Answer { answer } => {
                     app.is_thinking = false;
-
                     let mut msgs = app.messages.lock().await;
 
                     match msgs.last_mut() {
@@ -296,23 +299,58 @@ async fn run_app<B: Backend>(
                             msgs.push(Message::assistant(vec![answer.into()]));
                         }
                     }
-                    app.scroll_offset = app.scroll_offset.saturating_add(1);
+                    // scroll down when receiving new tokens:
+                    app.scroll_offset = u16::MAX;
                 }
                 Chunk::Error { error } => {
                     app.is_thinking = false;
                     app.messages
                         .lock()
                         .await
-                        .push(Message::system(vec![format!("Error: {error}").into()]));
+                        .push(Message::system(vec![str!("Error: {error}").into()]));
                 }
-                Chunk::Spec { spec: _ } => {}
+                _ => {}
             }
         }
 
-        // init keyboard events:
+        // 2. Event Handling (Keyboard and Mouse):
         if event::poll(std::time::Duration::from_millis(16))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+            match event::read()? {
+                // Mouse handling:
+                Event::Mouse(mouse_event) => match mouse_event.kind {
+                    event::MouseEventKind::ScrollUp => {
+                        if app
+                            .chat_area
+                            .contains((mouse_event.column, mouse_event.row).into())
+                        {
+                            app.scroll_offset = app.scroll_offset.saturating_sub(2);
+                        } else if app
+                            .input_area
+                            .contains((mouse_event.column, mouse_event.row).into())
+                        {
+                            app.input_scroll_offset = app.input_scroll_offset.saturating_sub(1);
+                        }
+                    }
+                    event::MouseEventKind::ScrollDown => {
+                        if app
+                            .chat_area
+                            .contains((mouse_event.column, mouse_event.row).into())
+                        {
+                            app.scroll_offset = app.scroll_offset.saturating_add(2);
+                        } else if app
+                            .input_area
+                            .contains((mouse_event.column, mouse_event.row).into())
+                        {
+                            app.input_scroll_offset = app.input_scroll_offset.saturating_add(1);
+                        }
+                    }
+                    _ => {}
+                },
+
+                // Key handling:
+                Event::Key(key) if key.kind == KeyEventKind::Press => {
+                    let has_shift = key.modifiers.contains(event::KeyModifiers::SHIFT);
+
                     match key.code {
                         KeyCode::Esc => return Ok(()),
                         KeyCode::Enter => {
@@ -360,15 +398,29 @@ async fn run_app<B: Backend>(
                                 app.cursor_position = i + c.len_utf8();
                             }
                         }
+                        // Scroll up/down
                         KeyCode::Up => app.scroll_offset = app.scroll_offset.saturating_sub(1),
                         KeyCode::Down => app.scroll_offset = app.scroll_offset.saturating_add(1),
-                        KeyCode::PageUp => app.scroll_offset = app.scroll_offset.saturating_sub(5),
+
+                        // PageUp / PageDown with Shift modifier
+                        KeyCode::PageUp => {
+                            if has_shift {
+                                app.input_scroll_offset = app.input_scroll_offset.saturating_sub(5);
+                            } else {
+                                app.scroll_offset = app.scroll_offset.saturating_sub(10);
+                            }
+                        }
                         KeyCode::PageDown => {
-                            app.scroll_offset = app.scroll_offset.saturating_add(5)
+                            if has_shift {
+                                app.input_scroll_offset = app.input_scroll_offset.saturating_add(5);
+                            } else {
+                                app.scroll_offset = app.scroll_offset.saturating_add(10);
+                            }
                         }
                         _ => {}
                     }
                 }
+                _ => {}
             }
         }
     }
@@ -377,20 +429,41 @@ async fn run_app<B: Backend>(
 /// Renderers the user interface
 fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let area = f.area();
+
+    // --- 1. CALCULATE INPUT HEIGHT ---
+    let prefix = "  → ";
+    let inner_width = area.width.saturating_sub(2) as usize;
+
+    let wrap_options = textwrap::Options::new(inner_width)
+        .break_words(true)
+        .word_separator(textwrap::WordSeparator::AsciiSpace);
+
+    let full_text = format!("{}{}", prefix, app.input);
+    let wrapped_lines = textwrap::wrap(&full_text, wrap_options.clone());
+
+    let line_count = wrapped_lines.len().max(1) as u16;
+    let dynamic_input_height = (line_count + 2).clamp(3, 8);
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(4), // header
-            Constraint::Min(1),    // chat
-            Constraint::Length(3), // input
-            Constraint::Length(1), // footer
+            Constraint::Length(4),
+            Constraint::Min(1),
+            Constraint::Length(dynamic_input_height),
+            Constraint::Length(1),
         ])
         .split(area);
 
+    app.chat_area = chunks[1];
+    app.input_area = chunks[2];
+
+    // --- 3. HEADER ---
     render_header(f, chunks[0]);
 
+    // --- 4. CHAT HISTORY ---
     let chat_area = chunks[1];
-    let max_width = chat_area.width.saturating_sub(2) as usize;
+    let chat_inner_height = chat_area.height.saturating_sub(2);
+    let chat_inner_width = chat_area.width.saturating_sub(1);
 
     let mut history: Vec<Line> = Vec::new();
 
@@ -398,14 +471,13 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         // metadata line:
         let meta_line = Line::from(vec![if msg.role.is_user() {
             Span::styled(
-                format!(
+                str!(
                     "[{}]",
                     msg.timestamp
-                        .map(|t| {
-                            t.with_timezone(&chrono::Local)
-                                .format("%Y-%m-%dT%H:%M:%S")
-                                .to_string()
-                        })
+                        .map(|t| t
+                            .with_timezone(&chrono::Local)
+                            .format("%Y-%m-%dT%H:%M:%S")
+                            .to_string())
                         .unwrap_or_else(|| "??:??:??".to_string())
                 ),
                 Style::default().bg(Color::Cyan).fg(Color::Black).bold(),
@@ -415,6 +487,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         }]);
         history.push(meta_line);
 
+        // message content:
         let text_content = msg
             .content
             .iter()
@@ -427,14 +500,12 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
             })
             .collect::<String>();
 
-        // parsing a message:
-        let msg_lines = parse_markdown(&text_content, max_width);
+        let msg_lines = parse_markdown(&text_content, chat_inner_width as usize);
 
         if msg.role.is_user() {
             for line in msg_lines {
-                let styled_line = line.clone();
                 history.push(
-                    styled_line.patch_style(
+                    line.patch_style(
                         Style::default()
                             .bg(Color::Rgb(20, 20, 20))
                             .fg(Color::DarkGray),
@@ -445,25 +516,21 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
             history.extend(msg_lines);
         }
 
-        // add spacing between messages:
         if msg.role.is_assistant() {
             history.push(Line::raw(""));
         }
     }
 
-    let chat_height = chat_area.height.saturating_sub(2) as usize;
-    let total_lines = history.len();
-    let max_scroll = total_lines.saturating_sub(chat_height) as u16;
-
-    if app.scroll_offset > max_scroll {
-        app.scroll_offset = max_scroll;
-    }
+    let total_lines = history.len() as u16;
+    let chat_height = chat_area.height.saturating_sub(2) as u16;
+    let max_chat_scroll = total_lines.saturating_sub(chat_inner_height);
+    app.scroll_offset = app.scroll_offset.min(max_chat_scroll);
 
     // calculate scroll lines:
     let current_line = if total_lines <= chat_height {
         total_lines
     } else {
-        (app.scroll_offset as usize + chat_height).min(total_lines)
+        (app.scroll_offset + chat_height).min(total_lines)
     };
 
     f.render_widget(
@@ -490,44 +557,77 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         chat_area,
     );
 
-    // --- INPUT BLOCK ---
+    // --- 5. INPUT BLOCK ---
+    let input_area = chunks[2];
+    let input_inner_height = input_area.height.saturating_sub(2);
+
+    // auto-scroll:
+    let text_before_cursor = &app.input[..app.cursor_position];
+    let text_temp = format!("{}{}", prefix, text_before_cursor);
+    let wrapped_before = textwrap::wrap(&text_temp, wrap_options.clone());
+    let cursor_row = (wrapped_before.len() as u16).saturating_sub(1);
+
+    // if cursor is below the visible area:
+    if cursor_row >= app.input_scroll_offset + input_inner_height {
+        app.input_scroll_offset = cursor_row - input_inner_height + 1;
+    }
+    // if cursor is above the visible area (for example, after delete lines):
+    if cursor_row < app.input_scroll_offset {
+        app.input_scroll_offset = cursor_row;
+    }
+
     let input_area = chunks[2];
     let dots_count = (app.tick_count / 30) % 4;
     let dots = ".".repeat(dots_count as usize);
     let thinking_text = format!(" Thinking{dots:<3} ");
 
     f.render_widget(
-        Paragraph::new(format!("  → {}", app.input)).block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(if app.is_busy.get() {
-                    Span::styled(thinking_text, Style::default().fg(Color::White).italic())
-                } else {
-                    Span::styled(" Input ", Style::default().fg(Color::Cyan))
-                })
-                .border_style(Style::default().fg(if app.is_busy.get() {
-                    Color::White
-                } else {
-                    Color::Cyan
-                })),
-        ),
+        Paragraph::new(format!("{}{}", prefix, app.input))
+            .wrap(Wrap { trim: false })
+            .scroll((app.input_scroll_offset, 0))
+            .block(
+                Block::default()
+                    .borders(Borders::ALL)
+                    .border_type(BorderType::Rounded)
+                    .title(if app.is_busy.get() {
+                        Span::styled(thinking_text, Style::default().fg(Color::White).italic())
+                    } else {
+                        Span::styled(" Input ", Style::default().fg(Color::Cyan))
+                    })
+                    .border_style(Style::default().fg(if app.is_busy.get() {
+                        Color::White
+                    } else {
+                        Color::Cyan
+                    })),
+            ),
         input_area,
     );
 
-    // --- CURSOR POSITIONING ---
-    // x: the beginning of the block + prefix indentation (4) + cursor position in the line
-    // y: the beginning of the block + 1 (offset from the upper border of the frame)
+    // --- 6. CURSOR POSITIONING ---
     if !app.is_thinking {
-        let text_before_cursor = &app.input[..app.cursor_position];
-        let visual_width = text_before_cursor.width();
+        let last_line = wrapped_before
+            .last()
+            .map(|s| s.chars().count())
+            .unwrap_or(0);
 
-        let x_offset = input_area.x + 1 + 4;
+        let trimmed_input = app.input.trim();
+        let add_x = if trimmed_input.is_empty() {
+            app.input = trimmed_input.to_owned();
+            app.cursor_position = 0;
+            1
+        } else if app.input.ends_with(" ") {
+            (app.input.chars().count() - trimmed_input.chars().count()) as u16
+        } else {
+            0
+        };
 
-        f.set_cursor_position((x_offset + (visual_width as u16), input_area.y + 1));
+        f.set_cursor_position((
+            input_area.x + 1 + add_x + last_line as u16,
+            input_area.y + 1 + cursor_row - app.input_scroll_offset,
+        ));
     }
 
-    // --- FOOTER ---
+    // --- 7. FOOTER ---
     render_footer(f, chunks[3], app);
 }
 
@@ -535,11 +635,11 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 fn render_footer(f: &mut ratatui::Frame, area: Rect, app: &AppState) {
     let commands = &app.commands;
 
-    let index = (app.tick_count / 200) as usize % commands.len();
+    let index = (app.tick_count / 360) as usize % commands.len();
     let (cmd, desc) = commands[index];
 
     let help_line = Line::from(vec![
-        " Tips: ".dim(),
+        " ? ".dim(),
         cmd.bold().cyan(),
         " ".into(),
         desc.gray().italic(),
@@ -557,7 +657,7 @@ fn render_header(f: &mut ratatui::Frame, area: Rect) {
         .borders(Borders::ALL)
         .border_type(BorderType::Rounded)
         .border_style(Style::default().fg(Color::Cyan))
-        .title(format!(" Ovsy Assistant {} ", app_version()));
+        .title(str!(" Ovsy Assistant {} ", app_version()));
 
     let inner = block.inner(area);
     f.render_widget(block, area);
@@ -631,7 +731,7 @@ fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
 
                 // draw lang name:
                 lines.push(Line::from(vec![Span::styled(
-                    format!(" {} ", display_lang.to_lowercase()),
+                    str!(" {} ", display_lang.to_lowercase()),
                     Style::default()
                         .bg(Color::Rgb(20, 20, 20))
                         .fg(Color::DarkGray)

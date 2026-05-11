@@ -7,7 +7,7 @@ PORT=7878
 BINARIES=("ovsy-cli" "ovsy-server")
 
 # Colors:
-NC='\033[0m'               # no color
+NC='\033[0m'         # no color
 BOLD='\033[1m'
 
 OK='\033[1;32m'      # bold green
