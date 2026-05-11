@@ -25,7 +25,7 @@ use unicode_width::UnicodeWidthStr;
 struct AppState {
     input: String,
     cursor_position: usize,
-    messages: Arc<State<Vec<Message>>>,
+    messages: Arc<State<(Vec<Message>, usize)>>,
     is_thinking: bool,
     scroll_offset: u16,
     input_scroll_offset: u16,
@@ -68,19 +68,18 @@ impl AppState {
         if trimmed.starts_with('/') {
             match trimmed {
                 "/exit" => {}
-                "/clear" => {
-                    self.messages.set(vec![]).await;
-                    let _ = self.tx.send(trimmed.to_string());
-                }
                 _ => {
                     let _ = self.tx.send(trimmed.to_string());
                 }
             }
         } else {
-            self.messages
-                .lock()
-                .await
-                .push(Message::user(vec![trimmed.to_string().into()]));
+            {
+                let mut msgs = self.messages.lock().await;
+                msgs.0.push(Message::user(vec![trimmed.to_string().into()]));
+                msgs.1 = AppState::calc_tokens(&msgs.0);
+            }
+
+            // send query to worker (it won't work without it):
             let _ = self.tx.send(trimmed.to_string());
         }
 
@@ -88,6 +87,10 @@ impl AppState {
         self.cursor_position = 0;
         self.input_scroll_offset = 0;
         self.scroll_offset = u16::MAX;
+    }
+
+    pub fn calc_tokens(msgs: &Vec<Message>) -> usize {
+        msgs.iter().map(|m| m.tokens_count).sum()
     }
 }
 
@@ -159,7 +162,7 @@ pub async fn handle() -> Result<()> {
 async fn chat_worker(
     mut input_rx: mpsc::UnboundedReceiver<String>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
-    messages: Arc<State<Vec<Message>>>,
+    messages: Arc<State<(Vec<Message>, usize)>>,
     is_busy: Arc<Flag>,
 ) {
     let port = Settings::get().server.port;
@@ -175,7 +178,7 @@ async fn chat_worker(
             match trimmed.to_lowercase().as_ref() {
                 // Clear context:
                 "/clear" | "/clean" => {
-                    messages.set(vec![]).await;
+                    messages.set((vec![], 0)).await;
                     is_busy.set(false);
                     continue;
                 }
@@ -186,12 +189,12 @@ async fn chat_worker(
                         think: "⚙ Compressing context...".into(),
                     });
 
-                    let messages_count = messages.get().await.len();
+                    let messages_count = messages.get().await.0.len();
                     let max_messages = Settings::get().assistant.max_messages * 2;
                     let compress_count = (messages_count.saturating_sub(max_messages) / 2) * 2;
 
                     if messages_count > 2 && compress_count > 0 {
-                        let to_compress = messages.get().await[..compress_count].to_vec();
+                        let to_compress = messages.get().await.0[..compress_count].to_vec();
 
                         let res = client
                             .post(str!("{base_url}/compact"))
@@ -213,13 +216,15 @@ async fn chat_worker(
 
                             if !summary.trim().is_empty() {
                                 let preserved_msgs =
-                                    messages.get().await.clone()[compress_count..].to_vec();
+                                    messages.get().await.0.clone()[compress_count..].to_vec();
 
                                 let mut messages_temp = vec![Message::assistant(vec![
                                     str!("**Summarized**: {}\n---\n", summary.trim()).into(),
                                 ])];
                                 messages_temp.extend(preserved_msgs);
-                                messages.set(messages_temp).await;
+
+                                let tokens_count = AppState::calc_tokens(&messages_temp);
+                                messages.set((messages_temp, tokens_count)).await;
                             }
                         }
                     }
@@ -239,7 +244,7 @@ async fn chat_worker(
             .post(str!("{base_url}/handle"))
             .json(&UserQuery {
                 user_id: 0,
-                messages: (*messages.get().await).clone(),
+                messages: (*messages.get().await).0.clone(),
             })
             .send()
             .await;
@@ -282,32 +287,38 @@ async fn run_app<B: Backend>(
         terminal.draw(|f| ui(f, app)).map_err(|e| e.to_string())?;
 
         // 1. Processing incoming data from the server:
-        while let Ok(chunk) = ui_rx.try_recv() {
+        if let Ok(chunk) = ui_rx.try_recv() {
             match chunk {
                 Chunk::Think { .. } => app.is_thinking = true,
                 Chunk::Answer { answer } => {
                     app.is_thinking = false;
                     let mut msgs = app.messages.lock().await;
 
-                    match msgs.last_mut() {
+                    match msgs.0.last_mut() {
                         Some(msg) if msg.role.is_assistant() => {
-                            if let Some(Content::Text { text }) = msg.content.get_mut(0) {
-                                text.push_str(&answer);
-                            }
+                            msg.map(|cnt| {
+                                if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                    text.push_str(&answer);
+                                }
+                            });
                         }
+
                         _ => {
-                            msgs.push(Message::assistant(vec![answer.into()]));
+                            msgs.0.push(Message::assistant(vec![answer.into()]));
                         }
                     }
+                    msgs.1 = AppState::calc_tokens(&msgs.0);
+
                     // scroll down when receiving new tokens:
                     app.scroll_offset = u16::MAX;
                 }
                 Chunk::Error { error } => {
                     app.is_thinking = false;
-                    app.messages
-                        .lock()
-                        .await
+                    let mut msgs = app.messages.lock().await;
+
+                    msgs.0
                         .push(Message::system(vec![str!("Error: {error}").into()]));
+                    msgs.1 = AppState::calc_tokens(&msgs.0);
                 }
                 _ => {}
             }
@@ -438,7 +449,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         .break_words(true)
         .word_separator(textwrap::WordSeparator::AsciiSpace);
 
-    let full_text = format!("{}{}", prefix, app.input);
+    let full_text = str!("{}{}", prefix, app.input);
     let wrapped_lines = textwrap::wrap(&full_text, wrap_options.clone());
 
     let line_count = wrapped_lines.len().max(1) as u16;
@@ -467,7 +478,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     let mut history: Vec<Line> = Vec::new();
 
-    for msg in app.messages.dirty_get().iter() {
+    for msg in app.messages.dirty_get().0.iter() {
         // metadata line:
         let meta_line = Line::from(vec![if msg.role.is_user() {
             Span::styled(
@@ -533,26 +544,73 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         (app.scroll_offset + chat_height).min(total_lines)
     };
 
+    let max_tokens = Settings::get()
+        .assistant
+        .completions
+        .max_tokens
+        .unwrap_or(1) as usize;
+
+    let current_tokens = app.messages.dirty_get().1;
+
+    fn make_progress_bar(current: usize, max: usize, width: usize) -> String {
+        if max == 0 {
+            return " ".repeat(width);
+        }
+        let ratio = (current as f32 / max as f32).clamp(0.0, 1.0);
+        let filled_len = (ratio * width as f32).round() as usize;
+        let empty_len = width.saturating_sub(filled_len);
+
+        str!("{}{}", "■".repeat(filled_len), "□".repeat(empty_len))
+    }
+
+    let pb = make_progress_bar(current_tokens, max_tokens, 10);
+    let tokens_text = str!("{}/{}", current_tokens, max_tokens);
+    let lines_text = str!(
+        "{}/{}",
+        current_line.saturating_sub(1),
+        total_lines.saturating_sub(1)
+    );
+
+    let ratio = if max_tokens > 0 {
+        (current_tokens as f32 / max_tokens as f32).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+
+    let pb_color = if ratio <= 0.7 {
+        Color::Cyan
+    } else if ratio < 0.9 {
+        Color::Yellow
+    } else {
+        Color::Red
+    };
+
+    let title_left = Line::from(vec![
+        Span::raw(" ["),
+        Span::styled(pb, Style::default().fg(pb_color)),
+        Span::raw("] "),
+        Span::styled(tokens_text, Style::default().fg(Color::White)),
+        Span::raw(" "),
+    ]);
+
+    let title_right = Line::from(vec![
+        Span::raw(" "),
+        Span::styled(lines_text, Style::default().fg(Color::Gray)),
+        Span::raw(" "),
+    ]);
+
+    let title_right2 = Line::from(vec![Span::raw(" ")]);
+
     f.render_widget(
         Paragraph::new(history)
             .scroll((app.scroll_offset, 0))
             .block(
                 Block::default()
-                    .borders(Borders::LEFT)
+                    .borders(Borders::LEFT | Borders::TOP)
                     .border_style(Style::default().dim())
-                    .title(format!(
-                        " [Lines: {}/{}] ",
-                        if current_line > 0 {
-                            current_line - 1
-                        } else {
-                            current_line
-                        },
-                        if total_lines > 0 {
-                            total_lines - 1
-                        } else {
-                            total_lines
-                        }
-                    )),
+                    .title(title_left)
+                    .title(title_right.alignment(ratatui::layout::HorizontalAlignment::Right))
+                    .title(title_right2.alignment(ratatui::layout::HorizontalAlignment::Right)),
             ),
         chat_area,
     );
@@ -563,7 +621,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     // auto-scroll:
     let text_before_cursor = &app.input[..app.cursor_position];
-    let text_temp = format!("{}{}", prefix, text_before_cursor);
+    let text_temp = str!("{}{}", prefix, text_before_cursor);
     let wrapped_before = textwrap::wrap(&text_temp, wrap_options.clone());
     let cursor_row = (wrapped_before.len() as u16).saturating_sub(1);
 
@@ -579,10 +637,10 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let input_area = chunks[2];
     let dots_count = (app.tick_count / 30) % 4;
     let dots = ".".repeat(dots_count as usize);
-    let thinking_text = format!(" Thinking{dots:<3} ");
+    let thinking_text = str!(" Thinking{dots:<3} ");
 
     f.render_widget(
-        Paragraph::new(format!("{}{}", prefix, app.input))
+        Paragraph::new(str!("{}{}", prefix, app.input))
             .wrap(Wrap { trim: false })
             .scroll((app.input_scroll_offset, 0))
             .block(
