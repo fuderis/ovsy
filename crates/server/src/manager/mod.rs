@@ -1,8 +1,8 @@
 pub mod agent;
 pub use agent::Agent;
 
-pub mod task;
-pub use task::TaskTool;
+pub mod handle;
+pub use handle::{AgentHandle, Workflow};
 
 use crate::prelude::*;
 use anylm::{Schema, Tool};
@@ -28,7 +28,7 @@ impl Manager {
 
         // check scan dir:
         if !scan_dir.exists() {
-            warn!("[MANAGER] Agents directory not found at: {:?}", scan_dir);
+            warn!("[MANAGER] Agents directory not found at: {scan_dir:?}");
             return Ok(());
         }
 
@@ -66,24 +66,25 @@ impl Manager {
     /// Generates & sets the task schema
     pub async fn gen_task_tool() {
         let tool = Tool::new(
-            "delegate_task",
-            "Delegates a task to a specific AI agent for execution.",
-        )
-        .required_property(
-            "task_id",
-            Schema::integer("A unique identifier for the task (starting from 1)."),
+            "handle_agent",
+            "Delegates a task to a specific AI agent for execution (do not invent non-existent agents).",
         )
         .required_property(
             "agent_name",
-            Schema::string("The name of the agent to handle the task."),
+            Schema::string("The name of the agent to handle this task."),
+        )
+        .required_property(
+            "task_id",
+            Schema::integer("An unique identifier for the task (starting from 1, and should not be repeated)."),
         )
         .required_property(
             "task_query",
-            Schema::string("The actual instruction or data for the agent."),
+            Schema::string("The task query and data for the agent handling (describe the task in details)."),
         )
         .optional_property(
             "wait_for",
-            Schema::integer("Optional identifier of task that must be completed before this one."),
+            Schema::array("Identifiers of tasks that must be completed before this one (when need the results of another tasks).")
+                .items(Schema::integer("Identifier of task that must be completed before."))
         );
 
         MANAGER.lock().await.task_tool = arc!(tool);
@@ -92,7 +93,7 @@ impl Manager {
     /// Runs the AI agent server
     pub async fn run(dir: impl Into<PathBuf>) -> Result<()> {
         let path: PathBuf = dir.into();
-        info!("[MANAGER] Manually starting agent from: {:?}", path);
+        info!("[MANAGER] Starting agent from: {:?}", path);
 
         if let Some(agent) = Agent::run(path.clone()).await? {
             let name = arc!(agent.manifest.agent.name.clone());
@@ -193,8 +194,8 @@ impl Manager {
     }
 
     /// Returns true if agent with this name is already on running
-    pub async fn contains(name: Arc<String>) -> bool {
-        MANAGER.get().await.agents.contains_key(&name)
+    pub async fn contains(name: &Arc<String>) -> bool {
+        MANAGER.get().await.agents.contains_key(name)
     }
 
     /// Returns the agents list prompt part
@@ -207,12 +208,34 @@ impl Manager {
         (*MANAGER.get().await.task_tool).clone()
     }
 
-    /// Returns the tools list by agent name
+    /// Returns the agent system prompt
+    pub async fn agent_prompt(name: &Arc<String>) -> Option<String> {
+        MANAGER
+            .get()
+            .await
+            .agents
+            .get(name)
+            .map(|agent| agent.manifest.agent.prompt.clone())
+    }
+
+    /// Returns the agent tools list
     pub async fn agent_tools(name: &Arc<String>) -> Option<Vec<Tool>> {
-        if let Some(agent) = MANAGER.get().await.agents.get(name) {
-            Some(agent.manifest.tools.clone())
-        } else {
-            None
-        }
+        MANAGER
+            .get()
+            .await
+            .agents
+            .get(name)
+            .map(|agent| agent.manifest.tools.clone())
+    }
+
+    /// Returns the agent options (port, prompt, tools)
+    pub async fn agent_options(name: &Arc<String>) -> Option<(u16, String, Vec<Tool>)> {
+        MANAGER.get().await.agents.get(name).map(|agent| {
+            (
+                agent.port,
+                agent.manifest.agent.prompt.clone(),
+                agent.manifest.tools.clone(),
+            )
+        })
     }
 }

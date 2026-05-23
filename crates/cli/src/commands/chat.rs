@@ -5,7 +5,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_shared::{Chunk, UserQuery};
+use ovsy_shared::{Chunk, ChunkData, UserQuery};
 use ratatui::{
     Terminal,
     backend::Backend,
@@ -14,6 +14,7 @@ use ratatui::{
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
+use reqwest::Client;
 use std::{io, process::Command};
 use tokio::{
     sync::mpsc,
@@ -25,7 +26,8 @@ use unicode_width::UnicodeWidthStr;
 struct AppState {
     input: String,
     cursor_position: usize,
-    messages: Arc<State<(Vec<Message>, usize)>>,
+    messages: Arc<State<(Vec<Message>, usize)>>, // (messages, tokens_count)
+    resp_index: usize,
     is_thinking: bool,
     scroll_offset: u16,
     input_scroll_offset: u16,
@@ -38,11 +40,13 @@ struct AppState {
 }
 
 impl AppState {
+    /// Creates a new app state
     pub fn new(tx: mpsc::UnboundedSender<String>) -> Self {
         Self {
             input: String::new(),
             cursor_position: 0,
             messages: arc!(State::new()),
+            resp_index: 0,
             is_thinking: false,
             scroll_offset: 0,
             input_scroll_offset: 0,
@@ -59,12 +63,14 @@ impl AppState {
         }
     }
 
+    /// Handles the user input
     async fn handle_input(&mut self) {
         let trimmed = self.input.trim();
         if trimmed.is_empty() {
             return;
         }
 
+        // check for command:
         if trimmed.starts_with('/') {
             match trimmed {
                 "/exit" => {}
@@ -72,10 +78,14 @@ impl AppState {
                     let _ = self.tx.send(trimmed.to_string());
                 }
             }
-        } else {
+        }
+        // else handle query:
+        else {
             {
                 let mut msgs = self.messages.lock().await;
                 msgs.0.push(Message::user(vec![trimmed.to_string().into()]));
+                msgs.0.push(Message::assistant(vec![], vec![]));
+                self.resp_index = msgs.0.len() - 1;
                 msgs.1 = AppState::calc_tokens(&msgs.0);
             }
 
@@ -89,15 +99,16 @@ impl AppState {
         self.scroll_offset = u16::MAX;
     }
 
+    /// Calculates the message tokens count
     pub fn calc_tokens(msgs: &Vec<Message>) -> usize {
         msgs.iter().map(|m| m.tokens_count).sum()
     }
 }
 
-/// Handles the `chat` command
+/// API: Handles the `chat` command
 pub async fn handle() -> Result<()> {
     let port = Settings::get().server.port;
-    let client = reqwest::Client::new();
+    let client = Client::new();
 
     // check the server:
     let status_url = str!("http://127.0.0.1:{port}/update");
@@ -185,13 +196,11 @@ async fn chat_worker(
 
                 // Compress context:
                 "/compact" | "/compress" => {
-                    let _ = ui_tx.send(Chunk::Think {
-                        think: "⚙ Compressing context...".into(),
-                    });
+                    let _ = ui_tx.send(Chunk::think("⚙ Compressing context..."));
 
                     let messages_count = messages.get().await.0.len();
-                    let max_messages = Settings::get().assistant.max_messages * 2;
-                    let compress_count = (messages_count.saturating_sub(max_messages) / 2) * 2;
+                    let preserve_messages = Settings::get().assistant.preserve_messages * 2;
+                    let compress_count = (messages_count.saturating_sub(preserve_messages) / 2) * 2;
 
                     if messages_count > 2 && compress_count > 0 {
                         let to_compress = messages.get().await.0[..compress_count].to_vec();
@@ -210,7 +219,11 @@ async fn chat_worker(
                             let mut stream = Stream::read::<Chunk>(bytes_stream);
                             let mut summary = String::new();
 
-                            while let Ok(Some(Chunk::Answer { answer })) = stream.read().await {
+                            while let Ok(Some(Chunk {
+                                data: ChunkData::Answer(answer),
+                                ..
+                            })) = stream.read().await
+                            {
                                 summary.push_str(&answer);
                             }
 
@@ -218,9 +231,10 @@ async fn chat_worker(
                                 let preserved_msgs =
                                     messages.get().await.0.clone()[compress_count..].to_vec();
 
-                                let mut messages_temp = vec![Message::assistant(vec![
-                                    str!("**Summarized**: {}\n---\n", summary.trim()).into(),
-                                ])];
+                                let mut messages_temp = vec![Message::assistant(
+                                    vec![str!("**Summarized**: {}\n---\n", summary.trim()).into()],
+                                    vec![],
+                                )];
                                 messages_temp.extend(preserved_msgs);
 
                                 let tokens_count = AppState::calc_tokens(&messages_temp);
@@ -240,11 +254,14 @@ async fn chat_worker(
             }
         }
 
+        let mut messages = (*messages.get().await).0.clone();
+        messages.remove(messages.len() - 1);
+
         let res = client
             .post(str!("{base_url}/handle"))
             .json(&UserQuery {
                 user_id: 0,
-                messages: (*messages.get().await).0.clone(),
+                messages,
             })
             .send()
             .await;
@@ -256,16 +273,18 @@ async fn chat_worker(
                     Stream::read::<Chunk>(response.bytes_stream().map(|c| c.map_err(Into::into)));
 
                 while let Ok(Some(chunk)) = stream.read().await {
-                    if let Chunk::Answer { ref answer } = chunk {
+                    if let Chunk {
+                        data: ChunkData::Answer(ref answer),
+                        ..
+                    } = chunk
+                    {
                         full_answer.push_str(answer);
                     }
                     let _ = ui_tx.send(chunk);
                 }
             }
             Err(e) => {
-                let _ = ui_tx.send(Chunk::Error {
-                    error: str!("Connection error: {}", e),
-                });
+                let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
             }
         }
 
@@ -279,7 +298,18 @@ async fn run_app<B: Backend>(
     app: &mut AppState,
     ui_rx: &mut mpsc::UnboundedReceiver<Chunk>,
 ) -> Result<()> {
-    // enabling mouse capture (usually done in main, but duplicating the logic):
+    let default_hook = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |panic_info| {
+        let _ = disable_raw_mode();
+        let _ = execute!(
+            std::io::stdout(),
+            LeaveAlternateScreen,
+            event::DisableMouseCapture
+        );
+        default_hook(panic_info);
+    }));
+
+    // enabling mouse capture (usually done in main):
     execute!(std::io::stdout(), event::EnableMouseCapture)?;
 
     loop {
@@ -289,30 +319,121 @@ async fn run_app<B: Backend>(
         // 1. Processing incoming data from the server:
         if let Ok(chunk) = ui_rx.try_recv() {
             match chunk {
-                Chunk::Think { .. } => app.is_thinking = true,
-                Chunk::Answer { answer } => {
+                // tool calls:
+                Chunk {
+                    data: ChunkData::Tools(tool_calls),
+                    ..
+                } => {
+                    let mut msgs = app.messages.lock().await;
+
+                    if let Some(msg) = msgs.0.get_mut(app.resp_index) {
+                        msg.tool_calls.extend(tool_calls);
+                    }
+
+                    msgs.1 = AppState::calc_tokens(&msgs.0);
+                }
+
+                // finish agent:
+                Chunk {
+                    data: ChunkData::Finish,
+                    ..
+                } => {
+                    app.is_thinking = false;
+                    app.is_busy.set(false);
+
+                    // sorting tool messages:
+                    let mut msgs = app.messages.lock().await;
+                    let idx = app.resp_index;
+
+                    if idx < msgs.0.len() && !msgs.0[idx].tool_calls.is_empty() {
+                        let ordered_ids: Vec<String> = msgs.0[idx]
+                            .tool_calls
+                            .iter()
+                            .map(|tc| tc.id.clone())
+                            .collect();
+
+                        if !ordered_ids.is_empty() {
+                            let remaining = msgs.0.drain((idx + 1)..).collect::<Vec<_>>();
+
+                            let mut tool_messages = Vec::new();
+                            let mut other_messages = Vec::new();
+
+                            for msg in remaining {
+                                if msg.role.is_tool() {
+                                    tool_messages.push(msg);
+                                } else {
+                                    other_messages.push(msg);
+                                }
+                            }
+
+                            tool_messages.sort_by_key(|msg| {
+                                ordered_ids
+                                    .iter()
+                                    .position(|id| id == &msg.tool_call_id)
+                                    .unwrap_or(usize::MAX)
+                            });
+
+                            msgs.0.extend(tool_messages);
+                            msgs.0.extend(other_messages);
+                        }
+                    }
+
+                    msgs.1 = AppState::calc_tokens(&msgs.0);
+                }
+
+                // thinking:
+                Chunk {
+                    data: ChunkData::Thinking(_think),
+                    ..
+                } => app.is_thinking = true,
+
+                // answer:
+                Chunk {
+                    agent,
+                    data: ChunkData::Answer(answer),
+                } => {
                     app.is_thinking = false;
                     let mut msgs = app.messages.lock().await;
 
-                    match msgs.0.last_mut() {
-                        Some(msg) if msg.role.is_assistant() => {
+                    if let Some(task) = agent {
+                        let current_tool_id = task.tool_call_id;
+
+                        match msgs.0.last_mut() {
+                            Some(msg)
+                                if msg.role.is_tool() && msg.tool_call_id == current_tool_id =>
+                            {
+                                msg.map(|cnt| {
+                                    if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                        text.push_str(&answer);
+                                    }
+                                });
+                            }
+                            _ => {
+                                msgs.0
+                                    .push(Message::tool(vec![answer.into()], current_tool_id));
+                            }
+                        }
+                    } else {
+                        if let Some(msg) = msgs.0.get_mut(app.resp_index) {
                             msg.map(|cnt| {
-                                if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                if cnt.is_empty() {
+                                    cnt.push(answer.clone().into());
+                                } else if let Some(Content::Text { text }) = cnt.get_mut(0) {
                                     text.push_str(&answer);
                                 }
                             });
                         }
-
-                        _ => {
-                            msgs.0.push(Message::assistant(vec![answer.into()]));
-                        }
                     }
-                    msgs.1 = AppState::calc_tokens(&msgs.0);
 
-                    // scroll down when receiving new tokens:
+                    msgs.1 = AppState::calc_tokens(&msgs.0);
                     app.scroll_offset = u16::MAX;
                 }
-                Chunk::Error { error } => {
+
+                // error:
+                Chunk {
+                    data: ChunkData::Error(error),
+                    ..
+                } => {
                     app.is_thinking = false;
                     let mut msgs = app.messages.lock().await;
 
@@ -320,7 +441,6 @@ async fn run_app<B: Backend>(
                         .push(Message::system(vec![str!("Error: {error}").into()]));
                     msgs.1 = AppState::calc_tokens(&msgs.0);
                 }
-                _ => {}
             }
         }
 
@@ -363,12 +483,17 @@ async fn run_app<B: Backend>(
                     let has_shift = key.modifiers.contains(event::KeyModifiers::SHIFT);
 
                     match key.code {
-                        KeyCode::Esc => return Ok(()),
+                        KeyCode::Esc => {
+                            execute!(std::io::stdout(), event::DisableMouseCapture)?;
+                            return Ok(());
+                        }
                         KeyCode::Enter => {
+                            if app.input.trim() == "/exit" {
+                                execute!(std::io::stdout(), event::DisableMouseCapture)?;
+                                return Ok(());
+                            }
+
                             if !app.is_busy.get() {
-                                if app.input.trim() == "/exit" {
-                                    return Ok(());
-                                }
                                 app.handle_input().await;
                             }
                         }
@@ -442,14 +567,14 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let area = f.area();
 
     // --- 1. CALCULATE INPUT HEIGHT ---
-    let prefix = "  → ";
+    let prefix = " ❯ ";
     let inner_width = area.width.saturating_sub(2) as usize;
 
     let wrap_options = textwrap::Options::new(inner_width)
         .break_words(true)
         .word_separator(textwrap::WordSeparator::AsciiSpace);
 
-    let full_text = str!("{}{}", prefix, app.input);
+    let full_text = str!("{prefix}{}", app.input);
     let wrapped_lines = textwrap::wrap(&full_text, wrap_options.clone());
 
     let line_count = wrapped_lines.len().max(1) as u16;
@@ -478,25 +603,30 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     let mut history: Vec<Line> = Vec::new();
 
+    // render basic messages:
     for msg in app.messages.dirty_get().0.iter() {
+        if msg.content.is_empty() && !msg.role.is_user() {
+            continue;
+        } else if !history.is_empty() {
+            history.push(Line::raw(""));
+        }
+
         // metadata line:
-        let meta_line = Line::from(vec![if msg.role.is_user() {
-            Span::styled(
+        if msg.role.is_user() {
+            let meta_line = Line::from(vec![Span::styled(
                 str!(
                     "[{}]",
                     msg.timestamp
                         .map(|t| t
                             .with_timezone(&chrono::Local)
-                            .format("%Y-%m-%dT%H:%M:%S")
+                            .format("%Y-%m-%d|%H:%M:%S")
                             .to_string())
                         .unwrap_or_else(|| "??:??:??".to_string())
                 ),
                 Style::default().bg(Color::Cyan).fg(Color::Black).bold(),
-            )
-        } else {
-            Span::styled(str!(), Style::default())
-        }]);
-        history.push(meta_line);
+            )]);
+            history.push(meta_line);
+        }
 
         // message content:
         let text_content = msg
@@ -509,7 +639,9 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
                     None
                 }
             })
-            .collect::<String>();
+            .collect::<String>()
+            .trim()
+            .to_string();
 
         let msg_lines = parse_markdown(&text_content, chat_inner_width as usize);
 
@@ -525,10 +657,6 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
             }
         } else {
             history.extend(msg_lines);
-        }
-
-        if msg.role.is_assistant() {
-            history.push(Line::raw(""));
         }
     }
 
@@ -595,7 +723,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     let title_right = Line::from(vec![
         Span::raw(" "),
-        Span::styled(lines_text, Style::default().fg(Color::Gray)),
+        Span::styled(lines_text, Style::default().fg(Color::White)),
         Span::raw(" "),
     ]);
 
@@ -621,7 +749,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
 
     // auto-scroll:
     let text_before_cursor = &app.input[..app.cursor_position];
-    let text_temp = str!("{}{}", prefix, text_before_cursor);
+    let text_temp = str!("{prefix}{text_before_cursor}");
     let wrapped_before = textwrap::wrap(&text_temp, wrap_options.clone());
     let cursor_row = (wrapped_before.len() as u16).saturating_sub(1);
 
@@ -640,50 +768,53 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let thinking_text = str!(" Thinking{dots:<3} ");
 
     f.render_widget(
-        Paragraph::new(str!("{}{}", prefix, app.input))
-            .wrap(Wrap { trim: false })
-            .scroll((app.input_scroll_offset, 0))
-            .block(
-                Block::default()
-                    .borders(Borders::ALL)
-                    .border_type(BorderType::Rounded)
-                    .title(if app.is_busy.get() {
-                        Span::styled(thinking_text, Style::default().fg(Color::White).italic())
-                    } else {
-                        Span::styled(" Input ", Style::default().fg(Color::Cyan))
-                    })
-                    .border_style(Style::default().fg(if app.is_busy.get() {
-                        Color::White
-                    } else {
-                        Color::Cyan
-                    })),
+        Paragraph::new(Line::from(vec![
+            Span::styled(
+                prefix,
+                if app.is_busy.get() {
+                    Color::White
+                } else {
+                    Color::Cyan
+                },
             ),
+            app.input.as_str().into(),
+        ]))
+        .wrap(Wrap { trim: false })
+        .scroll((app.input_scroll_offset, 0))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .title(if app.is_busy.get() {
+                    Span::styled(thinking_text, Style::default().fg(Color::White).italic())
+                } else {
+                    Span::styled(" Input ", Style::default().fg(Color::Cyan))
+                })
+                .border_style(Style::default().fg(if app.is_busy.get() {
+                    Color::White
+                } else {
+                    Color::Cyan
+                })),
+        ),
         input_area,
     );
 
     // --- 6. CURSOR POSITIONING ---
-    if !app.is_thinking {
-        let last_line = wrapped_before
-            .last()
-            .map(|s| s.chars().count())
-            .unwrap_or(0);
+    let last_line = wrapped_before
+        .last()
+        .map(|s| s.chars().count())
+        .unwrap_or(0);
 
-        let trimmed_input = app.input.trim();
-        let add_x = if trimmed_input.is_empty() {
-            app.input = trimmed_input.to_owned();
-            app.cursor_position = 0;
-            1
-        } else if app.input.ends_with(" ") {
-            (app.input.chars().count() - trimmed_input.chars().count()) as u16
-        } else {
-            0
-        };
-
-        f.set_cursor_position((
-            input_area.x + 1 + add_x + last_line as u16,
-            input_area.y + 1 + cursor_row - app.input_scroll_offset,
-        ));
-    }
+    f.set_cursor_position((
+        input_area.x
+            + if app.cursor_position == 0 {
+                2
+            } else {
+                (app.input.len() - app.input.trim_end().len() + 1) as u16
+            }
+            + last_line as u16,
+        input_area.y + 1 + cursor_row - app.input_scroll_offset,
+    ));
 
     // --- 7. FOOTER ---
     render_footer(f, chunks[3], app);
@@ -697,7 +828,7 @@ fn render_footer(f: &mut ratatui::Frame, area: Rect, app: &AppState) {
     let (cmd, desc) = commands[index];
 
     let help_line = Line::from(vec![
-        " ? ".dim(),
+        "  ? ".dim().bold(),
         cmd.bold().cyan(),
         " ".into(),
         desc.gray().italic(),

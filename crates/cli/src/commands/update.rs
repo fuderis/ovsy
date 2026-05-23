@@ -1,10 +1,10 @@
 use crate::{UNDERLINE_COUNT, prelude::*};
 use colored::*;
-use ovsy_shared::{AgentInfo, StatusResponse};
+use ovsy_shared::{AgentInfo, StatusData};
 use reqwest::Client;
 use std::io::{self, Write};
 
-/// Handles the `udpate` command
+/// API: Handles the `udpate` command
 pub async fn handle() -> Result<()> {
     let dim = Color::AnsiColor(247);
     let port = Settings::get().server.port;
@@ -22,13 +22,13 @@ pub async fn handle() -> Result<()> {
         Ok(response) => {
             println!("{}", str!("Online (port {port})").green());
 
-            let data: StatusResponse = response
+            let data: StatusData = response
                 .json()
                 .await
                 .map_err(|e| str!(str!("Failed to parse response: {e}")))?;
 
             match data {
-                StatusResponse::Success { agents } => {
+                StatusData::Success { agents } => {
                     if agents.is_empty() {
                         println!("   {}", "No agents loaded".yellow().dimmed());
                     } else {
@@ -39,7 +39,7 @@ pub async fn handle() -> Result<()> {
 
                     println!("\n{}", "Settings synchronized.".bright_white());
                 }
-                StatusResponse::Error { error } => {
+                StatusData::Error { error } => {
                     println!("   {} {}", "Error:".red().bold(), error.white());
                 }
             }

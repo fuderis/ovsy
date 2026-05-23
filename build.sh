@@ -62,11 +62,12 @@ fi
 
 underline
 
-# 4. Deploy binaries:
+# 4. Deploying
 echo "Deploying binaries..."
 mkdir -p "$INSTALL_DIR/agents"
 mkdir -p "$INSTALL_DIR/bin"
 
+# 4.1. Deploy binaries:
 for bin_name in "${BINARIES[@]}"; do
     SRC="target/release/${bin_name}${EXE}"
     DEST_DIR="$INSTALL_DIR/bin"
@@ -91,6 +92,42 @@ for bin_name in "${BINARIES[@]}"; do
         fi
     fi
 done
+
+# 4.2. Deploy agents:
+if [ -d "agents" ]; then
+    for agent_dir in agents/*/ ; do
+        agent_name=$(basename "$agent_dir")
+        
+        # skip files:
+        [ -d "$agent_dir" ] || continue
+        
+        AGENT_BIN_NAME="${name_agent:-${agent_name}-agent}${EXE}"
+        SRC_BIN="target/release/${AGENT_BIN_NAME}"
+        SRC_TOML="${agent_dir}Ovsy.toml"
+        
+        TARGET_AGENT_DIR="$INSTALL_DIR/agents/$agent_name"
+        
+        # check binary file:
+        if [[ -f "$SRC_BIN" && -f "$SRC_TOML" ]]; then
+            mkdir -p "$TARGET_AGENT_DIR"
+            
+            if [[ -z "$EXE" ]]; then
+                pkill -x "$AGENT_BIN_NAME" >/dev/null 2>&1
+            else
+                taskkill //F //IM "$AGENT_BIN_NAME" >/dev/null 2>&1
+            fi
+            # --------------------------------------
+
+            DEST_BIN="$TARGET_AGENT_DIR/$AGENT_BIN_NAME"
+            if cp "$SRC_BIN" "$DEST_BIN" && cp "$SRC_TOML" "$TARGET_AGENT_DIR/Ovsy.toml"; then
+                [ -z "$EXE" ] && chmod 755 "$DEST_BIN"
+                echo -e "  [${OK}OK${NC}] ${BOLD}$AGENT_BIN_NAME${NC} ${OK}→${NC} installed"
+            else
+                echo -e "  [${ERR}FAIL${NC}] Failed to copy binary for agent: $agent_name"
+            fi
+        fi
+    done
+fi
 
 underline
 echo -e "${OK}Build successful!${NC}"

@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 pub struct AgentOptions {
     pub name: String,
     pub description: String,
+    pub prompt: String,
 }
 
 /// The AI agent manifest
@@ -19,6 +20,7 @@ pub struct Manifest {
 [agent]
 name = "music-agent"
 description = "Search/Play music by genre, artist/band, album or song name"
+prompt = ""
 
 [[tools]]
 name = "search"

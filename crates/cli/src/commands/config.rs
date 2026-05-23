@@ -2,7 +2,7 @@ use crate::prelude::*;
 use colored::*;
 use tokio::process::Command;
 
-/// Handles the `config` command
+/// API: Handles the `config` command
 pub async fn handle() -> Result<()> {
     let path = Settings::path();
 

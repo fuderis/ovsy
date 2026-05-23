@@ -1,16 +1,13 @@
 [package]
-name = "ovsy-server"
+name = "power-agent"
 edition = "2024"
 
 [dependencies]
 ovsy-shared.workspace = true
-atoman.workspace = true
-macron.workspace = true
-pearce.workspace = true
-anylm.workspace = true
 tokio.workspace = true
+macron.workspace = true
+atoman.workspace = true
+pearce.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-chrono.workspace = true
-reqwest.workspace = true
-async-recursion = "1.1.1"
+clap.workspace = true

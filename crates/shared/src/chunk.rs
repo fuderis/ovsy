@@ -1,56 +1,64 @@
-use anylm::Bytes;
+use crate::AgentTask;
+use anylm::{Bytes, ToolCall};
 use serde::{Deserialize, Serialize};
+
+/// The response chunk data
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum ChunkData {
+    Tools(Vec<ToolCall>),
+    Thinking(String),
+    Answer(String),
+    Error(String),
+    Finish,
+}
 
 /// The response chunk
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum Chunk {
-    Think { think: String },
-    Answer { answer: String },
-    Error { error: String },
-    Spec { spec: String },
+pub struct Chunk {
+    pub agent: Option<AgentTask>,
+    pub data: ChunkData,
 }
 
 impl Chunk {
+    /// Creates a new chunk
+    pub fn new(data: ChunkData) -> Self {
+        Self { agent: None, data }
+    }
+
+    /// Sets the full agent info
+    pub fn task_info(mut self, info: AgentTask) -> Self {
+        self.agent.replace(info);
+        self
+    }
+
+    /// Creates a tools chunk
+    pub fn tools(tool_calls: Vec<ToolCall>) -> Self {
+        Self::new(ChunkData::Tools(tool_calls))
+    }
+
     /// Creates a thinking chunk
     pub fn think(msg: impl Into<String>) -> Self {
-        Self::Think { think: msg.into() }
-    }
-    /// Creates a thinking chunk (as bytes)
-    pub fn think_bytes(msg: impl Into<String>) -> Bytes {
-        Self::Think { think: msg.into() }.to_bytes()
+        Self::new(ChunkData::Thinking(msg.into()))
     }
 
     /// Creates an answer chunk
     pub fn answer(msg: impl Into<String>) -> Self {
-        Self::Answer { answer: msg.into() }
-    }
-    /// Creates an answer chunk (as bytes)
-    pub fn answer_bytes(msg: impl Into<String>) -> Bytes {
-        Self::Answer { answer: msg.into() }.to_bytes()
+        Self::new(ChunkData::Answer(msg.into()))
     }
 
     /// Creates an error chunk
     pub fn error(msg: impl Into<String>) -> Self {
-        Self::Error { error: msg.into() }
-    }
-    /// Creates an error chunk (as bytes)
-    pub fn error_bytes(msg: impl Into<String>) -> Bytes {
-        Self::Error { error: msg.into() }.to_bytes()
+        Self::new(ChunkData::Error(msg.into()))
     }
 
-    /// Creates an error chunk
-    pub fn spec(msg: impl Into<String>) -> Self {
-        Self::Spec { spec: msg.into() }
-    }
-    /// Creates an error chunk
-    pub fn spec_bytes(msg: impl Into<String>) -> Bytes {
-        Self::Spec { spec: msg.into() }.to_bytes()
+    /// Creates a final agent chunk
+    pub fn finish() -> Self {
+        Self::new(ChunkData::Finish)
     }
 
     /// Converts the chunk to string
     pub fn to_string(&self) -> String {
-        // SAFETY: will never panic
+        // SAFETY: will be never panic
         serde_json::to_string(&self).unwrap()
     }
 

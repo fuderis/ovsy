@@ -55,7 +55,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // initialize settings:
-    Settings::init(macron::path!("$/../config/settings.toml"))
+    Settings::init(app_data().join("config/settings.toml"))
         .await
         .ok();
 

@@ -8,38 +8,50 @@ use std::{
     sync::Arc,
 };
 
+/// The default system prompt
+const SYSTEM_PROMPT: &'static str = r#"
+# ACTUAL SYSTEM INFO:
+THIS DATA IS ALWAYS RELEVANT, ALWAYS USE IT AS A PRIORITY.
+
+1. Datetime (always use the current time):
+  * Local: {DATETIME_LOCAL};
+  * Global: {DATETIME_GLOBAL}
+  * Moscow: {DATETIME_MOSCOW};
+"#;
+
 /// The default assistant prompt
-const ASSISTENT_PROMPT: &'static str = r#"РОЛЬ: Ты — Ovsy. Высокотехнологичный ассистент.
+const ASSISTENT_PROMPT: &'static str = r#"
+# ROLE: You are Ovsy, a high-tech assistant.
+  * Tone: Polite, composed, with a subtle touch of irony.
+  * Persona: A blend of professional tech slang and a refined digital butler.
 
-* Тон: Вежливый, хладнокровный, с едва заметной иронией.
-* Манера речи: Смесь профессионального сленга и дворецкого.
+# RULES:
+  * Friendly & Concise: Avoid long introductions or repetitive sign-offs.
+  * Proactivity: If you spot an error or a flaw in logic—do not withhold it. Be direct.
+  * Variability: Avoid being overly formulaic; maintain a natural, dynamic conversation.
+  * Markdown Formatting: Use tables, lists, and LaTeX expressions to provide clear, visual explanations.
 
-# ПРАВИЛА:
+# AVAILABLE AI AGENTS:
+Below is the list of specialized agents available to perform various tasks (do not invent unnamed agents on this list).
 
-* Будь дружелюбным и кратким: Без длинных вступлений или завершений.
-* Проактивность: Если видишь ошибку или изъян в логике - не утаивай.
-* Вариативность: Не будь слишком шаблонным, веди живую беседу.
-* Форматирование markdown: используй таблицы, списки, выражения и т.д., чтобы наглядно объяснять.
-
-## ДОСТУПНЫЕ ИИ-АГЕНТЫ (инструменты):
-> Перед тобой список доступных агентов для выполнения различных задач.
 {AGENTS_LIST}
 
-## АКТУАЛЬНОЕ ВРЕМЯ:
-> Для расчета, добавь к актуальному UTC смещение часового пояса. Например: Москва(+3) = UTC+3 часа; Екатеринбург(+5) = UTC+5 часов; и т.д.
-Актуальный UTC: {DATETIME_UTC}"#;
+> Do not simulate the output of an AI agent.
+"#;
 
 /// The default context compression prompt
-const COMPRESSION_PROMPT: &'static str = r#"Твоя задача — кратко и точно резюмировать историю нашего диалога.
-Сохрани ключевые идеи, принятые решения и контекст. Приложи ответы в сжатом виде.
-Верни только текст резюме (без комментирования самого сжатия).
+const COMPRESSION_PROMPT: &'static str = r#"
+Your task is to provide a concise and accurate summary of our dialogue history.
+Preserve key ideas, decisions made, and relevant context. Provide responses in a compressed form.
+Return only the summary text (do not include meta-comments or explanations about the compression itself).
 
-Формат (разбей контекст на части):
-1. ...
+Format (break down context into sections):
+1. [Topic/Section Name]
+    ...
+2. [Topic/Section Name]
+    ...
 ...
-
-2. ...
-..."#;
+"#;
 
 /// The settings instance
 static SETTINGS: State<Config<Settings>> = State::new();
@@ -63,12 +75,13 @@ impl ::std::default::Default for ServerOptions {
 /// The AI prompt options
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssistantOptions {
-    pub max_messages: usize,
+    pub preserve_messages: usize,
+    pub system_prompt: String,
     pub assist_prompt: String,
     pub compress_prompt: String,
     pub completions: AiOptions,
-    pub embeddings: AiOptions,
     pub compression: AiOptions,
+    pub embeddings: AiOptions,
 }
 
 impl ::std::default::Default for AssistantOptions {
@@ -87,9 +100,10 @@ impl ::std::default::Default for AssistantOptions {
         embeddings.model = str!("text-embedding-nomic-embed-text-v1.5@q8_0");
 
         Self {
-            max_messages: 2,
-            assist_prompt: str!(ASSISTENT_PROMPT),
-            compress_prompt: str!(COMPRESSION_PROMPT),
+            preserve_messages: 2,
+            system_prompt: str!(SYSTEM_PROMPT.trim()),
+            assist_prompt: str!(ASSISTENT_PROMPT.trim()),
+            compress_prompt: str!(COMPRESSION_PROMPT.trim()),
             completions,
             compression,
             embeddings,
@@ -107,7 +121,7 @@ pub struct CacheOptions {
 impl ::std::default::Default for CacheOptions {
     fn default() -> Self {
         Self {
-            enable: true,
+            enable: false,
             coefficient: 0.9,
         }
     }

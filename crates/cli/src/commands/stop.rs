@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::process::Command;
 
-/// Handles the `stop` command
+/// API: Handles the `stop` command
 pub async fn handle(stop_lms: bool) -> Result<()> {
     let port = Settings::get().server.port;
 
@@ -33,25 +33,24 @@ pub async fn handle(stop_lms: bool) -> Result<()> {
     println!("{}", "Offline".red());
 
     // stop LMS server:
-    print!("Shutting down LMS server... ");
-    io::stdout().flush().ok();
-
-    Command::new("lms")
-        .args(["server", "stop"])
-        .stdin(Stdio::null())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .status()
-        .await
-        .ok();
-    println!("{}", "Offline".red());
-
-    // unload LMS models:
     let ai_conf = &Settings::get().assistant;
     if stop_lms
         && (ai_conf.completions.kind == ApiKind::LmStudio
             || ai_conf.embeddings.kind == ApiKind::LmStudio)
     {
+        print!("Shutting down LMS server... ");
+        io::stdout().flush().ok();
+
+        Command::new("lms")
+            .args(["server", "stop"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .ok();
+        println!("{}", "Offline".red());
+
         print!(" ∟ Unloading models... ");
         io::stdout().flush().ok();
 

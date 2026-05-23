@@ -8,7 +8,7 @@ use std::{
 };
 use tokio::process::Command;
 
-/// Handles the `start` command
+/// API: Handles the `start` command
 pub async fn handle(start_lms: bool) -> Result<()> {
     let server_path = path!("$/ovsy-server{}", if cfg!(windows) { ".exe" } else { "" });
 
@@ -37,18 +37,29 @@ pub async fn handle(start_lms: bool) -> Result<()> {
         && (ai_conf.completions.kind == ApiKind::LmStudio
             || ai_conf.embeddings.kind == ApiKind::LmStudio)
     {
-        print!("Checking LMS server... ");
+        print!("Starting LMS server... ");
         io::stdout().flush().ok();
 
-        let server_status = Command::new("lms").args(["status"]).output().await;
-        let is_running = match server_status {
+        let is_running = match Command::new("lms").args(["status"]).output().await {
             Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
             _ => false,
         };
 
         if !is_running {
-            println!("{}", "Offline. Starting...".yellow());
-            Command::new("lms").args(["server", "start"]).spawn().ok();
+            if let Ok(out) = Command::new("lms").args(["server", "start"]).output().await {
+                if match Command::new("lms").args(["status"]).output().await {
+                    Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
+                    _ => false,
+                } {
+                    println!("{}", "Online".green());
+                } else {
+                    println!("{}", "Failed".red());
+                    return Err(String::from_utf8_lossy(&out.stdout).into());
+                }
+            } else {
+                println!("{}", "Failed".red());
+            }
+
             tokio::time::sleep(std::time::Duration::from_secs(2)).await;
         } else {
             println!("{}", "Online".green());

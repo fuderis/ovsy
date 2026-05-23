@@ -1,10 +1,10 @@
 use crate::prelude::*;
 use colored::*;
-use ovsy_shared::{AgentInfo, StatusResponse};
+use ovsy_shared::{AgentInfo, StatusData};
 use reqwest::Client;
 use tokio::process::Command;
 
-/// Handles the `status` command
+/// API: Handles the `status` command
 pub async fn handle() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::new();
@@ -23,9 +23,9 @@ pub async fn handle() -> Result<()> {
             );
 
             // parsing agents list:
-            if let Ok(data) = response.json::<StatusResponse>().await {
+            if let Ok(data) = response.json::<StatusData>().await {
                 match data {
-                    StatusResponse::Success { agents } => {
+                    StatusData::Success { agents } => {
                         if agents.is_empty() {
                             println!("   {}", "No agents loaded".yellow().dimmed());
                         } else {
@@ -34,7 +34,7 @@ pub async fn handle() -> Result<()> {
                             }
                         }
                     }
-                    StatusResponse::Error { error } => {
+                    StatusData::Error { error } => {
                         println!("   {} {}", "Error:".red(), error.dimmed());
                     }
                 }

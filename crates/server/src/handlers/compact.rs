@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use anylm::{AiChunk, Completions};
+use anylm::{AiChunk, Completions, Messages};
 use ovsy_shared::{Chunk, UserQuery};
 
 /// API: Compressing the context history
@@ -17,18 +17,21 @@ pub async fn handle(data: Json<UserQuery>) -> Response {
 async fn handle_compression(tx: Sender, data: UserQuery) -> Result<()> {
     let ai_conf = Settings::get().assistant.clone();
 
-    // create request to ai:
-    let mut request = Completions::try_from(ai_conf.compression)?
+    // prepare messages:
+    let messages = Messages::new()
         .messages(data.messages)
-        .user_message(vec![ai_conf.compress_prompt.into()]);
+        .user(vec![ai_conf.compress_prompt.into()])
+        .wrap();
 
     // send request:
-    let mut response = request.send().await?;
+    let mut response = Completions::try_from(ai_conf.compression)?
+        .send(messages)
+        .await?;
 
     while let Some(chunk) = response.next().await {
         match chunk? {
-            AiChunk::Text { text } => {
-                tx.send(Chunk::answer(text))?;
+            AiChunk::Text(text_part) => {
+                tx.send(Chunk::answer(text_part))?;
             }
             _ => {}
         }

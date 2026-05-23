@@ -4,8 +4,8 @@ use pearce::Server;
 #[tokio::main]
 async fn main() -> Result<()> {
     // init settings & logger:
-    Settings::init(path!("$/../config/settings.toml")).await?;
-    Logger::init(path!("$/../logs"), Settings::get().server.max_logs).await?;
+    Settings::init(app_data().join("config/settings.toml")).await?;
+    Logger::init(app_data().join("logs"), Settings::get().server.max_logs).await?;
 
     // init agents manager:
     Manager::init().await?;

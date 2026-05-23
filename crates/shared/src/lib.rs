@@ -1,8 +1,8 @@
 pub mod result;
-pub use result::*;
+pub use result::{DynError, Result, StdResult};
 
 pub mod chunk;
-pub use chunk::*;
+pub use chunk::{Chunk, ChunkData};
 
 pub mod user_query;
 pub use user_query::*;
@@ -16,8 +16,14 @@ pub use manifest::Manifest;
 pub mod agent_info;
 pub use agent_info::AgentInfo;
 
-pub mod response;
-pub use response::*;
+pub mod agent_task;
+pub use agent_task::AgentTask;
+
+pub mod status_data;
+pub use status_data::StatusData;
+
+pub mod health_data;
+pub use health_data::HealthData;
 
 /// Returns the app data dir
 pub fn app_data() -> std::path::PathBuf {
