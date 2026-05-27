@@ -1,23 +1,18 @@
-use crate::{ACTIVE_ACTION, PowerMode, PowerOptions, prelude::*};
-use std::time::{SystemTime, UNIX_EPOCH};
+use crate::{PowerAction, PowerMode, prelude::*};
 use tokio::{
     process::Command,
     time::{Instant, interval},
 };
 
 /// API: Handles the `/tool/power` action
-pub async fn handle(data: Json<PowerOptions>) -> Response {
-    let PowerOptions { mode, timeout } = data.0;
+pub async fn handle(data: Json<PowerAction>) -> Response {
+    let action = PowerAction::new_from(data.0);
 
     let body = Stream::body(async move |tx| {
-        let now = SystemTime::now();
-        let epoch = now.duration_since(UNIX_EPOCH).expect("Time went backwards");
-        let timestamp = epoch.as_millis();
-
         // initiate operation:
-        ACTIVE_ACTION.set(Some((timestamp, mode.clone()))).await;
+        PowerAction::set(action.clone()).await;
 
-        let msg = str!("Deferred {mode} for {timeout} seconds...");
+        let msg = str!("Deferred {} for {} seconds...", action.mode, action.timeout);
         info!("{msg}");
         tx.send(Chunk::answer(msg)).ok();
 
@@ -25,18 +20,20 @@ pub async fn handle(data: Json<PowerOptions>) -> Response {
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(1));
             let start_time = Instant::now();
-            let end_time = Duration::from_secs(timeout);
+            let end_time = Duration::from_secs(action.timeout);
 
             loop {
                 // check for canceled:
-                if ACTIVE_ACTION
-                    .get()
+                if PowerAction::get()
                     .await
                     .as_ref()
-                    .map(|(t, m)| t != timestamp || m != mode)
+                    .as_ref()
+                    .map(|active| {
+                        active.timestamp != action.timestamp || active.mode != action.mode
+                    })
                     .unwrap_or(true)
                 {
-                    info!("Power action '{mode}' was canceled.");
+                    info!("Power action '{}' was canceled.", &action.mode);
                     return;
                 }
 
@@ -48,10 +45,10 @@ pub async fn handle(data: Json<PowerOptions>) -> Response {
             }
 
             // clean up state before execution:
-            let _ = ACTIVE_ACTION.set(None).await;
+            let _ = PowerAction::take().await;
 
             // do power action:
-            shutdown(mode).await;
+            shutdown(action.mode).await;
         });
     });
 

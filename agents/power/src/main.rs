@@ -27,6 +27,7 @@ async fn main() -> Result<()> {
         .post("/health", handlers::health::handle)
         .post("/tool/power", handlers::power::handle)
         .post("/tool/cancel", handlers::cancel::handle)
+        .post("/tool/status", handlers::status::handle)
         .run(args.port)
         .await
 }
