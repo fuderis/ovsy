@@ -41,8 +41,6 @@ fn system_prompt(ai_conf: &AssistantOptions) -> String {
 
 /// Handles the user query
 pub(crate) async fn handle_query(tx: Sender, data: UserQuery) -> Result<()> {
-    info!("MESSAGES: {:#?}", &data.messages);
-
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
 

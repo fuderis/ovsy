@@ -112,6 +112,24 @@ async fn shutdown(mode: PowerMode) {
                 ("rundll32.exe", &["user32.dll,LockWorkStation"])
             }
         }
+        PowerMode::Logout => {
+            #[cfg(target_os = "linux")]
+            {
+                ("loginctl", &["terminate-session", "self"])
+                // ("loginctl", &["terminate-user", ""])
+            }
+            #[cfg(target_os = "macos")]
+            {
+                (
+                    "osascript",
+                    &["-e", "tell application \"System Events\" to log out"],
+                )
+            }
+            #[cfg(windows)]
+            {
+                ("shutdown", &["/l"])
+            }
+        }
     };
 
     if let Err(e) = Command::new(cmd).args(args).status().await {

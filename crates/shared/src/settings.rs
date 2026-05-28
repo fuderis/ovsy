@@ -44,13 +44,7 @@ const COMPRESSION_PROMPT: &'static str = r#"
 Your task is to provide a concise and accurate summary of our dialogue history.
 Preserve key ideas, decisions made, and relevant context. Provide responses in a compressed form.
 Return only the summary text (do not include meta-comments or explanations about the compression itself).
-
-Format (break down context into sections):
-1. [Topic/Section Name]
-    ...
-2. [Topic/Section Name]
-    ...
-...
+Break it down into numbered sections.
 "#;
 
 /// The settings instance

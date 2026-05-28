@@ -17,23 +17,21 @@ pub async fn handle(data: Json<UserQuery>) -> Response {
 async fn handle_compression(tx: Sender, data: UserQuery) -> Result<()> {
     let ai_conf = Settings::get().assistant.clone();
 
-    // prepare messages:
+    // create messages wrap:
     let messages = Messages::new()
         .messages(data.messages)
         .user(vec![ai_conf.compress_prompt.into()])
         .wrap();
 
-    // send request:
+    // send request to ai:
     let mut response = Completions::try_from(ai_conf.compression)?
         .send(messages)
         .await?;
 
+    // read response chunks:
     while let Some(chunk) = response.next().await {
-        match chunk? {
-            AiChunk::Text(text_part) => {
-                tx.send(Chunk::answer(text_part))?;
-            }
-            _ => {}
+        if let AiChunk::Text(text_part) = chunk? {
+            tx.send(Chunk::answer(text_part))?;
         }
     }
 

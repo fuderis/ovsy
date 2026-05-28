@@ -26,7 +26,7 @@ use unicode_width::UnicodeWidthStr;
 struct AppState {
     input: String,
     cursor_position: usize,
-    messages: Arc<State<(Vec<Message>, usize)>>, // (messages, tokens_count)
+    messages: Arc<State<Vec<Message>>>,
     resp_index: usize,
     is_thinking: bool,
     scroll_offset: u16,
@@ -83,10 +83,9 @@ impl AppState {
         else {
             {
                 let mut msgs = self.messages.lock().await;
-                msgs.0.push(Message::user(vec![trimmed.to_string().into()]));
-                msgs.0.push(Message::assistant(vec![], vec![]));
-                self.resp_index = msgs.0.len() - 1;
-                msgs.1 = AppState::calc_tokens(&msgs.0);
+                msgs.push(Message::user(vec![trimmed.to_string().into()]));
+                msgs.push(Message::assistant(vec![], vec![]));
+                self.resp_index = msgs.len() - 1;
             }
 
             // send query to worker (it won't work without it):
@@ -169,11 +168,38 @@ pub async fn handle() -> Result<()> {
     res
 }
 
+/// Split context into `User -> Assistant` groups
+fn split_messages(mut messages: Vec<Message>) -> Vec<Vec<Message>> {
+    let mut grouped_turns = Vec::new();
+    let mut current_turn = Vec::new();
+
+    // split into groups:
+    while let Some(msg) = messages.pop() {
+        if msg.role.is_system() {
+            continue;
+        }
+
+        let is_user = msg.role.is_user();
+        current_turn.insert(0, msg);
+
+        if is_user {
+            grouped_turns.insert(0, current_turn);
+            current_turn = vec![];
+        }
+    }
+
+    if !current_turn.is_empty() {
+        grouped_turns.insert(0, current_turn);
+    }
+
+    grouped_turns
+}
+
 /// A worker for networking
 async fn chat_worker(
     mut input_rx: mpsc::UnboundedReceiver<String>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
-    messages: Arc<State<(Vec<Message>, usize)>>,
+    messages: Arc<State<Vec<Message>>>,
     is_busy: Arc<Flag>,
 ) {
     let port = Settings::get().server.port;
@@ -186,24 +212,43 @@ async fn chat_worker(
         // commands handler:
         let trimmed = input.trim();
         if trimmed.starts_with("/") {
-            match trimmed.to_lowercase().as_ref() {
+            let args = trimmed
+                .split_whitespace()
+                .into_iter()
+                .map(|s| s.to_string())
+                .collect::<Vec<_>>();
+
+            match args[0].to_lowercase().as_ref() {
                 // Clear context:
                 "/clear" | "/clean" => {
-                    messages.set((vec![], 0)).await;
+                    messages.set(vec![]).await;
                     is_busy.set(false);
                     continue;
                 }
 
                 // Compress context:
                 "/compact" | "/compress" => {
-                    let _ = ui_tx.send(Chunk::think("⚙ Compressing context..."));
+                    let _ = ui_tx.send(Chunk::think("Compressing context..."));
+                    let msgs_len = messages.get().await.len();
+                    let preserve = args
+                        .get(1)
+                        .map(|i| i.trim().parse::<usize>().ok())
+                        .unwrap_or(None)
+                        .unwrap_or(Settings::get().assistant.preserve_messages);
 
-                    let messages_count = messages.get().await.0.len();
-                    let preserve_messages = Settings::get().assistant.preserve_messages * 2;
-                    let compress_count = (messages_count.saturating_sub(preserve_messages) / 2) * 2;
+                    if msgs_len > preserve {
+                        // split into groups:
+                        let chunks = split_messages(messages.get().await.as_ref().clone());
+                        if chunks.len() <= preserve {
+                            continue;
+                        }
 
-                    if messages_count > 2 && compress_count > 0 {
-                        let to_compress = messages.get().await.0[..compress_count].to_vec();
+                        // collect messages to compress:
+                        let to_compress: Vec<Message> = chunks[..chunks.len() - preserve]
+                            .to_vec()
+                            .into_iter()
+                            .flatten()
+                            .collect();
 
                         let res = client
                             .post(str!("{base_url}/compact"))
@@ -217,28 +262,38 @@ async fn chat_worker(
                         if let Ok(res) = res {
                             let bytes_stream = res.bytes_stream().map(|c| c.map_err(Into::into));
                             let mut stream = Stream::read::<Chunk>(bytes_stream);
-                            let mut summary = String::new();
 
+                            // set new messages:
+                            let mut new_messages = vec![Message::assistant(
+                                vec![str!("# Summarized: \n").into()],
+                                vec![],
+                            )];
+                            let preserved_msgs =
+                                messages.get().await.clone()[msgs_len - preserve..].to_vec();
+                            new_messages.extend(preserved_msgs);
+                            messages.set(new_messages).await;
+
+                            // read response stream:
                             while let Ok(Some(Chunk {
-                                data: ChunkData::Answer(answer),
+                                data: ChunkData::Answer(answer_part),
                                 ..
                             })) = stream.read().await
                             {
-                                summary.push_str(&answer);
+                                if let Some(msg) = messages.lock().await.last_mut() {
+                                    msg.map(|cnt| {
+                                        if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                            text.push_str(&answer_part);
+                                        }
+                                    });
+                                }
                             }
 
-                            if !summary.trim().is_empty() {
-                                let preserved_msgs =
-                                    messages.get().await.0.clone()[compress_count..].to_vec();
-
-                                let mut messages_temp = vec![Message::assistant(
-                                    vec![str!("**Summarized**: {}\n---\n", summary.trim()).into()],
-                                    vec![],
-                                )];
-                                messages_temp.extend(preserved_msgs);
-
-                                let tokens_count = AppState::calc_tokens(&messages_temp);
-                                messages.set((messages_temp, tokens_count)).await;
+                            if let Some(msg) = messages.lock().await.last_mut() {
+                                msg.map(|cnt| {
+                                    if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                        text.push_str("\n---");
+                                    }
+                                });
                             }
                         }
                     }
@@ -254,7 +309,7 @@ async fn chat_worker(
             }
         }
 
-        let mut messages = (*messages.get().await).0.clone();
+        let mut messages = (*messages.get().await).clone();
         messages.remove(messages.len() - 1);
 
         let res = client
@@ -326,11 +381,9 @@ async fn run_app<B: Backend>(
                 } => {
                     let mut msgs = app.messages.lock().await;
 
-                    if let Some(msg) = msgs.0.get_mut(app.resp_index) {
+                    if let Some(msg) = msgs.get_mut(app.resp_index) {
                         msg.tool_calls.extend(tool_calls);
                     }
-
-                    msgs.1 = AppState::calc_tokens(&msgs.0);
                 }
 
                 // finish agent:
@@ -345,15 +398,15 @@ async fn run_app<B: Backend>(
                     let mut msgs = app.messages.lock().await;
                     let idx = app.resp_index;
 
-                    if idx < msgs.0.len() && !msgs.0[idx].tool_calls.is_empty() {
-                        let ordered_ids: Vec<String> = msgs.0[idx]
+                    if idx < msgs.len() && !msgs[idx].tool_calls.is_empty() {
+                        let ordered_ids: Vec<String> = msgs[idx]
                             .tool_calls
                             .iter()
                             .map(|tc| tc.id.clone())
                             .collect();
 
                         if !ordered_ids.is_empty() {
-                            let remaining = msgs.0.drain((idx + 1)..).collect::<Vec<_>>();
+                            let remaining = msgs.drain((idx + 1)..).collect::<Vec<_>>();
 
                             let mut tool_messages = Vec::new();
                             let mut other_messages = Vec::new();
@@ -373,12 +426,10 @@ async fn run_app<B: Backend>(
                                     .unwrap_or(usize::MAX)
                             });
 
-                            msgs.0.extend(tool_messages);
-                            msgs.0.extend(other_messages);
+                            msgs.extend(tool_messages);
+                            msgs.extend(other_messages);
                         }
                     }
-
-                    msgs.1 = AppState::calc_tokens(&msgs.0);
                 }
 
                 // thinking:
@@ -398,7 +449,7 @@ async fn run_app<B: Backend>(
                     if let Some(task) = agent {
                         let current_tool_id = task.tool_call_id;
 
-                        match msgs.0.last_mut() {
+                        match msgs.last_mut() {
                             Some(msg)
                                 if msg.role.is_tool() && msg.tool_call_id == current_tool_id =>
                             {
@@ -409,12 +460,11 @@ async fn run_app<B: Backend>(
                                 });
                             }
                             _ => {
-                                msgs.0
-                                    .push(Message::tool(vec![answer.into()], current_tool_id));
+                                msgs.push(Message::tool(vec![answer.into()], current_tool_id));
                             }
                         }
                     } else {
-                        if let Some(msg) = msgs.0.get_mut(app.resp_index) {
+                        if let Some(msg) = msgs.get_mut(app.resp_index) {
                             msg.map(|cnt| {
                                 if cnt.is_empty() {
                                     cnt.push(answer.clone().into());
@@ -425,7 +475,6 @@ async fn run_app<B: Backend>(
                         }
                     }
 
-                    msgs.1 = AppState::calc_tokens(&msgs.0);
                     app.scroll_offset = u16::MAX;
                 }
 
@@ -437,9 +486,7 @@ async fn run_app<B: Backend>(
                     app.is_thinking = false;
                     let mut msgs = app.messages.lock().await;
 
-                    msgs.0
-                        .push(Message::system(vec![str!("Error: {error}").into()]));
-                    msgs.1 = AppState::calc_tokens(&msgs.0);
+                    msgs.push(Message::system(vec![str!("Error: {error}").into()]));
                 }
             }
         }
@@ -604,7 +651,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     let mut history: Vec<Line> = Vec::new();
 
     // render basic messages:
-    for msg in app.messages.dirty_get().0.iter() {
+    for msg in app.messages.dirty_get().iter() {
         if msg.content.is_empty() && !msg.role.is_user() {
             continue;
         } else if !history.is_empty() {
@@ -678,7 +725,8 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         .max_tokens
         .unwrap_or(1) as usize;
 
-    let current_tokens = app.messages.dirty_get().1;
+    let msgs = app.messages.dirty_get();
+    let tokens_count = AppState::calc_tokens(&msgs);
 
     fn make_progress_bar(current: usize, max: usize, width: usize) -> String {
         if max == 0 {
@@ -691,8 +739,8 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
         str!("{}{}", "■".repeat(filled_len), "□".repeat(empty_len))
     }
 
-    let pb = make_progress_bar(current_tokens, max_tokens, 10);
-    let tokens_text = str!("{}/{}", current_tokens, max_tokens);
+    let pb = make_progress_bar(tokens_count, max_tokens, 10);
+    let tokens_text = str!("{}/{}", tokens_count, max_tokens);
     let lines_text = str!(
         "{}/{}",
         current_line.saturating_sub(1),
@@ -700,7 +748,7 @@ fn ui(f: &mut ratatui::Frame, app: &mut AppState) {
     );
 
     let ratio = if max_tokens > 0 {
-        (current_tokens as f32 / max_tokens as f32).clamp(0.0, 1.0)
+        (tokens_count as f32 / max_tokens as f32).clamp(0.0, 1.0)
     } else {
         0.0
     };
