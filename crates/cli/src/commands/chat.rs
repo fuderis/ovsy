@@ -584,6 +584,8 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
                 ),
                 Style::default().bg(Color::Cyan).fg(Color::Black).bold(),
             )]);
+
+            history.push(Line::raw(""));
             history.push(meta_line);
         } else if !history.is_empty() {
             history.push(Line::raw(""));
