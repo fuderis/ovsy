@@ -110,7 +110,7 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
 
     // logging to thinking block:
     let msg = str!(
-        "### ● Handling `{}` agent: \"{:.40}...\"\n\n",
+        "**● Handling `{}` agent:** *\"{:.40}...\"*",
         task.agent_name,
         task.task_query.trim_end_matches(".")
     );
@@ -172,7 +172,7 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
         full_text.push('\n');
 
         let msg = str!(
-            "#### ∟ Calling tool `{} -> {}`...\n",
+            "**∟ Calling tool:** *`{} -> {}`...*\n",
             task.agent_name,
             func.name
         );
