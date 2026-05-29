@@ -102,31 +102,40 @@ impl AgentHandle {
         // write results to context:
         lock.results.insert(self.task.task_id, arc!(full_text));
 
+        // nitify about finished task:
+        self.tx
+            .send(Chunk::finish().task_info(self.task.as_ref().clone()))
+            .ok();
+
         // check pending tasks:
-        let mut ready_ids = vec![];
-        for (id, task) in lock.pending.iter() {
-            if lock.check(&task) {
-                ready_ids.push(*id);
+        if !lock.pending.is_empty() {
+            let mut ready_ids = vec![];
+            for (id, task) in lock.pending.iter() {
+                if lock.check(&task) {
+                    ready_ids.push(*id);
+                }
+            }
+            let ready_to_run: Vec<AgentTask> = ready_ids
+                .into_iter()
+                .filter_map(|id| lock.pending.remove(&id))
+                .collect();
+
+            drop(lock);
+
+            // start next tasks:
+            for task in ready_to_run {
+                let tx = self.tx.clone();
+                let workflow = self.workflow.clone();
+
+                tokio::spawn(async move {
+                    Self::handle(tx, task.task_id, workflow).await;
+                });
             }
         }
-        let ready_to_run: Vec<AgentTask> = ready_ids
-            .into_iter()
-            .filter_map(|id| lock.pending.remove(&id))
-            .collect();
-
-        drop(lock);
-
-        // start next tasks:
-        for task in ready_to_run {
-            let tx = self.tx.clone();
-            let workflow = self.workflow.clone();
-
-            tokio::spawn(async move {
-                Self::handle(tx, task.task_id, workflow).await;
-            });
+        // check all tasks for finished:
+        else if lock.working.is_empty() {
+            self.tx.send(Chunk::finish()).ok();
         }
-
-        self.tx.send(Chunk::finish()).ok();
     }
 
     /// Finishes the all agent tasks

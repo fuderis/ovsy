@@ -32,5 +32,5 @@ pub fn app_data() -> std::path::PathBuf {
 
 /// Returns the app version
 pub fn app_version() -> &'static str {
-    "0.7.1"
+    "0.7.2"
 }

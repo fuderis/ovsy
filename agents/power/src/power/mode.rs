@@ -4,9 +4,18 @@ use crate::prelude::*;
 #[derive(Debug, Clone, Copy, Display, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PowerMode {
+    #[display = "shutdown"]
     Shutdown,
+
+    #[display = "suspend"]
     Suspend,
+
+    #[display = "reboot"]
     Reboot,
+
+    #[display = "lock"]
     Lock,
+
+    #[display = "logout"]
     Logout,
 }

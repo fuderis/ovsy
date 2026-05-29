@@ -3,23 +3,9 @@ use anylm::{AiChunk, Completions, Messages, ToolCall};
 use ovsy_shared::{AgentTask, Chunk, ChunkData, UserQuery, settings::AssistantOptions};
 use reqwest::Client;
 
-/// API: The user query handler
-pub async fn handle(data: Json<UserQuery>) -> Response {
-    let body = Stream::body(move |tx| async move {
-        if let Err(e) = handle_query(tx.clone(), data.0).await {
-            error!("{e}");
-            tx.send(Chunk::error(str!("{e}"))).ok();
-        }
-    });
-
-    Response::ok().stream(body)
-}
-
 /// Generates the system prompt
 fn system_prompt(ai_conf: &AssistantOptions) -> String {
     let now_utc = Utc::now();
-    let moscow_offset = chrono::FixedOffset::east_opt(3 * 3600).unwrap();
-    let now_moscow = now_utc.with_timezone(&moscow_offset);
     let now_local = Local::now();
     let time_format = "%A, %B %d, %Y %H:%M:%S UTC%Z";
 
@@ -33,10 +19,18 @@ fn system_prompt(ai_conf: &AssistantOptions) -> String {
             "{DATETIME_GLOBAL}",
             &now_utc.format(time_format).to_string(),
         )
-        .replace(
-            "{DATETIME_MOSCOW}",
-            &now_moscow.format(time_format).to_string(),
-        )
+}
+
+/// API: The user query handler
+pub async fn handle(data: Json<UserQuery>) -> Response {
+    let body = Stream::body(move |tx| async move {
+        if let Err(e) = handle_query(tx.clone(), data.0).await {
+            error!("{e}");
+            tx.send(Chunk::error(str!("{e}"))).ok();
+        }
+    });
+
+    Response::ok().stream(body)
 }
 
 /// Handles the user query
@@ -75,21 +69,25 @@ pub(crate) async fn handle_query(tx: Sender, data: UserQuery) -> Result<()> {
         }
     }
 
-    // remove broken dependencies:
-    let active_ids: HashSet<i64> = tasks.iter().map(|task| task.task_id).collect();
-    for task in tasks.iter_mut() {
-        task.wait_for.retain(|id| active_ids.contains(id));
-    }
+    if !tasks.is_empty() {
+        // remove broken dependencies:
+        let active_ids: HashSet<i64> = tasks.iter().map(|task| task.task_id).collect();
+        for task in tasks.iter_mut() {
+            task.wait_for.retain(|id| active_ids.contains(id));
+        }
 
-    // send tool calls to client:
-    if let Some(msg) = (&*messages.lock().await).messages.last()
-        && msg.role.is_assistant()
-    {
-        tx.send(Chunk::tools(msg.tool_calls.clone()))?;
-    }
+        // send tool calls to client:
+        if let Some(msg) = (&*messages.lock().await).messages.last()
+            && msg.role.is_assistant()
+        {
+            tx.send(Chunk::tools(msg.tool_calls.clone()))?;
+        }
 
-    // delegate tasks:
-    AgentHandle::handle_all(tx.clone(), tasks).await;
+        // delegate tasks:
+        AgentHandle::handle_all(tx.clone(), tasks).await;
+    } else {
+        tx.send(Chunk::finish())?;
+    }
 
     Ok(())
 }
@@ -112,12 +110,12 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
 
     // logging to thinking block:
     let msg = str!(
-        "### ● Handling `{}` agent: \n>  \"{:.80}...\"\n\n",
+        "### ● Handling `{}` agent: \"{:.40}...\"\n\n",
         task.agent_name,
         task.task_query.trim_end_matches(".")
     );
     info!("{msg}");
-    tx.send(Chunk::answer(msg).task_info(task.clone_minimal()))
+    tx.send(Chunk::think(msg).task_info(task.clone_minimal()))
         .ok();
 
     let ai_conf = &Settings::get().assistant;
@@ -173,9 +171,13 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
     for ToolCall { func, .. } in tool_calls {
         full_text.push('\n');
 
-        let msg = str!("#### ∟ Calling tool `{}`:\n", func.name);
+        let msg = str!(
+            "#### ∟ Calling tool `{} -> {}`...\n",
+            task.agent_name,
+            func.name
+        );
         info!("{msg}");
-        tx.send(Chunk::answer(msg).task_info(task.clone_minimal()))
+        tx.send(Chunk::think(msg).task_info(task.clone_minimal()))
             .ok();
 
         // send to agent server:
