@@ -1,15 +1,19 @@
 use super::Manager;
 use crate::prelude::*;
 
-use ovsy_shared::Manifest;
+use ovsy_shared::AgentInfo;
+use reqwest::Client;
+use std::time::SystemTime;
 use tokio::process::{Child, Command};
 
 /// The AI agent
 #[derive(Default, Debug, Clone)]
 pub struct Agent {
     pub dir: PathBuf,
+    pub exec_path: PathBuf,
     pub port: u16,
-    pub manifest: Config<Manifest>,
+    pub info: AgentInfo,
+    _started: Option<SystemTime>,
     _child: Arc<Mutex<Option<Child>>>,
 }
 
@@ -17,45 +21,58 @@ impl Agent {
     /// Runs the agent server
     pub async fn run(dir: impl Into<PathBuf>) -> Result<Option<Self>> {
         let dir = dir.into();
-
-        // read manifest:
-        let manif_path = dir.join("Ovsy.toml");
-        let manifest = Config::<Manifest>::new(&manif_path).await.map_err(|e| {
-            error!("Failed to parse manifest `{}`: {e}", manif_path.display());
-            e
-        })?;
+        let name = dir
+            .file_name()
+            .ok_or(Error::FailedGetAgentName)?
+            .to_string_lossy()
+            .to_string();
 
         // check agent for already running:
-        if Manager::contains(&arc!(manifest.agent.name.clone())).await {
+        if Manager::contains(&arc!(name.clone())).await {
             return Ok(None);
         }
 
         // run agent server:
         let exec_path = dir.join(&str!(
-            "{}{}-agent",
-            &manifest.agent.name,
-            if cfg!(windows) { ".exe" } else { "" }
+            "{name}-agent{exe}",
+            exe = if cfg!(windows) { ".exe" } else { "" }
         ));
         let port = crate::free_port().await?;
-        let child = Command::new(exec_path)
+        let child = Command::new(&exec_path)
             .args(&["--port", &str!(port)])
             .args(&["--max-logs", &str!(Settings::get().server.max_logs)])
             .kill_on_drop(true)
             .spawn()?;
 
+        // get agent info:
+        let response = Client::new()
+            .post(str!("http://127.0.0.1:{port}/info"))
+            .send()
+            .await?;
+        let info = response.json::<AgentInfo>().await?;
+
         let agent = Self {
             dir,
+            exec_path,
             port,
-            manifest,
+            info,
+            _started: Some(SystemTime::now()),
             _child: arc_mutex!(Some(child)),
         };
 
         Ok(Some(agent))
     }
 
-    /// Returns true if agent is needs to be restarted
+    /// Returns true if needs to be updated
     pub async fn check(&self) -> Result<bool> {
-        let manif_path = self.dir.join("Ovsy.toml");
-        Ok(!manif_path.is_file() || self.manifest.check(0).await?)
+        let metadata = tokio::fs::metadata(&self.exec_path).await?;
+
+        if let Ok(modified_at) = metadata.modified()
+            && let Some(started_at) = self._started
+        {
+            Ok(modified_at > started_at)
+        } else {
+            Ok(false)
+        }
     }
 }

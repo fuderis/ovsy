@@ -135,11 +135,26 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
             s => (s, Style::default().white(), None),
         };
 
-        for wrapped_row in textwrap::wrap(content, max_width) {
+        let wrap_width = if prefix.is_some() {
+            max_width.saturating_sub(3)
+        } else {
+            max_width
+        };
+
+        let mut is_first_wrapped_line = true;
+
+        for wrapped_row in textwrap::wrap(content, wrap_width) {
             let mut spans = Vec::new();
+
             if let Some(ref p) = prefix {
-                spans.push(p.clone());
+                if is_first_wrapped_line {
+                    spans.push(p.clone());
+                    is_first_wrapped_line = false;
+                } else {
+                    spans.push(Span::raw("   "));
+                }
             }
+
             spans.extend(parse_inline_styles(&wrapped_row, base_style));
             lines.push(Line::from(spans));
         }

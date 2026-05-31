@@ -101,27 +101,25 @@ if [ -d "agents" ]; then
         # skip files:
         [ -d "$agent_dir" ] || continue
         
-        AGENT_BIN_NAME="${name_agent:-${agent_name}-agent}${EXE}"
+        BIN_NAME="${name_agent:-${agent_name}-agent}${EXE}"
         SRC_BIN="target/release/${AGENT_BIN_NAME}"
-        SRC_TOML="${agent_dir}Ovsy.toml"
-        
-        TARGET_AGENT_DIR="$INSTALL_DIR/agents/$agent_name"
+        DEST_DIR="$INSTALL_DIR/agents/$agent_name"
         
         # check binary file:
         if [[ -f "$SRC_BIN" && -f "$SRC_TOML" ]]; then
-            mkdir -p "$TARGET_AGENT_DIR"
+            mkdir -p "$DEST_DIR"
             
             if [[ -z "$EXE" ]]; then
-                pkill -x "$AGENT_BIN_NAME" >/dev/null 2>&1
+                pkill -x "$BIN_NAME" >/dev/null 2>&1
             else
-                taskkill //F //IM "$AGENT_BIN_NAME" >/dev/null 2>&1
+                taskkill //F //IM "$BIN_NAME" >/dev/null 2>&1
             fi
             # --------------------------------------
 
-            DEST_BIN="$TARGET_AGENT_DIR/$AGENT_BIN_NAME"
-            if cp "$SRC_BIN" "$DEST_BIN" && cp "$SRC_TOML" "$TARGET_AGENT_DIR/Ovsy.toml"; then
+            DEST_BIN="$DEST_DIR/$BIN_NAME"
+            if cp "$SRC_BIN" "$DEST_BIN" ; then
                 [ -z "$EXE" ] && chmod 755 "$DEST_BIN"
-                echo -e "  [${OK}OK${NC}] ${BOLD}$AGENT_BIN_NAME${NC} ${OK}→${NC} installed"
+                echo -e "  [${OK}OK${NC}] ${BOLD}$BIN_NAME${NC} ${OK}→${NC} installed"
             else
                 echo -e "  [${ERR}FAIL${NC}] Failed to copy binary for agent: $agent_name"
             fi

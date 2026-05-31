@@ -1,5 +1,5 @@
 [package]
-name = "power-agent"
+name = "system-agent"
 edition = "2024"
 
 [dependencies]
@@ -8,6 +8,9 @@ tokio.workspace = true
 macron.workspace = true
 atoman.workspace = true
 pearce.workspace = true
+anylm.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
+regex.workspace = true
+chrono.workspace = true

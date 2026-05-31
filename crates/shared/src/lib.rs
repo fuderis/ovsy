@@ -10,9 +10,6 @@ pub use user_query::*;
 pub mod settings;
 pub use settings::Settings;
 
-pub mod manifest;
-pub use manifest::Manifest;
-
 pub mod agent_info;
 pub use agent_info::AgentInfo;
 
@@ -22,8 +19,8 @@ pub use agent_task::AgentTask;
 pub mod status_data;
 pub use status_data::StatusData;
 
-pub mod health_data;
-pub use health_data::HealthData;
+pub mod ping_data;
+pub use ping_data::PingData;
 
 /// Returns the app data dir
 pub fn app_data() -> std::path::PathBuf {
@@ -32,5 +29,5 @@ pub fn app_data() -> std::path::PathBuf {
 
 /// Returns the app version
 pub fn app_version() -> &'static str {
-    "0.7.2"
+    "0.7.3"
 }

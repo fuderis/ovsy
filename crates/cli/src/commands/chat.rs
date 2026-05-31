@@ -1,5 +1,5 @@
 use crate::{
-    chat::{AppState, markdown, utils},
+    chat::{AppState, ChatAction, markdown, utils},
     prelude::*,
 };
 
@@ -13,13 +13,14 @@ use ovsy_shared::{Chunk, ChunkData, UserQuery};
 use ratatui::{
     Frame, Terminal,
     backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
     style::{Color, Style, Stylize},
     text::{Line, Span, Text},
     widgets::{Block, BorderType, Borders, Paragraph, Wrap},
 };
 use reqwest::Client;
 use std::{io, process::Command};
+use tokio::task::JoinHandle;
 
 /// API: Handles the `chat` command
 pub async fn handle() -> Result<()> {
@@ -54,7 +55,7 @@ pub async fn handle() -> Result<()> {
     }
 
     // init channels:
-    let (input_tx, input_rx) = mpsc::unbounded_channel::<String>();
+    let (input_tx, input_rx) = mpsc::unbounded_channel::<ChatAction>();
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
 
     // init app state:
@@ -101,13 +102,13 @@ async fn run_app<B: Backend>(
             .draw(|f| render_tui(f, app))
             .map_err(|e| e.to_string())?;
 
-        // 1. Processing incoming data from the server stream
+        // processing incoming data from the server:
         if let Ok(chunk) = ui_rx.try_recv() {
             handle_chunk(app, chunk).await;
         }
 
-        // 2. Event Handling
-        if event::poll(std::time::Duration::from_millis(16))? {
+        // handling terminal event:
+        if event::poll(Duration::from_millis(16))? {
             if handle_event(app, event::read()?).await? {
                 break;
             }
@@ -139,6 +140,7 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
                 _ => {}
             }
         }
+
         Event::Key(key) if key.kind == KeyEventKind::Press => {
             let has_shift = key.modifiers.contains(event::KeyModifiers::SHIFT);
 
@@ -147,15 +149,30 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
                     let _ = execute!(std::io::stdout(), event::DisableMouseCapture);
                     return Ok(true);
                 }
+
                 KeyCode::Enter => {
-                    if app.input.trim() == "/exit" {
-                        let _ = execute!(std::io::stdout(), event::DisableMouseCapture);
-                        return Ok(true);
+                    match app.input.trim() {
+                        "/exit" | "/quit" => {
+                            let _ = execute!(std::io::stdout(), event::DisableMouseCapture);
+                            return Ok(true);
+                        }
+
+                        "/cancel" | "/stop" => {
+                            app.input.clear();
+                            app.input_cursor = 0;
+                            app.is_canceled = true;
+                            let _ = app.tx.send(ChatAction::Cancel);
+                            return Ok(false);
+                        }
+
+                        _ => {}
                     }
+
                     if !app.is_busy {
                         handle_input(app).await;
                     }
                 }
+
                 KeyCode::Char(c) => {
                     app.input.insert(app.input_cursor, c);
                     app.input_cursor += c.len_utf8();
@@ -171,6 +188,7 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
                         app.input_cursor = i;
                     }
                 }
+
                 KeyCode::Left if app.input_cursor > 0 => {
                     app.input_cursor = app
                         .input
@@ -189,8 +207,10 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
                         app.input_cursor = i + c.len_utf8();
                     }
                 }
+
                 KeyCode::Up => app.chat_scroll = app.chat_scroll.saturating_sub(1),
                 KeyCode::Down => app.chat_scroll = app.chat_scroll.saturating_add(1),
+
                 KeyCode::PageUp => {
                     if has_shift {
                         app.input_scroll = app.input_scroll.saturating_sub(5);
@@ -210,11 +230,13 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
         }
         _ => {}
     }
+
     Ok(false)
 }
 
 /// Handles the user input
 async fn handle_input(app: &mut AppState) {
+    app.is_canceled = false;
     app.is_busy = true;
 
     let trimmed = app.input.trim();
@@ -227,7 +249,7 @@ async fn handle_input(app: &mut AppState) {
         match trimmed {
             "/exit" => {}
             _ => {
-                let _ = app.tx.send(trimmed.to_string());
+                let _ = app.tx.send(ChatAction::Query(trimmed.into()));
             }
         }
     } else {
@@ -240,7 +262,7 @@ async fn handle_input(app: &mut AppState) {
         }
 
         // send query to worker:
-        let _ = app.tx.send(trimmed.to_string());
+        let _ = app.tx.send(ChatAction::Query(trimmed.into()));
     }
 
     app.input.clear();
@@ -251,128 +273,176 @@ async fn handle_input(app: &mut AppState) {
 
 /// A worker for networking
 async fn chat_worker(
-    mut input_rx: mpsc::UnboundedReceiver<String>,
+    mut input_rx: mpsc::UnboundedReceiver<ChatAction>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
-    messages: Arc<Mutex<Vec<Message>>>,
+    messages: Arc<State<Vec<Message>>>,
 ) {
     let port = Settings::get().server.port;
     let client = reqwest::Client::new();
     let base_url = str!("http://127.0.0.1:{port}");
 
-    while let Some(input) = input_rx.recv().await {
-        let trimmed = input.trim();
+    let mut current_task: Option<JoinHandle<()>> = None;
 
-        if trimmed.starts_with('/') {
-            let args: Vec<String> = trimmed.split_whitespace().map(|s| s.to_string()).collect();
-            if args.is_empty() {
+    // read chat actions:
+    while let Some(action) = input_rx.recv().await {
+        match action {
+            ChatAction::Cancel => {
+                if let Some(task) = current_task.take() {
+                    task.abort();
+                    let _ = ui_tx.send(Chunk {
+                        data: ChunkData::Finish,
+                        agent: None,
+                    });
+                }
                 continue;
             }
 
-            match args[0].to_lowercase().as_str() {
-                "/clear" | "/clean" => {
-                    messages.lock().await.clear();
+            ChatAction::Query(input) => {
+                if let Some(task) = current_task.take() {
+                    task.abort();
                 }
-                "/compact" | "/compress" => {
-                    let _ = ui_tx.send(Chunk::think("Compressing context..."));
-                    let preserve = args
-                        .get(1)
-                        .and_then(|i| i.trim().parse::<usize>().ok())
-                        .unwrap_or_else(|| Settings::get().assistant.preserve_messages);
 
-                    let msgs = messages.lock().await;
-                    let msgs_len = msgs.len();
+                let trimmed = input.trim();
 
-                    if msgs_len > preserve {
-                        let chunks = utils::split_messages(msgs.clone());
-                        if chunks.len() > preserve {
-                            let to_compress: Vec<Message> = chunks[..chunks.len() - preserve]
-                                .iter()
-                                .flatten()
-                                .cloned()
-                                .collect();
-                            drop(msgs);
+                if trimmed.starts_with('/') {
+                    let args: Vec<String> =
+                        trimmed.split_whitespace().map(|s| s.to_string()).collect();
+                    if args.is_empty() {
+                        continue;
+                    }
 
-                            let res = client
-                                .post(str!("{base_url}/compact"))
-                                .json(&UserQuery {
-                                    user_id: 0,
-                                    messages: to_compress,
-                                })
-                                .send()
-                                .await;
+                    match args[0].to_lowercase().as_str() {
+                        "/clear" | "/clean" => {
+                            messages.lock().await.clear();
+                        }
+                        "/compact" | "/compress" => {
+                            let ui_tx = ui_tx.clone();
+                            let client = client.clone();
+                            let base_url = base_url.clone();
+                            let messages = messages.clone();
 
-                            if let Ok(res) = res {
-                                let mut stream = Stream::read::<Chunk>(
-                                    res.bytes_stream().map(|c| c.map_err(Into::into)),
-                                );
-                                let mut new_messages = vec![Message::assistant(
-                                    vec![str!("# Summarized: \n").into()],
-                                    vec![],
-                                )];
+                            current_task = Some(tokio::spawn(async move {
+                                let _ = ui_tx.send(Chunk::think("Compressing context..."));
+                                let preserve = args
+                                    .get(1)
+                                    .and_then(|i| i.trim().parse::<usize>().ok())
+                                    .unwrap_or_else(|| Settings::get().assistant.preserve_messages);
 
                                 let mut msgs = messages.lock().await;
-                                new_messages.extend(msgs[msgs_len - preserve..].to_vec());
-                                *msgs = new_messages;
+                                let msgs_len = msgs.len();
 
-                                while let Ok(Some(Chunk {
-                                    data: ChunkData::Answer(part),
-                                    ..
-                                })) = stream.read().await
-                                {
-                                    if let Some(msg) = msgs.last_mut() {
-                                        msg.map(|cnt| {
-                                            if let Some(Content::Text { text }) = cnt.get_mut(0) {
-                                                text.push_str(&part);
+                                if msgs_len > preserve {
+                                    let chunks = utils::split_messages(msgs.clone());
+                                    if chunks.len() > preserve {
+                                        let to_compress: Vec<Message> = chunks
+                                            [..chunks.len() - preserve]
+                                            .iter()
+                                            .flatten()
+                                            .cloned()
+                                            .collect();
+
+                                        let res = client
+                                            .post(str!("{base_url}/compact"))
+                                            .json(&UserQuery {
+                                                user_id: 0,
+                                                messages: to_compress,
+                                            })
+                                            .send()
+                                            .await;
+
+                                        if let Ok(res) = res {
+                                            let mut stream = Stream::read::<Chunk>(
+                                                res.bytes_stream().map(|c| c.map_err(Into::into)),
+                                            );
+                                            let mut new_messages = vec![Message::assistant(
+                                                vec![str!("# Summarized: \n").into()],
+                                                vec![],
+                                            )];
+
+                                            new_messages
+                                                .extend(msgs[msgs_len - preserve..].to_vec());
+                                            *msgs = new_messages;
+                                            msgs.sync();
+
+                                            while let Ok(Some(Chunk {
+                                                data: ChunkData::Answer(part),
+                                                ..
+                                            })) = stream.read().await
+                                            {
+                                                if let Some(msg) = msgs.last_mut() {
+                                                    msg.map(|cnt| {
+                                                        if let Some(Content::Text { text }) =
+                                                            cnt.get_mut(0)
+                                                        {
+                                                            text.push_str(&part);
+                                                        }
+                                                    });
+                                                }
+                                                msgs.sync_n(2);
                                             }
-                                        });
+
+                                            if let Some(msg) = msgs.last_mut() {
+                                                msg.map(|cnt| {
+                                                    if let Some(Content::Text { text }) =
+                                                        cnt.get_mut(0)
+                                                    {
+                                                        text.push_str("\n---");
+                                                    }
+                                                });
+                                            }
+                                        }
                                     }
                                 }
 
-                                if let Some(msg) = msgs.last_mut() {
-                                    msg.map(|cnt| {
-                                        if let Some(Content::Text { text }) = cnt.get_mut(0) {
-                                            text.push_str("\n---");
-                                        }
-                                    });
-                                }
+                                let _ = ui_tx.send(Chunk {
+                                    data: ChunkData::Finish,
+                                    agent: None,
+                                });
+                            }));
+                        }
+                        _ => {}
+                    }
+
+                    let _ = ui_tx.send(Chunk {
+                        data: ChunkData::Finish,
+                        agent: None,
+                    });
+                    continue;
+                }
+
+                let mut req_messages = messages.lock().await.clone();
+                if !req_messages.is_empty() {
+                    req_messages.pop();
+                }
+
+                let client = client.clone();
+                let base_url = base_url.clone();
+                let ui_tx = ui_tx.clone();
+
+                current_task = Some(tokio::spawn(async move {
+                    let res = client
+                        .post(str!("{base_url}/handle"))
+                        .json(&UserQuery {
+                            user_id: 0,
+                            messages: req_messages,
+                        })
+                        .send()
+                        .await;
+
+                    match res {
+                        Ok(response) => {
+                            let mut stream = Stream::read::<Chunk>(
+                                response.bytes_stream().map(|c| c.map_err(Into::into)),
+                            );
+                            while let Ok(Some(chunk)) = stream.read().await {
+                                let _ = ui_tx.send(chunk);
                             }
                         }
+                        Err(e) => {
+                            let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
+                        }
                     }
-                }
-                _ => {}
-            }
-            // Signal TUI that command execution finished
-            let _ = ui_tx.send(Chunk {
-                data: ChunkData::Finish,
-                agent: None,
-            });
-            continue;
-        }
-
-        let mut req_messages = messages.lock().await.clone();
-        if !req_messages.is_empty() {
-            req_messages.pop();
-        }
-
-        let res = client
-            .post(str!("{base_url}/handle"))
-            .json(&UserQuery {
-                user_id: 0,
-                messages: req_messages,
-            })
-            .send()
-            .await;
-
-        match res {
-            Ok(response) => {
-                let mut stream =
-                    Stream::read::<Chunk>(response.bytes_stream().map(|c| c.map_err(Into::into)));
-                while let Ok(Some(chunk)) = stream.read().await {
-                    let _ = ui_tx.send(chunk);
-                }
-            }
-            Err(e) => {
-                let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
+                }));
             }
         }
     }
@@ -387,6 +457,7 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
         } => {
             app.status.replace(think);
         }
+
         Chunk {
             data: ChunkData::Tools(tool_calls),
             ..
@@ -477,21 +548,55 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
 
         Chunk {
             data: ChunkData::Error(error),
-            ..
+            agent,
         } => {
-            app.is_busy = false;
-            app.messages
-                .lock()
-                .await
-                .push(Message::system(vec![str!("Error: {error}").into()]));
+            if let Some(task) = agent {
+                let current_tool_id = task.tool_call_id;
+                let mut msgs = app.messages.lock().await;
+
+                let err_msg = str!("Error: {error}");
+
+                match msgs.last_mut() {
+                    Some(msg) if msg.role.is_tool() && msg.tool_call_id == current_tool_id => {
+                        msg.map(|cnt| {
+                            if let Some(Content::Text { text }) = cnt.get_mut(0) {
+                                if !text.is_empty() {
+                                    text.push_str("\n");
+                                }
+                                text.push_str(&err_msg);
+                            }
+                        });
+                    }
+                    _ => msgs.push(Message::tool(vec![err_msg.into()], current_tool_id)),
+                }
+
+                app.chat_scroll = u16::MAX;
+            } else {
+                app.is_busy = false;
+                app.status.take();
+                app.messages.lock().await.push(Message::system(vec![
+                    str!("Critical Error: {error}").into(),
+                ]));
+            }
+
+            // trying to fix error:
+            if !app.is_canceled {
+                let tx = app.tx.clone();
+                let messages = app.messages.clone();
+                app.response_index = messages.dirty_get().len() + 1;
+
+                tokio::spawn(async move {
+                    handle_control_query(tx, messages).await;
+                });
+            }
         }
     }
 }
 
 /// Handles the control query
 async fn handle_control_query(
-    tx: mpsc::UnboundedSender<String>,
-    messages: Arc<Mutex<Vec<Message>>>,
+    tx: mpsc::UnboundedSender<ChatAction>,
+    messages: Arc<State<Vec<Message>>>,
 ) {
     {
         let mut msgs = messages.lock().await;
@@ -499,7 +604,7 @@ async fn handle_control_query(
         msgs.push(Message::assistant(vec![], vec![]));
     }
 
-    let _ = tx.send(String::new());
+    let _ = tx.send(ChatAction::Query(str!()));
 }
 
 // --------------------- TUI RENDER's ----------------------------
@@ -507,10 +612,7 @@ async fn handle_control_query(
 /// Renderers the user interface
 fn render_tui(f: &mut Frame, app: &mut AppState) {
     let area = f.area();
-
-    let Ok(messages_guard) = app.messages.try_lock() else {
-        return;
-    };
+    let msgs = app.messages.dirty_get();
 
     // --- 1. CALCULATE INPUT HEIGHT ---
     let prefix = " ❯ ";
@@ -550,7 +652,7 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
     let mut history: Vec<Line> = Vec::new();
 
     // render messages:
-    for msg in messages_guard.iter() {
+    for msg in msgs.iter() {
         // collect content:
         let text_content = msg
             .content
@@ -574,11 +676,11 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
         if msg.role.is_user() {
             let meta_line = Line::from(vec![Span::styled(
                 str!(
-                    "[{}]",
+                    "{}",
                     msg.timestamp
                         .map(|t| t
                             .with_timezone(&Local)
-                            .format("%Y-%m-%d|%H:%M:%S")
+                            .format("%a %B %d  %I:%M %p")
                             .to_string())
                         .unwrap_or_else(|| "??:??:??".to_string())
                 ),
@@ -598,14 +700,14 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
                 history.push(
                     line.patch_style(
                         Style::default()
-                            .bg(Color::Rgb(20, 20, 20))
+                            .bg(Color::Rgb(15, 15, 15))
                             .fg(Color::DarkGray),
                     ),
                 );
             }
         } else if msg.role.is_tool() {
             for line in msg_lines {
-                history.push(line.patch_style(Style::default().bg(Color::Rgb(25, 25, 25))));
+                history.push(line.patch_style(Style::default().dim()));
             }
         } else {
             history.extend(msg_lines);
@@ -630,7 +732,7 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
         .max_tokens
         .unwrap_or(1) as usize;
 
-    let tokens_count = utils::count_tokens(&messages_guard);
+    let tokens_count = utils::count_tokens(&msgs);
 
     fn make_progress_bar(current: usize, max: usize, width: usize) -> String {
         if max == 0 {
@@ -687,14 +789,14 @@ fn render_tui(f: &mut Frame, app: &mut AppState) {
                 .borders(Borders::LEFT | Borders::TOP)
                 .border_style(Style::default().dim())
                 .title(title_left)
-                .title(title_right.alignment(ratatui::layout::HorizontalAlignment::Right))
-                .title(title_right2.alignment(ratatui::layout::HorizontalAlignment::Right)),
+                .title(title_right.alignment(HorizontalAlignment::Right))
+                .title(title_right2.alignment(HorizontalAlignment::Right)),
         ),
         chat_area,
     );
 
     // free lock:
-    drop(messages_guard);
+    drop(msgs);
 
     // --- 5. INPUT BLOCK ---
     let input_area = chunks[2];

@@ -119,9 +119,9 @@ checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
 name = "anylm"
-version = "0.1.20"
+version = "0.1.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0df986bb2968e50a630687b866f649e25ad0c2bfbc8b518e94f80301b55f68e"
+checksum = "80b6d77765c9cb4098f238db23f02fdf00c5234c310c4e031dfd71e3d43bec8f"
 dependencies = [
  "atoman",
  "base64",
@@ -459,9 +459,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.20"
+version = "0.2.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "785e46778c9c3e5e489a1e649f468b6abd12cd9ecc29d264e934890afe4b20f7"
+checksum = "3545e0b7ecfb6b4cddff1feb07c2c97dab1bf495146e4cd822cdcd540feba4e9"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -4634,20 +4634,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "power-agent"
-version = "0.0.0"
-dependencies = [
- "atoman",
- "clap",
- "macron",
- "ovsy-shared",
- "pearce",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "powerfmt"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5914,6 +5900,23 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.117",
+]
+
+[[package]]
+name = "system-agent"
+version = "0.0.0"
+dependencies = [
+ "anylm",
+ "atoman",
+ "chrono",
+ "clap",
+ "macron",
+ "ovsy-shared",
+ "pearce",
+ "regex",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

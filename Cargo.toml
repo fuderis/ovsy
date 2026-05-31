@@ -1,14 +1,14 @@
 [workspace]
-members = ["crates/cli", "crates/server", "crates/shared", "agents/power"]
-default-members = ["crates/cli", "crates/server", "agents/power"]
+members = ["crates/cli", "crates/server", "crates/shared", "agents/system"]
+default-members = ["crates/cli", "crates/server", "agents/system"]
 resolver = "3"
 
 [workspace.dependencies]
 ovsy-shared = { path = "crates/shared" }
-atoman = { version = "0.2.20", features = ["full"] }
+atoman = { version = "0.2.21", features = ["full"] }
 macron = { version = "0.1.18", features = ["full"] }
 pearce = "0.1.0"
-anylm = "0.1.20"
+anylm = "0.1.22"
 cistern = "0.1.0"
 tokio = { version = "1.51.0", features = ["full"] }
 async-recursion = "1.1.1"

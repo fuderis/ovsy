@@ -11,12 +11,12 @@ use std::{
 /// The default system prompt
 const SYSTEM_PROMPT: &'static str = r#"
 # ACTUAL SYSTEM INFO:
-THIS DATA IS ALWAYS RELEVANT, ALWAYS USE IT AS A PRIORITY.
 
-1. Datetime (always use the current time):
-  * Local: {DATETIME_LOCAL};
-  * Global: {DATETIME_GLOBAL}
-  * Moscow: {DATETIME_MOSCOW};
+1. Datetime (now):
+- Global: {DATETIME_GLOBAL}
+- Local: {DATETIME_LOCAL}
+  
+(If the user did not specify a time zone in the request, assume that he meant the local time.)
 "#;
 
 /// The default assistant prompt

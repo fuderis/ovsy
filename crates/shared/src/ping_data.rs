@@ -1,9 +1,9 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// The health response structure
+/// The ping response data
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HealthData {
+pub struct PingData {
     #[serde(default)]
     pub log_file: Option<PathBuf>,
     #[serde(default)]

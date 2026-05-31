@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-pub use crate::Manager;
+pub use crate::{Manager, error::Error};
 pub use ovsy_shared::{Settings, app_data, result::*};
 
 pub use atoman::*;

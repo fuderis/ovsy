@@ -46,21 +46,17 @@ pub async fn handle(start_lms: bool) -> Result<()> {
         };
 
         if !is_running {
-            if let Ok(out) = Command::new("lms").args(["server", "start"]).output().await {
-                if match Command::new("lms").args(["status"]).output().await {
-                    Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
-                    _ => false,
-                } {
-                    println!("{}", "Online".green());
-                } else {
-                    println!("{}", "Failed".red());
-                    return Err(String::from_utf8_lossy(&out.stdout).into());
-                }
+            let _ = Command::new("lms").args(["server", "start"]).output().await;
+            if match Command::new("lms").args(["status"]).output().await {
+                Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
+                _ => false,
+            } {
+                println!("{}", "Online".green());
             } else {
                 println!("{}", "Failed".red());
             }
 
-            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            time::sleep(Duration::from_secs(2)).await;
         } else {
             println!("{}", "Online".green());
         }

@@ -7,7 +7,7 @@ use reqwest::Client;
 fn system_prompt(ai_conf: &AssistantOptions) -> String {
     let now_utc = Utc::now();
     let now_local = Local::now();
-    let time_format = "%A, %B %d, %Y %H:%M:%S UTC%Z";
+    let time_format = "%A, %B %d, %I:%M:%S %p";
 
     ai_conf
         .system_prompt
@@ -110,7 +110,7 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
 
     // logging to thinking block:
     let msg = str!(
-        "**● Handling `{}` agent:** *\"{:.40}...\"*",
+        "**Handling `{}`:** *\"{:.40}...\"*",
         task.agent_name,
         task.task_query.trim_end_matches(".")
     );
@@ -172,7 +172,7 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
         full_text.push('\n');
 
         let msg = str!(
-            "**∟ Calling tool:** *`{} -> {}`...*\n",
+            "**Calling tool:** *`{} -> {}`...*\n",
             task.agent_name,
             func.name
         );
@@ -182,7 +182,7 @@ pub(crate) async fn handle_agent(tx: Sender, handle: AgentHandle) -> Result<()> 
 
         // send to agent server:
         let response = client
-            .post(&str!("http://127.0.0.1:{port}/tool/{}", func.name))
+            .post(&str!("http://127.0.0.1:{port}/call/{}", func.name))
             .header("Content-Type", "application/json")
             .json(&func.parse_args::<JsonValue>()?)
             .send()

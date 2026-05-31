@@ -41,11 +41,6 @@ impl Manager {
         while let Some(entry) = reader.next_dir().await? {
             let path = entry.path().clone();
 
-            // skip non-agents:
-            if !path.join("Ovsy.toml").is_file() {
-                continue;
-            }
-
             // spawn agent running:
             set.spawn(async move { Self::run(path).await });
         }
@@ -96,7 +91,7 @@ impl Manager {
         info!("[MANAGER] Starting agent from: {:?}", path);
 
         if let Some(agent) = Agent::run(path.clone()).await? {
-            let name = arc!(agent.manifest.agent.name.clone());
+            let name = arc!(agent.info.name.clone());
             let mut lock = MANAGER.lock().await;
 
             if !lock.agents.contains_key(&name) {
@@ -141,7 +136,7 @@ impl Manager {
 
         // stop all the outdated agents:
         for name in to_restart {
-            warn!("[MANAGER] Agent [{}] needs update, restarting...", name);
+            warn!("[MANAGER] Agent `{}` needs update, restarting...", name);
             Self::stop(name).await?;
         }
 
@@ -166,7 +161,7 @@ impl Manager {
             let _ = writeln!(
                 doc_builder,
                 "* Agent `{}`: {}",
-                agent.manifest.agent.name, agent.manifest.agent.description
+                agent.info.name, agent.info.description
             );
         }
 
@@ -186,9 +181,9 @@ impl Manager {
             .agents
             .iter()
             .map(|(_, agent)| AgentInfo {
-                name: agent.manifest.agent.name.clone(),
-
-                description: agent.manifest.agent.description.clone(),
+                name: agent.info.name.clone(),
+                description: agent.info.description.clone(),
+                ..Default::default()
             })
             .collect()
     }
@@ -215,7 +210,7 @@ impl Manager {
             .await
             .agents
             .get(name)
-            .map(|agent| agent.manifest.agent.prompt.clone())
+            .map(|agent| agent.info.prompt.clone())
     }
 
     /// Returns the agent tools list
@@ -225,7 +220,7 @@ impl Manager {
             .await
             .agents
             .get(name)
-            .map(|agent| agent.manifest.tools.clone())
+            .map(|agent| agent.info.tools.clone())
     }
 
     /// Returns the agent options (port, prompt, tools)
@@ -233,8 +228,8 @@ impl Manager {
         MANAGER.get().await.agents.get(name).map(|agent| {
             (
                 agent.port,
-                agent.manifest.agent.prompt.clone(),
-                agent.manifest.tools.clone(),
+                agent.info.prompt.clone(),
+                agent.info.tools.clone(),
             )
         })
     }

@@ -18,4 +18,10 @@ pub enum PowerMode {
 
     #[display = "logout"]
     Logout,
+
+    #[display = "cancel"]
+    Cancel,
+
+    #[display = "status"]
+    Status,
 }
