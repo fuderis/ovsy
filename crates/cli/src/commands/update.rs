@@ -1,6 +1,6 @@
 use crate::{UNDERLINE_COUNT, prelude::*};
 use colored::*;
-use ovsy_shared::{AgentInfo, StatusData};
+use ovsy_share::{AgentInfo, StatusData};
 use reqwest::Client;
 use std::io::{self, Write};
 

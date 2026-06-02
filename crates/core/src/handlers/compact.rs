@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use anylm::{AiChunk, Completions, Messages};
-use ovsy_shared::{Chunk, UserQuery};
+use ovsy_share::{Chunk, UserQuery};
 
 /// API: Compressing the context history
 pub async fn handle(data: Json<UserQuery>) -> Response {

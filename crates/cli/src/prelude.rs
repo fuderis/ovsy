@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-pub use ovsy_shared::{Settings, app_data, app_version, result::*};
+pub use ovsy_share::{Settings, app_data, app_version, result::*};
 
 pub use atoman::*;
 pub use macron::*;

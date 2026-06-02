@@ -10,7 +10,7 @@ pub struct ParserState {
 }
 
 /// Parses the markdown format
-pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
+pub fn parse_markdown(text: &str, max_width: usize) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut state = ParserState {
         in_code_block: false,
@@ -99,11 +99,11 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
             continue;
         }
 
-        // header, list item, quote:
-        let (content, base_style, prefix) = match raw_line {
+        // header, list item, numbered list, quote:
+        let (content, base_style, prefix, prefix_len) = match raw_line {
             // header:
-            s if s.starts_with("#") => {
-                let dots = s.len() - s.trim_start_matches("#").len();
+            s if s.starts_with('#') => {
+                let dots = s.len() - s.trim_start_matches('#').len();
                 let rest = s[dots..].trim_start();
                 let style = match dots {
                     1 => Style::default().cyan().bold().underlined(),
@@ -112,7 +112,7 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
                     5 => Style::default().white().bold().italic(),
                     _ => Style::default().white().italic(),
                 };
-                (rest, style, None)
+                (rest, style, None, 0)
             }
 
             // list item:
@@ -120,7 +120,41 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
                 s.trim_start_matches("- ").trim(),
                 Style::default().white(),
                 Some(Span::styled(" • ", Style::default().cyan().bold())),
+                3,
             ),
+
+            // numbered list item:
+            s if s
+                .trim_start()
+                .chars()
+                .next()
+                .map_or(false, |c| c.is_ascii_digit()) =>
+            {
+                let trimmed = s.trim_start();
+                let num_len = trimmed.chars().take_while(|c| c.is_ascii_digit()).count();
+
+                if trimmed[num_len..].starts_with(". ") {
+                    let dot_and_space_len = 2;
+                    let full_prefix_len = num_len + dot_and_space_len;
+
+                    let num_str = &trimmed[..num_len];
+                    let rest = &trimmed[full_prefix_len..];
+
+                    let num_prefix =
+                        Span::styled(format!(" {}. ", num_str), Style::default().cyan().bold());
+
+                    let visual_len = num_str.len() + 3;
+
+                    (
+                        rest.trim(),
+                        Style::default().white(),
+                        Some(num_prefix),
+                        visual_len,
+                    )
+                } else {
+                    (s, Style::default().white(), None, 0)
+                }
+            }
 
             // quote:
             s if s.starts_with("> ") => (
@@ -130,13 +164,14 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
                     .fg(Color::Rgb(200, 200, 200))
                     .italic(),
                 None,
+                0,
             ),
 
-            s => (s, Style::default().white(), None),
+            s => (s, Style::default().white(), None, 0),
         };
 
         let wrap_width = if prefix.is_some() {
-            max_width.saturating_sub(3)
+            max_width.saturating_sub(prefix_len)
         } else {
             max_width
         };
@@ -151,7 +186,7 @@ pub fn parse(text: &str, max_width: usize) -> Vec<Line<'static>> {
                     spans.push(p.clone());
                     is_first_wrapped_line = false;
                 } else {
-                    spans.push(Span::raw("   "));
+                    spans.push(Span::raw(" ".repeat(prefix_len)));
                 }
             }
 

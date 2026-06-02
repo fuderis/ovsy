@@ -1,7 +1,7 @@
 use super::Manager;
 use crate::prelude::*;
 
-use ovsy_shared::AgentInfo;
+use ovsy_share::AgentInfo;
 use reqwest::Client;
 use std::time::SystemTime;
 use tokio::process::{Child, Command};

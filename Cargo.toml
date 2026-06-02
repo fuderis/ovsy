@@ -1,11 +1,11 @@
 [workspace]
-members = ["crates/cli", "crates/server", "crates/shared", "agents/system"]
-default-members = ["crates/cli", "crates/server", "agents/system"]
+members = ["crates/cli", "crates/core", "crates/share", "agents/system"]
+default-members = ["crates/cli", "crates/core", "agents/system"]
 resolver = "3"
 
 [workspace.dependencies]
-ovsy-shared = { path = "crates/shared" }
-atoman = { version = "0.2.21", features = ["full"] }
+ovsy-share = { path = "crates/share" }
+atoman = { version = "0.2.22", features = ["full"] }
 macron = { version = "0.1.18", features = ["full"] }
 pearce = "0.1.0"
 anylm = "0.1.22"

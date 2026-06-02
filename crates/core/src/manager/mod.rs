@@ -6,7 +6,7 @@ pub use handle::{AgentHandle, Workflow};
 
 use crate::prelude::*;
 use anylm::{Schema, Tool};
-use ovsy_shared::AgentInfo;
+use ovsy_share::AgentInfo;
 use std::fmt::Write;
 use tokio::task::JoinSet;
 

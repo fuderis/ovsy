@@ -3,7 +3,7 @@ name = "system-agent"
 edition = "2024"
 
 [dependencies]
-ovsy-shared.workspace = true
+ovsy-share.workspace = true
 tokio.workspace = true
 macron.workspace = true
 atoman.workspace = true

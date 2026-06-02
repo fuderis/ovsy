@@ -1,5 +1,5 @@
 use crate::{Manager, prelude::*};
-use ovsy_shared::StatusData;
+use ovsy_share::StatusData;
 
 /// API: Refresh the server settings & agents list
 pub async fn handle() -> Response {

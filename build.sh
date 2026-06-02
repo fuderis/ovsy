@@ -4,7 +4,7 @@
 UNDERLINE_COUNT=40
 INSTALL_DIR="$HOME/.ovsy"
 PORT=7878
-BINARIES=("ovsy-cli" "ovsy-server")
+BINARIES=("ovsy-cli" "ovsy-core")
 
 # Colors:
 NC='\033[0m'         # no color

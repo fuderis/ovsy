@@ -1,6 +1,6 @@
 use crate::prelude::*;
 use colored::*;
-use ovsy_shared::{AgentInfo, StatusData};
+use ovsy_share::{AgentInfo, StatusData};
 use reqwest::Client;
 use tokio::process::Command;
 

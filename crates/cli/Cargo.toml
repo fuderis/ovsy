@@ -3,7 +3,7 @@ name = "ovsy-cli"
 edition = "2024"
 
 [dependencies]
-ovsy-shared.workspace = true
+ovsy-share.workspace = true
 atoman.workspace = true
 macron.workspace = true
 anylm.workspace = true

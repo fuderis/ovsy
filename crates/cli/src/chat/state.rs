@@ -17,6 +17,7 @@ pub struct AppState {
     pub messages: Arc<State<Vec<Message>>>,
     pub response_index: usize,
     pub chat_scroll: u16,
+    pub cycles: usize,
 
     pub commands: Vec<(&'static str, &'static str)>,
     pub status: Option<String>,
@@ -48,6 +49,7 @@ impl AppState {
             messages: arc!(State::new()),
             response_index: 0,
             chat_scroll: 0,
+            cycles: 0,
 
             commands,
             status: None,

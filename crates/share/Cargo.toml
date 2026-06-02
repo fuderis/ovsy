@@ -1,5 +1,5 @@
 [package]
-name = "ovsy-shared"
+name = "ovsy-share"
 edition = "2024"
 
 [dependencies]

@@ -1,4 +1,4 @@
-use ovsy_server::{Manager, handlers, prelude::*};
+use ovsy_core::{Manager, handlers, prelude::*};
 use pearce::Server;
 
 #[tokio::main]

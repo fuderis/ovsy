@@ -1,5 +1,5 @@
 use crate::prelude::*;
-use ovsy_shared::PingData;
+use ovsy_share::PingData;
 
 /// API: Handles the `/ping` action
 pub async fn handle() -> Response {

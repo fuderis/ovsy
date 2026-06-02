@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 pub use crate::{Manager, error::Error};
-pub use ovsy_shared::{Settings, app_data, result::*};
+pub use ovsy_share::{Settings, app_data, result::*};
 
 pub use atoman::*;
 pub use chrono::{DateTime, Local, Utc};

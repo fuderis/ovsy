@@ -1,6 +1,6 @@
 use crate::{handlers::query, prelude::*};
 use async_recursion::async_recursion;
-use ovsy_shared::{AgentTask, Chunk};
+use ovsy_share::{AgentTask, Chunk};
 use tokio::task::JoinHandle;
 
 /// The agent tasks worflow

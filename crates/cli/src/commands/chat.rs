@@ -1,5 +1,5 @@
 use crate::{
-    chat::{AppState, ChatAction, markdown, utils},
+    chat::{self, AppState, ChatAction},
     prelude::*,
 };
 
@@ -9,14 +9,11 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_shared::{Chunk, ChunkData, UserQuery};
+use ovsy_share::{Chunk, ChunkData, UserQuery};
 use ratatui::{
-    Frame, Terminal,
+    Terminal,
     backend::{Backend, CrosstermBackend},
-    layout::{Alignment, Constraint, Direction, HorizontalAlignment, Layout, Rect},
-    style::{Color, Style, Stylize},
-    text::{Line, Span, Text},
-    widgets::{Block, BorderType, Borders, Paragraph, Wrap},
+    style::Stylize,
 };
 use reqwest::Client;
 use std::{io, process::Command};
@@ -99,7 +96,7 @@ async fn run_app<B: Backend>(
     loop {
         app.tick_count += 1;
         terminal
-            .draw(|f| render_tui(f, app))
+            .draw(|f| chat::render_tui(f, app))
             .map_err(|e| e.to_string())?;
 
         // processing incoming data from the server:
@@ -253,6 +250,9 @@ async fn handle_input(app: &mut AppState) {
             }
         }
     } else {
+        // reset cycles:
+        app.cycles = 0;
+
         // add user message:
         {
             let mut msgs = app.messages.lock().await;
@@ -332,7 +332,7 @@ async fn chat_worker(
                                 let msgs_len = msgs.len();
 
                                 if msgs_len > preserve {
-                                    let chunks = utils::split_messages(msgs.clone());
+                                    let chunks = chat::split_messages(msgs.clone());
                                     if chunks.len() > preserve {
                                         let to_compress: Vec<Message> = chunks
                                             [..chunks.len() - preserve]
@@ -530,18 +530,21 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
                 app.status.take();
 
                 // do control query:
-                if let Some(last_msg) = msgs.last()
-                    && last_msg.role.is_tool()
-                {
-                    let tx = app.tx.clone();
-                    let messages = app.messages.clone();
-                    app.response_index = msgs.len() + 1;
+                if app.cycles <= Settings::get().assistant.max_cycles {
+                    if let Some(last_msg) = msgs.last()
+                        && last_msg.role.is_tool()
+                    {
+                        let tx = app.tx.clone();
+                        let messages = app.messages.clone();
+                        app.response_index = msgs.len() + 1;
+                        app.cycles += 1;
 
-                    tokio::spawn(async move {
-                        handle_control_query(tx, messages).await;
-                    });
-                } else {
-                    app.is_busy = false;
+                        tokio::spawn(async move {
+                            handle_control_query(tx, messages).await;
+                        });
+                    } else {
+                        app.is_busy = false;
+                    }
                 }
             }
         }
@@ -571,23 +574,26 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
                 }
 
                 app.chat_scroll = u16::MAX;
+
+                // trying to fix error:
+                if app.cycles <= Settings::get().assistant.max_cycles {
+                    if !app.is_canceled {
+                        let tx = app.tx.clone();
+                        let messages = app.messages.clone();
+                        app.response_index = messages.dirty_get().len() + 1;
+                        app.cycles += 1;
+
+                        tokio::spawn(async move {
+                            handle_control_query(tx, messages).await;
+                        });
+                    }
+                }
             } else {
                 app.is_busy = false;
                 app.status.take();
                 app.messages.lock().await.push(Message::system(vec![
                     str!("Critical Error: {error}").into(),
                 ]));
-            }
-
-            // trying to fix error:
-            if !app.is_canceled {
-                let tx = app.tx.clone();
-                let messages = app.messages.clone();
-                app.response_index = messages.dirty_get().len() + 1;
-
-                tokio::spawn(async move {
-                    handle_control_query(tx, messages).await;
-                });
             }
         }
     }
@@ -605,344 +611,4 @@ async fn handle_control_query(
     }
 
     let _ = tx.send(ChatAction::Query(str!()));
-}
-
-// --------------------- TUI RENDER's ----------------------------
-
-/// Renderers the user interface
-fn render_tui(f: &mut Frame, app: &mut AppState) {
-    let area = f.area();
-    let msgs = app.messages.dirty_get();
-
-    // --- 1. CALCULATE INPUT HEIGHT ---
-    let prefix = " ❯ ";
-    let inner_width = area.width.saturating_sub(2) as usize;
-
-    let wrap_options = textwrap::Options::new(inner_width)
-        .break_words(true)
-        .word_separator(textwrap::WordSeparator::AsciiSpace);
-
-    let full_text = str!("{prefix}{}", app.input);
-    let wrapped_lines = textwrap::wrap(&full_text, wrap_options.clone());
-
-    let line_count = wrapped_lines.len().max(1) as u16;
-    let dynamic_input_height = (line_count + 2).clamp(3, 8);
-
-    let chunks = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([
-            Constraint::Length(4),
-            Constraint::Min(1),
-            Constraint::Length(dynamic_input_height),
-            Constraint::Length(1),
-        ])
-        .split(area);
-
-    app.chat_area = chunks[1];
-    app.input_area = chunks[2];
-
-    // --- 3. HEADER ---
-    render_header(f, chunks[0]);
-
-    // --- 4. CHAT HISTORY ---
-    let chat_area = chunks[1];
-    let chat_inner_height = chat_area.height.saturating_sub(2);
-    let chat_inner_width = chat_area.width.saturating_sub(1);
-
-    let mut history: Vec<Line> = Vec::new();
-
-    // render messages:
-    for msg in msgs.iter() {
-        // collect content:
-        let text_content = msg
-            .content
-            .iter()
-            .filter_map(|p| {
-                if let Content::Text { text } = p {
-                    Some(text.as_str())
-                } else {
-                    None
-                }
-            })
-            .collect::<String>()
-            .trim()
-            .to_string();
-
-        if text_content.is_empty() {
-            continue;
-        }
-
-        // metadata line:
-        if msg.role.is_user() {
-            let meta_line = Line::from(vec![Span::styled(
-                str!(
-                    "{}",
-                    msg.timestamp
-                        .map(|t| t
-                            .with_timezone(&Local)
-                            .format("%a %B %d  %I:%M %p")
-                            .to_string())
-                        .unwrap_or_else(|| "??:??:??".to_string())
-                ),
-                Style::default().bg(Color::Cyan).fg(Color::Black).bold(),
-            )]);
-
-            history.push(Line::raw(""));
-            history.push(meta_line);
-        } else if !history.is_empty() {
-            history.push(Line::raw(""));
-        }
-
-        let msg_lines = markdown::parse(&text_content, chat_inner_width as usize);
-
-        if msg.role.is_user() {
-            for line in msg_lines {
-                history.push(
-                    line.patch_style(
-                        Style::default()
-                            .bg(Color::Rgb(15, 15, 15))
-                            .fg(Color::DarkGray),
-                    ),
-                );
-            }
-        } else if msg.role.is_tool() {
-            for line in msg_lines {
-                history.push(line.patch_style(Style::default().dim()));
-            }
-        } else {
-            history.extend(msg_lines);
-        }
-    }
-
-    let total_lines = history.len() as u16;
-    let chat_height = chat_area.height.saturating_sub(2) as u16;
-    let max_chat_scroll = total_lines.saturating_sub(chat_inner_height);
-    app.chat_scroll = app.chat_scroll.min(max_chat_scroll);
-
-    // calculate scroll lines:
-    let current_line = if total_lines <= chat_height {
-        total_lines
-    } else {
-        (app.chat_scroll + chat_height).min(total_lines)
-    };
-
-    let max_tokens = Settings::get()
-        .assistant
-        .completions
-        .max_tokens
-        .unwrap_or(1) as usize;
-
-    let tokens_count = utils::count_tokens(&msgs);
-
-    fn make_progress_bar(current: usize, max: usize, width: usize) -> String {
-        if max == 0 {
-            return " ".repeat(width);
-        }
-        let ratio = (current as f32 / max as f32).clamp(0.0, 1.0);
-        let filled_len = (ratio * width as f32).round() as usize;
-        let empty_len = width.saturating_sub(filled_len);
-
-        str!("{}{}", "■".repeat(filled_len), "□".repeat(empty_len))
-    }
-
-    let pb = make_progress_bar(tokens_count, max_tokens, 10);
-    let tokens_text = str!("{}/{}", tokens_count, max_tokens);
-    let lines_text = str!(
-        "{}/{}",
-        current_line.saturating_sub(1),
-        total_lines.saturating_sub(1)
-    );
-
-    let ratio = if max_tokens > 0 {
-        (tokens_count as f32 / max_tokens as f32).clamp(0.0, 1.0)
-    } else {
-        0.0
-    };
-
-    let pb_color = if ratio <= 0.7 {
-        Color::Cyan
-    } else if ratio < 0.9 {
-        Color::Yellow
-    } else {
-        Color::Red
-    };
-
-    let title_left = Line::from(vec![
-        Span::raw(" ["),
-        Span::styled(pb, Style::default().fg(pb_color)),
-        Span::raw("] "),
-        Span::styled(tokens_text, Style::default().fg(Color::White)),
-        Span::raw(" "),
-    ]);
-
-    let title_right = Line::from(vec![
-        Span::raw(" "),
-        Span::styled(lines_text, Style::default().fg(Color::White)),
-        Span::raw(" "),
-    ]);
-
-    let title_right2 = Line::from(vec![Span::raw(" ")]);
-
-    f.render_widget(
-        Paragraph::new(history).scroll((app.chat_scroll, 0)).block(
-            Block::default()
-                .borders(Borders::LEFT | Borders::TOP)
-                .border_style(Style::default().dim())
-                .title(title_left)
-                .title(title_right.alignment(HorizontalAlignment::Right))
-                .title(title_right2.alignment(HorizontalAlignment::Right)),
-        ),
-        chat_area,
-    );
-
-    // free lock:
-    drop(msgs);
-
-    // --- 5. INPUT BLOCK ---
-    let input_area = chunks[2];
-    let input_inner_height = input_area.height.saturating_sub(2);
-
-    // prepare input text:
-    let text_before_cursor = &app.input[..app.input_cursor];
-    let text_temp = str!("{}{}_", prefix, text_before_cursor);
-    let wrapped_before = textwrap::wrap(&text_temp, wrap_options.clone());
-    let cursor_row = (wrapped_before.len() as u16).saturating_sub(1);
-
-    // input scroll:
-    if cursor_row >= app.input_scroll + input_inner_height {
-        app.input_scroll = cursor_row - input_inner_height + 1;
-    }
-    if cursor_row < app.input_scroll {
-        app.input_scroll = cursor_row;
-    }
-
-    let dots_count = (app.tick_count / 30) % 4;
-    let dots = ".".repeat(dots_count as usize);
-    let thinking_text = str!(" Thinking{dots:<3} ");
-
-    f.render_widget(
-        Paragraph::new(Line::from(vec![
-            Span::styled(
-                prefix,
-                if app.is_busy {
-                    Color::White
-                } else {
-                    Color::Cyan
-                },
-            ),
-            app.input.as_str().into(),
-        ]))
-        .wrap(Wrap { trim: false })
-        .scroll((app.input_scroll, 0))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .border_type(BorderType::Rounded)
-                .title(if app.is_busy {
-                    Span::styled(thinking_text, Style::default().fg(Color::White).italic())
-                } else {
-                    Span::styled(" Input ", Style::default().fg(Color::Cyan))
-                })
-                .border_style(Style::default().fg(if app.is_busy {
-                    Color::White
-                } else {
-                    Color::Cyan
-                })),
-        ),
-        input_area,
-    );
-
-    // --- 6. CURSOR POSITION ---
-    let last_line_len = wrapped_before
-        .last()
-        .map(|s| s.chars().count())
-        .unwrap_or(0);
-    let last_line = last_line_len.saturating_sub(1);
-
-    f.set_cursor_position((
-        input_area.x + 1 + last_line as u16,
-        input_area.y + 1 + cursor_row - app.input_scroll,
-    ));
-
-    // --- 7. FOOTER ---
-    render_footer(f, chunks[3], app);
-}
-
-/// Renders the header section
-fn render_header(f: &mut Frame, area: Rect) {
-    let block = Block::default()
-        .borders(Borders::ALL)
-        .border_type(BorderType::Rounded)
-        .border_style(Style::default().fg(Color::Cyan))
-        .title(str!(" Ovsy {} ", app_version()));
-
-    let inner = block.inner(area);
-    f.render_widget(block, area);
-
-    let layout = Layout::default()
-        .direction(Direction::Vertical)
-        .constraints([Constraint::Length(3)])
-        .split(inner);
-
-    let content_area = Layout::default()
-        .direction(Direction::Horizontal)
-        .constraints([
-            Constraint::Length(2),
-            Constraint::Percentage(100),
-            Constraint::Length(2),
-        ])
-        .split(layout[0]);
-
-    let current_path = std::env::current_dir()
-        .map(|p| p.display().to_string())
-        .unwrap_or_else(|_| "Unknown".to_string());
-
-    let left_text = Text::from(vec![
-        Line::from(vec![
-            Span::styled("Model: ", Style::default().white().bold()),
-            Span::styled(
-                Settings::get().assistant.completions.model.clone(),
-                Style::default().gray(),
-            ),
-        ]),
-        Line::from(vec![
-            Span::styled("Dir: ", Style::default().white().bold()),
-            Span::styled(current_path, Style::default().gray()),
-        ]),
-    ]);
-
-    f.render_widget(Paragraph::new(left_text), content_area[1]);
-}
-
-/// Renders the footer section
-fn render_footer(f: &mut Frame, area: Rect, app: &AppState) {
-    let help_line = if let Some(status) = app.status.as_ref().filter(|s| !s.is_empty()) {
-        let parsed_lines = markdown::parse(status, usize::MAX);
-
-        let mut spans = vec!["  ".into()];
-        for line in parsed_lines {
-            for span in line.spans {
-                spans.push(span.italic());
-            }
-        }
-
-        if spans.len() > 1 {
-            Line::from(spans)
-        } else {
-            Line::from(vec!["  ".into(), status.as_str().dim().italic()])
-        }
-    } else {
-        let commands = &app.commands;
-        let index = (app.tick_count / 360) as usize % commands.len();
-        let (cmd, desc) = commands[index];
-
-        Line::from(vec![
-            "  ".into(),
-            cmd.bold().cyan(),
-            " ".into(),
-            desc.gray().italic(),
-        ])
-    };
-
-    f.render_widget(Paragraph::new(help_line).alignment(Alignment::Left), area);
 }

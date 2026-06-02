@@ -1,9 +1,9 @@
 [package]
-name = "ovsy-server"
+name = "ovsy-core"
 edition = "2024"
 
 [dependencies]
-ovsy-shared.workspace = true
+ovsy-share.workspace = true
 atoman.workspace = true
 macron.workspace = true
 pearce.workspace = true

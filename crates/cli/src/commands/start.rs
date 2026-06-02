@@ -10,7 +10,7 @@ use tokio::process::Command;
 
 /// API: Handles the `start` command
 pub async fn handle(start_lms: bool) -> Result<()> {
-    let server_path = path!("$/ovsy-server{}", if cfg!(windows) { ".exe" } else { "" });
+    let server_path = path!("$/ovsy-core{}", if cfg!(windows) { ".exe" } else { "" });
 
     if !server_path.exists() {
         return Err(str!("Server binary missing. Please, re-install Ovsy.").into());
@@ -47,6 +47,8 @@ pub async fn handle(start_lms: bool) -> Result<()> {
 
         if !is_running {
             let _ = Command::new("lms").args(["server", "start"]).output().await;
+            time::sleep(Duration::from_secs(1000)).await;
+
             if match Command::new("lms").args(["status"]).output().await {
                 Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
                 _ => false,
@@ -55,8 +57,6 @@ pub async fn handle(start_lms: bool) -> Result<()> {
             } else {
                 println!("{}", "Failed".red());
             }
-
-            time::sleep(Duration::from_secs(2)).await;
         } else {
             println!("{}", "Online".green());
         }

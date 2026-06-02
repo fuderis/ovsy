@@ -1,6 +1,6 @@
 use crate::{manager::AgentHandle, prelude::*};
 use anylm::{AiChunk, Completions, Messages, ToolCall};
-use ovsy_shared::{AgentTask, Chunk, ChunkData, UserQuery, settings::AssistantOptions};
+use ovsy_share::{AgentTask, Chunk, ChunkData, UserQuery, settings::AssistantOptions};
 use reqwest::Client;
 
 /// Generates the system prompt

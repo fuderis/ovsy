@@ -459,9 +459,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.2.21"
+version = "0.2.22"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3545e0b7ecfb6b4cddff1feb07c2c97dab1bf495146e4cd822cdcd540feba4e9"
+checksum = "ce2fc5fdd739f5fbe52d502bfc3cd1b074ea4952683cf7b2781be23bb8a447cb"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -4329,7 +4329,7 @@ dependencies = [
  "crossterm",
  "hyperrat",
  "macron",
- "ovsy-shared",
+ "ovsy-share",
  "ratatui",
  "reqwest 0.13.2",
  "serde",
@@ -4340,7 +4340,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ovsy-server"
+name = "ovsy-core"
 version = "0.0.0"
 dependencies = [
  "anylm",
@@ -4349,7 +4349,7 @@ dependencies = [
  "chrono",
  "cistern",
  "macron",
- "ovsy-shared",
+ "ovsy-share",
  "pearce",
  "reqwest 0.13.2",
  "serde",
@@ -4358,7 +4358,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "ovsy-shared"
+name = "ovsy-share"
 version = "0.0.0"
 dependencies = [
  "anylm",
@@ -5911,7 +5911,7 @@ dependencies = [
  "chrono",
  "clap",
  "macron",
- "ovsy-shared",
+ "ovsy-share",
  "pearce",
  "regex",
  "serde",
