@@ -21,7 +21,7 @@ pub async fn handle(start_lms: bool) -> Result<()> {
     print!("Starting Ovsy server... ");
     io::stdout().flush().ok();
 
-    // check for for busy:
+    // check port for busy:
     let is_port_free = TcpListener::bind(str!("127.0.0.1:{port}")).is_ok();
     if is_port_free {
         Command::new(server_path)

@@ -96,9 +96,9 @@ impl Manager {
 
             if !lock.agents.contains_key(&name) {
                 lock.agents.insert(name.clone(), arc!(agent));
-                info!("[MANAGER] Agent [{name}] added to manager");
+                info!("[MANAGER] Agent `{name}` added to manager");
             } else {
-                warn!("[MANAGER] Agent [{name}] is already running, skipping");
+                warn!("[MANAGER] Agent `{name}` is already running, skipping");
             }
         }
 
@@ -110,9 +110,9 @@ impl Manager {
     pub async fn stop(name: Arc<String>) -> Result<()> {
         let mut lock = MANAGER.lock().await;
         if lock.agents.remove(&name).is_some() {
-            info!("[MANAGER] Agent [{}] stopped and removed", name);
+            info!("[MANAGER] Agent `{}` stopped and removed", name);
         } else {
-            warn!("[MANAGER] Attempted to stop unknown agent: [{}]", name);
+            warn!("[MANAGER] Attempted to stop unknown agent: `{}`", name);
         }
 
         Self::update_doc().await?;

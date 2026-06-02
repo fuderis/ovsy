@@ -28,7 +28,7 @@ pub async fn handle() -> Result<()> {
     let status_url = str!("http://127.0.0.1:{port}/update");
 
     if client.get(&status_url).send().await.is_err() {
-        let bin_path = path!("$/ovsy-server{}", if cfg!(windows) { "exe" } else { "" });
+        let bin_path = path!("$/ovsy-core{}", if cfg!(windows) { "exe" } else { "" });
         if Command::new(bin_path).arg("start").spawn().is_ok() {
             let mut is_ok = false;
 
