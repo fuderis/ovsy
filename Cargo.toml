@@ -8,7 +8,7 @@ ovsy-share = { path = "crates/share" }
 atoman = { version = "0.2.22", features = ["full"] }
 macron = { version = "0.1.18", features = ["full"] }
 pearce = "0.1.0"
-anylm = "0.1.22"
+anylm = "0.1.23"
 cistern = "0.1.0"
 tokio = { version = "1.51.0", features = ["full"] }
 async-recursion = "1.1.1"
