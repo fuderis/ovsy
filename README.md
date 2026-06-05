@@ -1,5 +1,7 @@
 # Ovsy Assistant
 
+![Banner](/assets/banner.png)
+
 ## Overview
 
 **Ovsy** is a high-performance **AI Assistant Kernel** designed around a modular, multi-agent architecture.
@@ -13,6 +15,8 @@ This document outlines the structural design of the Ovsy assistant, its core orc
 and the technical rationale behind its communication architecture.
 
 ## Orchestration Architecture
+
+![Architecture](/assets/architecture.jpg)
 
 The Ovsy assistant coordinates user queries through a multi-stage orchestration engine governed
 by a central execution loop (**handle_task**).
@@ -192,3 +196,10 @@ decoupled library frameworks:
 > By keeping the core architecture slim and offloading specialized tasks to this robust underlying stack,
 Ovsy offers developers and stakeholders a clean, enterprise-ready AI assistant environment optimized for speed,
 predictability, and structural safety.
+
+## License & Feedback
+
+> This software distributed under the [GPL 3.0](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
+
+You can contact me via [GitHub](https://github.com/fuderis) or send a message to my [E-Mail](mailto:synapdrake@ya.ru).
+This library is actively evolving, and your suggestions and feedback are always welcome!
