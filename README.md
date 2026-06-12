@@ -132,6 +132,12 @@ the orchestrator provides a set of dedicated endpoints.
 
 > All requests are made using the POST method, and both request and response bodies expect JSON format.
 
+  * **POST `/messages`**: Retrieves the message history for a specific session by its `SessionID`.
+  Used to restore the conversation context in the UI.
+
+  * **POST `/clear`**: Clears the session history by `SessionID`, deleting all associated messages from the database.
+  Allows resetting the context to start a fresh conversation.
+
   * **POST `/handle`**: The primary endpoint for interacting with the system.
   It receives a full user dialog (messages), routes it to the appropriate agents,
   and returns the generated response as SSE.
