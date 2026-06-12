@@ -191,7 +191,7 @@ decoupled library frameworks:
 | **Atoman**  | Asynchronous feature management and memory-safe data ownership across threads.              | Custom Concurrency Layer |
 | **AnyLM**   | Universal AI SDK abstracting cloud APIs and local inference engines into a single protocol. | Standardized SDK         |
 | **Pearce**  | Ultra-lean, high-throughput TCP web server framework powering agent communication.          | Built on Axum            |
-| **Cistern** | High-performance, asynchronous Retrieval-Augmented Generation (RAG) database engine.        | Built on LanceDB         |
+| **Cistern** | High-performance, asynchronous Key-Value & Retrieval-Augmented Generation database engine.  | Built on LanceDB & Sled  |
 
 > By keeping the core architecture slim and offloading specialized tasks to this robust underlying stack,
 Ovsy offers developers and stakeholders a clean, enterprise-ready AI assistant environment optimized for speed,
