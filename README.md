@@ -16,7 +16,7 @@ and the technical rationale behind its communication architecture.
 
 ## Orchestration Architecture
 
-![Architecture](/assets/architecture.jpg)
+![Scheme](/assets/scheme.jpg)
 
 The Ovsy assistant coordinates user queries through a multi-stage orchestration engine governed
 by a central execution loop (**handle_task**).

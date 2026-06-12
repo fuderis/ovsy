@@ -3,13 +3,15 @@ use crate::{
     prelude::*,
 };
 
-use anylm::{Content, Message};
+use anylm::{Message, Messages};
 use crossterm::{
     event::{self, Event, KeyCode, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_share::{Chunk, ChunkData, UserQuery};
+use ovsy_share::{
+    Chunk, ChunkData, ClearQuery, CompactQuery, HandleQuery, MessagesQuery, SessionID,
+};
 use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
@@ -256,9 +258,9 @@ async fn handle_input(app: &mut AppState) {
         // add user message:
         {
             let mut msgs = app.messages.lock().await;
-            msgs.push(Message::user(vec![trimmed.into()]));
-            msgs.push(Message::assistant(vec![], vec![]));
-            app.response_index = msgs.len() - 1;
+            msgs.add_message(Message::user(vec![trimmed.into()]));
+            msgs.add_message(Message::assistant(vec![], vec![]));
+            app.response_index = msgs.messages.len() - 1;
         }
 
         // send query to worker:
@@ -275,11 +277,27 @@ async fn handle_input(app: &mut AppState) {
 async fn chat_worker(
     mut input_rx: mpsc::UnboundedReceiver<ChatAction>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
-    messages: Arc<State<Vec<Message>>>,
+    messages: Arc<State<Messages>>,
 ) {
     let port = Settings::get().server.port;
     let client = reqwest::Client::new();
     let base_url = str!("http://127.0.0.1:{port}");
+
+    let session_id = SessionID::new(0);
+
+    if let Ok(res) = client
+        .post(str!("{base_url}/messages"))
+        .json(&MessagesQuery::new(session_id.clone()))
+        .send()
+        .await
+    {
+        if let Ok(history) = res.json::<Vec<Message>>().await {
+            let mut msgs = messages.lock().await;
+            msgs.messages = history;
+            msgs.count_tokens();
+            msgs.sync();
+        }
+    }
 
     let mut current_task: Option<JoinHandle<()>> = None;
 
@@ -313,84 +331,91 @@ async fn chat_worker(
 
                     match args[0].to_lowercase().as_str() {
                         "/clear" | "/clean" => {
-                            messages.lock().await.clear();
+                            let ui_tx = ui_tx.clone();
+                            let client = client.clone();
+                            let base_url = base_url.clone();
+                            let messages = messages.clone();
+                            let session_id = session_id.clone();
+
+                            let res = client
+                                .post(str!("{base_url}/clear"))
+                                .json(&ClearQuery::new(session_id.clone()))
+                                .send()
+                                .await;
+
+                            {
+                                let mut msgs = messages.lock().await;
+                                msgs.messages.clear();
+                                msgs.tokens_count = 0;
+                                msgs.sync();
+                            }
+
+                            if let Err(e) = res {
+                                let _ = ui_tx.send(Chunk::error(str!(
+                                    "Failed to clear remote history: {}",
+                                    e
+                                )));
+                            }
+
+                            let _ = ui_tx.send(Chunk {
+                                data: ChunkData::Finish,
+                                agent: None,
+                            });
                         }
+
                         "/compact" | "/compress" => {
                             let ui_tx = ui_tx.clone();
                             let client = client.clone();
                             let base_url = base_url.clone();
                             let messages = messages.clone();
+                            let session_id = session_id.clone();
 
                             current_task = Some(tokio::spawn(async move {
                                 let _ = ui_tx.send(Chunk::think("Compressing context..."));
+
                                 let preserve = args
                                     .get(1)
                                     .and_then(|i| i.trim().parse::<usize>().ok())
                                     .unwrap_or_else(|| Settings::get().assistant.preserve_messages);
 
-                                let mut msgs = messages.lock().await;
-                                let msgs_len = msgs.len();
+                                let res = client
+                                    .post(str!("{base_url}/compact"))
+                                    .json(&CompactQuery::new(session_id.clone(), preserve))
+                                    .send()
+                                    .await;
 
-                                if msgs_len > preserve {
-                                    let chunks = chat::split_messages(msgs.clone());
-                                    if chunks.len() > preserve {
-                                        let to_compress: Vec<Message> = chunks
-                                            [..chunks.len() - preserve]
-                                            .iter()
-                                            .flatten()
-                                            .cloned()
-                                            .collect();
+                                match res {
+                                    Ok(response) => {
+                                        let mut msgs = messages.lock().await;
 
-                                        let res = client
-                                            .post(str!("{base_url}/compact"))
-                                            .json(&UserQuery {
-                                                user_id: 0,
-                                                messages: to_compress,
-                                            })
-                                            .send()
-                                            .await;
+                                        let preserved_messages = msgs.slice(-(preserve as isize));
 
-                                        if let Ok(res) = res {
-                                            let mut stream = Stream::read::<Chunk>(
-                                                res.bytes_stream().map(|c| c.map_err(Into::into)),
-                                            );
-                                            let mut new_messages = vec![Message::assistant(
-                                                vec![str!("# Summarized: \n").into()],
-                                                vec![],
-                                            )];
+                                        msgs.messages = preserved_messages;
+                                        msgs.count_tokens();
 
-                                            new_messages
-                                                .extend(msgs[msgs_len - preserve..].to_vec());
-                                            *msgs = new_messages;
-                                            msgs.sync();
+                                        let bytes_stream =
+                                            response.bytes_stream().map(|c| c.map_err(Into::into));
+                                        let mut stream = Stream::read::<Chunk>(bytes_stream);
 
-                                            while let Ok(Some(Chunk {
-                                                data: ChunkData::Answer(part),
-                                                ..
-                                            })) = stream.read().await
-                                            {
-                                                if let Some(msg) = msgs.last_mut() {
-                                                    msg.map(|cnt| {
-                                                        if let Some(Content::Text { text }) =
-                                                            cnt.get_mut(0)
-                                                        {
-                                                            text.push_str(&part);
-                                                        }
-                                                    });
-                                                }
-                                                msgs.sync_n(2);
+                                        while let Ok(Some(chunk)) = stream.read().await {
+                                            if let ChunkData::Answer(ref text) = chunk.data {
+                                                msgs.push_str(None, text);
                                             }
-
-                                            if let Some(msg) = msgs.last_mut() {
-                                                msg.map(|cnt| {
-                                                    if let Some(Content::Text { text }) =
-                                                        cnt.get_mut(0)
-                                                    {
-                                                        text.push_str("\n---");
-                                                    }
-                                                });
-                                            }
+                                            let _ = ui_tx.send(chunk);
+                                            msgs.sync_n(2);
                                         }
+
+                                        let mut new_history =
+                                            Vec::with_capacity(msgs.messages.len() + 1);
+                                        new_history.extend(msgs.messages.clone());
+
+                                        msgs.messages = new_history;
+                                        msgs.count_tokens();
+                                        drop(msgs);
+                                    }
+                                    Err(e) => {
+                                        let _ = ui_tx
+                                            .send(Chunk::error(str!("Compression failed: {}", e)));
                                     }
                                 }
 
@@ -410,39 +435,41 @@ async fn chat_worker(
                     continue;
                 }
 
-                let mut req_messages = messages.lock().await.clone();
-                if !req_messages.is_empty() {
-                    req_messages.pop();
-                }
+                let message_to_send = {
+                    let msgs = messages.lock().await;
+                    msgs.messages
+                        .get(msgs.messages.len().saturating_sub(2))
+                        .cloned()
+                };
 
-                let client = client.clone();
-                let base_url = base_url.clone();
-                let ui_tx = ui_tx.clone();
+                if let Some(msg) = message_to_send {
+                    let client = client.clone();
+                    let base_url = base_url.clone();
+                    let ui_tx = ui_tx.clone();
+                    let session_id = session_id.clone();
 
-                current_task = Some(tokio::spawn(async move {
-                    let res = client
-                        .post(str!("{base_url}/handle"))
-                        .json(&UserQuery {
-                            user_id: 0,
-                            messages: req_messages,
-                        })
-                        .send()
-                        .await;
+                    current_task = Some(tokio::spawn(async move {
+                        let res = client
+                            .post(str!("{base_url}/handle"))
+                            .json(&HandleQuery::new(session_id, msg))
+                            .send()
+                            .await;
 
-                    match res {
-                        Ok(response) => {
-                            let mut stream = Stream::read::<Chunk>(
-                                response.bytes_stream().map(|c| c.map_err(Into::into)),
-                            );
-                            while let Ok(Some(chunk)) = stream.read().await {
-                                let _ = ui_tx.send(chunk);
+                        match res {
+                            Ok(response) => {
+                                let mut stream = Stream::read::<Chunk>(
+                                    response.bytes_stream().map(|c| c.map_err(Into::into)),
+                                );
+                                while let Ok(Some(chunk)) = stream.read().await {
+                                    let _ = ui_tx.send(chunk);
+                                }
+                            }
+                            Err(e) => {
+                                let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
                             }
                         }
-                        Err(e) => {
-                            let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
-                        }
-                    }
-                }));
+                    }));
+                }
             }
         }
     }
@@ -462,8 +489,11 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             data: ChunkData::Tools(tool_calls),
             ..
         } => {
-            if let Some(msg) = app.messages.lock().await.get_mut(app.response_index) {
+            let mut msgs = app.messages.lock().await;
+            if let Some(msg) = msgs.messages.get_mut(app.response_index) {
                 msg.tool_calls.extend(tool_calls);
+                msg.count_tokens();
+                msgs.count_tokens();
             }
         }
 
@@ -472,28 +502,10 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             data: ChunkData::Answer(answer),
         } => {
             let mut msgs = app.messages.lock().await;
+            let id_str = agent.as_ref().map(|task| task.tool_call_id.as_str());
 
-            if let Some(task) = agent {
-                let current_tool_id = task.tool_call_id;
-                match msgs.last_mut() {
-                    Some(msg) if msg.role.is_tool() && msg.tool_call_id == current_tool_id => {
-                        msg.map(|cnt| {
-                            if let Some(Content::Text { text }) = cnt.get_mut(0) {
-                                text.push_str(&answer);
-                            }
-                        });
-                    }
-                    _ => msgs.push(Message::tool(vec![answer.into()], current_tool_id)),
-                }
-            } else if let Some(msg) = msgs.get_mut(app.response_index) {
-                msg.map(|cnt| {
-                    if cnt.is_empty() {
-                        cnt.push(answer.clone().into());
-                    } else if let Some(Content::Text { text }) = cnt.get_mut(0) {
-                        text.push_str(&answer);
-                    }
-                });
-            }
+            // push_str атомарно находит нужный индекс или создает сообщение (tool/assistant)
+            msgs.push_str(id_str, &answer);
             app.chat_scroll = u16::MAX;
         }
 
@@ -504,13 +516,14 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             let mut msgs = app.messages.lock().await;
             let idx = app.response_index;
 
-            if idx < msgs.len() && !msgs[idx].tool_calls.is_empty() {
-                let ordered_ids: Vec<String> = msgs[idx]
+            if idx < msgs.messages.len() && !msgs.messages[idx].tool_calls.is_empty() {
+                let ordered_ids: Vec<String> = msgs.messages[idx]
                     .tool_calls
                     .iter()
                     .map(|tc| tc.id.clone())
                     .collect();
-                let remaining = msgs.drain((idx + 1)..).collect::<Vec<_>>();
+
+                let remaining = msgs.messages.drain((idx + 1)..).collect::<Vec<_>>();
 
                 let (mut tool_messages, other_messages): (Vec<_>, Vec<_>) =
                     remaining.into_iter().partition(|m| m.role.is_tool());
@@ -522,8 +535,9 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
                         .unwrap_or(usize::MAX)
                 });
 
-                msgs.extend(tool_messages);
-                msgs.extend(other_messages);
+                msgs.messages.extend(tool_messages);
+                msgs.messages.extend(other_messages);
+                msgs.count_tokens();
             }
 
             if agent.is_none() {
@@ -531,12 +545,12 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
 
                 // do control query:
                 if app.cycles <= Settings::get().assistant.max_cycles {
-                    if let Some(last_msg) = msgs.last()
+                    if let Some(last_msg) = msgs.messages.last()
                         && last_msg.role.is_tool()
                     {
                         let tx = app.tx.clone();
                         let messages = app.messages.clone();
-                        app.response_index = msgs.len() + 1;
+                        app.response_index = msgs.messages.len() + 1;
                         app.cycles += 1;
 
                         tokio::spawn(async move {
@@ -553,26 +567,14 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             data: ChunkData::Error(error),
             agent,
         } => {
+            let err_msg = str!("Error: {error}");
+
             if let Some(task) = agent {
-                let current_tool_id = task.tool_call_id;
                 let mut msgs = app.messages.lock().await;
+                let current_tool_id = task.tool_call_id.clone();
 
-                let err_msg = str!("Error: {error}");
-
-                match msgs.last_mut() {
-                    Some(msg) if msg.role.is_tool() && msg.tool_call_id == current_tool_id => {
-                        msg.map(|cnt| {
-                            if let Some(Content::Text { text }) = cnt.get_mut(0) {
-                                if !text.is_empty() {
-                                    text.push_str("\n");
-                                }
-                                text.push_str(&err_msg);
-                            }
-                        });
-                    }
-                    _ => msgs.push(Message::tool(vec![err_msg.into()], current_tool_id)),
-                }
-
+                // Используем push_str для безопасного обновления контента сообщения ошибки инструмента
+                msgs.push_str(Some(&current_tool_id), &format!("\n{}", err_msg));
                 app.chat_scroll = u16::MAX;
 
                 // trying to fix error:
@@ -580,7 +582,7 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
                     if !app.is_canceled {
                         let tx = app.tx.clone();
                         let messages = app.messages.clone();
-                        app.response_index = messages.dirty_get().len() + 1;
+                        app.response_index = msgs.messages.len() + 1;
                         app.cycles += 1;
 
                         tokio::spawn(async move {
@@ -591,7 +593,8 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             } else {
                 app.is_busy = false;
                 app.status.take();
-                app.messages.lock().await.push(Message::system(vec![
+                let mut msgs = app.messages.lock().await;
+                msgs.add_message(Message::system(vec![
                     str!("Critical Error: {error}").into(),
                 ]));
             }
@@ -602,12 +605,12 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
 /// Handles the control query
 async fn handle_control_query(
     tx: mpsc::UnboundedSender<ChatAction>,
-    messages: Arc<State<Vec<Message>>>,
+    messages: Arc<State<Messages>>,
 ) {
     {
         let mut msgs = messages.lock().await;
-        msgs.push(Message::user(vec!["".into()]));
-        msgs.push(Message::assistant(vec![], vec![]));
+        msgs.add_message(Message::user(vec!["".into()]));
+        msgs.add_message(Message::assistant(vec![], vec![]));
     }
 
     let _ = tx.send(ChatAction::Query(str!()));

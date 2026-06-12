@@ -19,20 +19,32 @@ pub fn app_data() -> std::path::PathBuf {
 }
 /// Returns the app version
 pub fn app_version() -> &'static str {
-    "0.7.5"
+    "0.8.0"
 }
 
 pub mod result;
 pub use result::{DynError, Result, StdResult};
 
+pub mod settings;
+pub use settings::Settings;
+
+pub mod session_id;
+pub use session_id::SessionID;
+
 pub mod chunk;
 pub use chunk::{Chunk, ChunkData};
 
-pub mod user_query;
-pub use user_query::*;
+pub mod messages_query;
+pub use messages_query::MessagesQuery;
 
-pub mod settings;
-pub use settings::Settings;
+pub mod handle_query;
+pub use handle_query::HandleQuery;
+
+pub mod compact_query;
+pub use compact_query::CompactQuery;
+
+pub mod clear_query;
+pub use clear_query::ClearQuery;
 
 pub mod agent_info;
 pub use agent_info::AgentInfo;

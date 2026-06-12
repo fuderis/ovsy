@@ -11,7 +11,7 @@
 # GNU General Public License for more details.
 #
 # You should have received a copy of the GNU General Public License
-# along with this program. If not, see <httpswww.gnu.org/licenses/>.
+# along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 [workspace]
 members = ["crates/cli", "crates/core", "crates/share", "agents/system"]
@@ -20,13 +20,12 @@ resolver = "3"
 
 [workspace.dependencies]
 ovsy-share = { path = "crates/share" }
-atoman = { version = "0.2.22", features = ["full"] }
-macron = { version = "0.1.18", features = ["full"] }
+atoman = { version = "0.2.24", features = ["full"] }
+macron = { version = "0.2.1", features = ["full"] }
 pearce = "0.1.0"
-anylm = "0.1.23"
-cistern = "0.1.0"
+anylm = "0.1.24"
+cistern = { version = "0.2.0", features = ["full"] }
 tokio = { version = "1.51.0", features = ["full"] }
-async-recursion = "1.1.1"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 toml = "1.0.0"
@@ -34,3 +33,5 @@ clap = { version = "4.5.53", features = ["derive"] }
 reqwest = { version = "0.13.1", features = ["json", "stream"] }
 chrono = { version = "0.4.42", features = ["serde"] }
 regex = "1.12.2"
+rand = "0.10.1"
+sha2 = "0.11.0"

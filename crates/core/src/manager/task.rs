@@ -1,113 +1,78 @@
-use crate::{handlers::query, prelude::*};
-use async_recursion::async_recursion;
+use super::Tasks;
+use crate::prelude::*;
+use anylm::Content;
 use ovsy_share::{AgentTask, Chunk};
-use tokio::task::JoinHandle;
-
-/// The agent tasks worflow
-#[derive(Default)]
-pub struct Workflow {
-    working: HashMap<i64, Arc<Mutex<JoinHandle<()>>>>,
-    pending: HashMap<i64, AgentTask>,
-    finished: HashSet<i64>,
-    results: HashMap<i64, Arc<String>>,
-}
-
-impl Workflow {
-    /// Creates a new workflow
-    pub fn new() -> Arc<Mutex<Self>> {
-        arc_mutex!(Self::default())
-    }
-
-    /// Returns true if task ready to start
-    pub fn check(&self, task: &AgentTask) -> bool {
-        task.wait_for.is_empty() || task.wait_for.iter().all(|id| self.finished.contains(id))
-    }
-}
 
 /// The agent tasks handle
 #[derive(Clone)]
-pub struct AgentHandle {
+pub struct Task {
     pub task: Arc<AgentTask>,
-    workflow: Arc<Mutex<Workflow>>,
+    tasks: Arc<Mutex<Tasks>>,
     tx: Sender,
 }
 
-impl AgentHandle {
-    /// Handles the all agent tasks
-    pub async fn handle_all(tx: Sender, tasks: Vec<AgentTask>) {
-        if tasks.is_empty() {
-            return;
-        }
-
-        let workflow = Workflow::new();
-
-        // collect tasks:
-        let mut running = vec![];
-        {
-            let mut lock = workflow.lock().await;
-
-            for task in tasks {
-                if task.wait_for.is_empty() {
-                    running.push(task.task_id);
-                }
-
-                lock.pending.insert(task.task_id, task);
-            }
-        };
-
-        // running tasks:
-        for id in running {
-            Self::handle(tx.clone(), id, workflow.clone()).await;
-        }
-    }
-
+impl Task {
     /// Handles the agent task or pendings it
     #[async_recursion]
-    async fn handle(tx: Sender, task_id: i64, workflow: Arc<Mutex<Workflow>>) {
-        let mut lock = workflow.lock().await;
-        let task = if let Some(task) = lock.pending.remove(&task_id) {
-            task
-        } else {
+    pub async fn handle(tx: Sender, task_id: i64, tasks: Arc<Mutex<Tasks>>) {
+        let mut lock = tasks.lock().await;
+        let Some(task) = lock.pending.remove(&task_id) else {
             return;
         };
 
         let tx = tx.clone();
-        let workflow = workflow.clone();
+        let tasks = tasks.clone();
 
         // handle agent task:
+        let messages = lock.messages.clone();
         let child = tokio::spawn(async move {
             let handle = Self {
                 task: arc!(task),
-                workflow: workflow.clone(),
+                tasks: tasks.clone(),
                 tx: tx.clone(),
             };
 
-            if let Err(e) = query::handle_agent(tx, handle.clone()).await {
+            let session_id = handle.task.session_id;
+            let session = tasks.lock().await.session.clone();
+            if let Err(e) = crate::handlers::handle::handle_agent(
+                session_id,
+                session,
+                messages,
+                handle.task.agent_name.clone(),
+                tx,
+                handle.clone(),
+            )
+            .await
+            {
+                error!("[handle_agent{{sid={session_id}}}] {e}");
                 handle.tx.send(Chunk::error(str!("{e}"))).ok();
                 handle.finish_branch().await;
             }
         });
 
-        lock.working.insert(task_id, arc_mutex!(child));
+        lock.working.insert(task_id, arc!(child));
+    }
+
+    /// Returns true if this task is last
+    pub async fn is_last(&self) -> bool {
+        let lock = self.tasks.lock().await;
+        lock.pending.is_empty() && lock.working.len() <= 1
+        // <= 1 because current task is still listed in the working list before finish
     }
 
     /// Finishes the agent handling
-    pub async fn finish(&self, full_text: String) {
-        let mut lock = self.workflow.lock().await;
+    pub async fn finish(&self, agent_messages: Vec<Content>) {
+        let mut lock = self.tasks.lock().await;
 
-        // remove from active:
         lock.working.remove(&self.task.task_id);
-        // mark as finished:
         lock.finished.insert(self.task.task_id);
-        // write results to context:
-        lock.results.insert(self.task.task_id, arc!(full_text));
 
-        // nitify about finished task:
-        self.tx
-            .send(Chunk::finish().task_info(self.task.as_ref().clone()))
-            .ok();
+        // ОПТИМИЗАЦИЯ ПАМЯТИ: сохраняем Messages в RAM только если они нужны наследникам
+        if lock.is_result_needed(self.task.task_id) {
+            lock.results.insert(self.task.task_id, agent_messages);
+        }
 
-        // check pending tasks:
+        // Если есть готовые к запуску зависимые задачи
         if !lock.pending.is_empty() {
             let mut ready_ids = vec![];
             for (id, task) in lock.pending.iter() {
@@ -122,36 +87,43 @@ impl AgentHandle {
 
             drop(lock);
 
-            // start next tasks:
             for task in ready_to_run {
                 let tx = self.tx.clone();
-                let workflow = self.workflow.clone();
-
+                let tasks = self.tasks.clone();
                 tokio::spawn(async move {
-                    Self::handle(tx, task.task_id, workflow).await;
+                    Self::handle(tx, task.task_id, tasks).await;
                 });
             }
         }
-        // check all tasks for finished:
+        // ФИНАЛ: Весь граф успешно выполнен! Записываем ВСЮ историю в БД одним махом
         else if lock.working.is_empty() {
-            self.tx.send(Chunk::finish()).ok();
+            let session = lock.session.clone();
+            let ctx_messages = lock.messages.clone();
+            drop(lock);
+
+            tokio::spawn(async move {
+                let final_lock = ctx_messages.lock().await;
+                if let Err(e) = session.write_messages(final_lock.messages.clone()).await {
+                    error!("[Task::finish] Failed to atomic save final conversation: {e}");
+                }
+            });
         }
     }
 
     /// Finishes the all agent tasks
     pub async fn finish_all(&self) {
-        let mut lock = self.workflow.lock().await;
+        let mut lock = self.tasks.lock().await;
         let working_tasks: Vec<_> = lock.working.drain().map(|(_, task)| task).collect();
         drop(lock);
 
         for task in working_tasks {
-            task.lock().await.abort();
+            task.abort();
         }
     }
 
     /// Finishes the entire task chain
     pub async fn finish_branch(&self) {
-        let mut lock = self.workflow.lock().await;
+        let mut lock = self.tasks.lock().await;
         let mut to_abort = vec![];
 
         if let Some(child) = lock.working.remove(&self.task.task_id) {
@@ -186,13 +158,13 @@ impl AgentHandle {
         drop(lock);
 
         for task in to_abort {
-            task.lock().await.abort();
+            task.abort();
         }
     }
 
     /// Returns parent tasks context
-    pub async fn context(&self) -> Vec<Arc<String>> {
-        let lock = self.workflow.lock().await;
+    pub async fn context(&self) -> Vec<Vec<Content>> {
+        let lock = self.tasks.lock().await;
         let mut results = vec![];
 
         for id in &self.task.wait_for {

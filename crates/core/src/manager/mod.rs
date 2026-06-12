@@ -1,8 +1,11 @@
 pub mod agent;
 pub use agent::Agent;
 
-pub mod handle;
-pub use handle::{AgentHandle, Workflow};
+pub mod tasks;
+pub use tasks::Tasks;
+
+pub mod task;
+pub use task::Task;
 
 use crate::prelude::*;
 use anylm::{Schema, Tool};
@@ -88,7 +91,11 @@ impl Manager {
     /// Runs the AI agent server
     pub async fn run(dir: impl Into<PathBuf>) -> Result<()> {
         let path: PathBuf = dir.into();
-        info!("[MANAGER] Starting agent from: {:?}", path);
+        info!(
+            "[MANAGER] Starting agent from {:?}...",
+            path.to_string_lossy()
+                .replace(&path!("~/").to_str().unwrap_or_default(), "~/")
+        );
 
         if let Some(agent) = Agent::run(path.clone()).await? {
             let name = arc!(agent.info.name.clone());
@@ -110,9 +117,9 @@ impl Manager {
     pub async fn stop(name: Arc<String>) -> Result<()> {
         let mut lock = MANAGER.lock().await;
         if lock.agents.remove(&name).is_some() {
-            info!("[MANAGER] Agent `{}` stopped and removed", name);
+            info!("[MANAGER] Agent `{name}` stopped and removed");
         } else {
-            warn!("[MANAGER] Attempted to stop unknown agent: `{}`", name);
+            warn!("[MANAGER] Attempted to stop unknown `{name}` agent");
         }
 
         Self::update_doc().await?;
@@ -167,7 +174,7 @@ impl Manager {
 
         MANAGER.lock().await.agents_doc = arc!(doc_builder);
         info!(
-            "[MANAGER] Documentation updated: {} agents listed",
+            "[MANAGER] Documentation updated ({} agents listed)",
             guard.agents.len()
         );
         Ok(())

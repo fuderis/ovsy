@@ -27,8 +27,10 @@ async fn main() -> Result<()> {
 
     // start server:
     Server::new()
-        .post("/handle", handlers::query::handle)
+        .post("/messages", handlers::messages::handle)
+        .post("/handle", handlers::handle::handle)
         .post("/compact", handlers::compact::handle)
+        .post("/clear", handlers::clear::handle)
         .post("/status", handlers::status::handle)
         .post("/update", handlers::update::handle)
         .run(Settings::get().server.port)

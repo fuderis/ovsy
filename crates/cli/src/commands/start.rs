@@ -46,16 +46,41 @@ pub async fn handle(start_lms: bool) -> Result<()> {
         };
 
         if !is_running {
-            let _ = Command::new("lms").args(["server", "start"]).output().await;
-            time::sleep(Duration::from_secs(1000)).await;
+            let bin_path = if cfg!(windows) { "lms.exe" } else { "lms" };
 
-            if match Command::new("lms").args(["status"]).output().await {
-                Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
-                _ => false,
-            } {
-                println!("{}", "Online".green());
-            } else {
-                println!("{}", "Failed".red());
+            match Command::new(bin_path)
+                .args(["server", "start"])
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+            {
+                Ok(_child) => {
+                    let mut is_ok = false;
+
+                    // 100 tries * 100 мс = 10 seconds to start:
+                    for _ in 0..100 {
+                        time::sleep(Duration::from_millis(100)).await;
+
+                        let status_check = Command::new(bin_path).args(["status"]).output().await;
+
+                        if let Ok(out) = status_check {
+                            if String::from_utf8_lossy(&out.stdout).contains("ON") {
+                                is_ok = true;
+                                break;
+                            }
+                        }
+                    }
+
+                    if is_ok {
+                        println!("{}", "Online".green());
+                    } else {
+                        println!("{}", "Failed".red());
+                    }
+                }
+                Err(e) => {
+                    error!("[lms_spawn] Сбой запуска процесса: {e}");
+                    println!("{}", "Failed".red());
+                }
             }
         } else {
             println!("{}", "Online".green());

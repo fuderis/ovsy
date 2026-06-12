@@ -5,6 +5,7 @@ UNDERLINE_COUNT=40
 INSTALL_DIR="$HOME/.ovsy"
 PORT=7878
 BINARIES=("ovsy-cli" "ovsy-core")
+LOCAL_BIN_DIR="$HOME/.local/bin"
 
 # Colors:
 NC='\033[0m'         # no color
@@ -128,11 +129,16 @@ if [ -d "agents" ]; then
 fi
 
 underline
+
+# 5. Register in PATH:
+mkdir -p "$LOCAL_BIN_DIR"
+ln -sf "$INSTALL_DIR/bin/ovsy-cli$EXE" "$LOCAL_BIN_DIR/ovsy"
+echo -e "${LINE}Command 'ovsy' registered in ~/.local/bin${NC}"
+
 echo -e "${OK}Build successful!${NC}"
 
-# 5. Start server if requested:
+# 6. Start server if requested:
 if [[ "$1" == "--start" || "$1" == "-s" ]]; then
     echo "Starting server..."
-    # execute via the newly installed CLI:
     "$INSTALL_DIR/ovsy-cli${EXE}" start
 fi

@@ -4,18 +4,18 @@ use crate::prelude::*;
 #[derive(Debug, Clone, Copy, Display, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum VolumeMode {
-    #[display = "get"]
+    #[display(fmt = "get")]
     Get,
 
-    #[display = "set"]
+    #[display(fmt = "set")]
     Set,
 
-    #[display = "add"]
+    #[display(fmt = "add")]
     Add,
 
-    #[display = "mute"]
+    #[display(fmt = "mute")]
     Mute,
 
-    #[display = "unmute"]
+    #[display(fmt = "unmute")]
     Unmute,
 }

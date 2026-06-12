@@ -1,7 +1,7 @@
 use super::ChatAction;
 use crate::prelude::*;
 
-use anylm::Message;
+use anylm::Messages;
 use ratatui::layout::Rect;
 
 /// The app state
@@ -14,7 +14,7 @@ pub struct AppState {
     pub input_scroll: u16,
 
     pub chat_area: Rect,
-    pub messages: Arc<State<Vec<Message>>>,
+    pub messages: Arc<State<Messages>>,
     pub response_index: usize,
     pub chat_scroll: u16,
     pub cycles: usize,
