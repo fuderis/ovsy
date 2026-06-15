@@ -76,13 +76,13 @@ async fn main() -> Result<()> {
         .ok();
 
     if let Err(e) = match cli.command {
-        Some(Commands::Status) => commands::status::handle().await,
-        Some(Commands::Start { lms }) => commands::start::handle(lms).await,
-        Some(Commands::Stop { lms }) => commands::stop::handle(lms).await,
-        Some(Commands::Restart { lms }) => commands::restart::handle(lms).await,
-        Some(Commands::Update) => commands::update::handle().await,
-        Some(Commands::Chat) | None => commands::chat::handle().await,
-        Some(Commands::Config) => commands::config::handle().await,
+        Some(Commands::Status) => commands::handle_status().await,
+        Some(Commands::Start { lms }) => commands::handle_start(lms).await,
+        Some(Commands::Stop { lms }) => commands::handle_stop(lms).await,
+        Some(Commands::Restart { lms }) => commands::handle_restart(lms).await,
+        Some(Commands::Update) => commands::handle_update().await,
+        Some(Commands::Chat) | None => commands::handle_chat().await,
+        Some(Commands::Config) => commands::handle_config().await,
     } {
         eprintln!("\n{}: {}", "Error".red().bold(), e.to_string().white());
         std::process::exit(1);

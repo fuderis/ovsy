@@ -2,7 +2,7 @@ use crate::{Manager, prelude::*};
 use ovsy_share::StatusData;
 
 /// API: Update the server settings & agents list
-pub async fn handle() -> Response {
+pub async fn update() -> Response {
     // update settings:
     if let Err(e) = Settings::update().await {
         return Response::ok().json(&StatusData::Error { error: str!("{e}") });

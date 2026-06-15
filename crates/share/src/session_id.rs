@@ -1,11 +1,11 @@
 use chrono::{DateTime, TimeZone, Utc};
 use macron::{Display, Error};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha512_256};
 use std::{num::ParseIntError, str::FromStr};
 
 /// The session ID wrapper
-#[derive(Default, Debug, Display, Copy, Clone, Serialize, Deserialize, Eq, PartialEq)]
+#[derive(Default, Debug, Display, Copy, Clone, Eq, PartialEq)]
 #[display(fmt = "{user_id}-{timestamp}-{salt}")]
 pub struct SessionID {
     pub user_id: u128,
@@ -76,6 +76,25 @@ impl FromStr for SessionID {
             timestamp,
             salt,
         })
+    }
+}
+
+impl Serialize for SessionID {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        serializer.serialize_str(&self.to_string())
+    }
+}
+
+impl<'de> Deserialize<'de> for SessionID {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        FromStr::from_str(&s).map_err(serde::de::Error::custom)
     }
 }
 

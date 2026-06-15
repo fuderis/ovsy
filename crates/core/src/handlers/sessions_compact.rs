@@ -1,24 +1,34 @@
 use crate::prelude::*;
 use anylm::{AiChunk, Completions, Message, Messages};
 use ovsy_share::{Chunk, CompactQuery, SessionID};
-use tokio::time;
 
 /// API: Handles the session compression
-pub async fn handle(data: Json<CompactQuery>) -> Response {
-    let session_id = data.0.session_id;
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn sessions_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) -> Response {
+    let session_id = sid.0;
+    let CompactQuery { preserve } = data.0;
 
-    let body = Stream::body(move |tx| async move {
-        if let Err(e) = handle_compact(session_id, tx.clone(), data.0.preserve).await {
-            error!("[handle_compact{{sid={session_id}}}] {e}");
-            tx.send(Chunk::error(str!(e))).ok();
+    let current = Span::current();
+    let body = Stream::body(move |tx| {
+        async move {
+            if let Err(e) = handle_compact(
+                session_id,
+                tx.clone(),
+                preserve.unwrap_or_else(|| Settings::get().assistant.preserve_messages),
+            )
+            .await
+            {
+                error!("{e}");
+                tx.send(Chunk::error(str!(e))).ok();
+            }
         }
+        .instrument(current)
     });
 
     Response::ok().stream(body)
 }
 
 /// Compresses the session messages
-#[log(skip_all, fields(sid = %session_id))]
 async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> Result<()> {
     info!("Compressing session messages (preserve: {preserve})");
 
@@ -59,10 +69,6 @@ async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> R
     session
         .insert_and_shift(compressed_message, to_preserve, compress_count)
         .await?;
-
-    // wait for unlock db:
-    drop(session);
-    time::sleep(Duration::from_millis(100)).await;
 
     // finish work:
     tx.send(Chunk::finish()).ok();

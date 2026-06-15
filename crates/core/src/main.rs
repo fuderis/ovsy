@@ -27,12 +27,13 @@ async fn main() -> Result<()> {
 
     // start server:
     Server::new()
-        .post("/messages", handlers::messages::handle)
-        .post("/handle", handlers::handle::handle)
-        .post("/compact", handlers::compact::handle)
-        .post("/clear", handlers::clear::handle)
-        .post("/status", handlers::status::handle)
-        .post("/update", handlers::update::handle)
+        .post("/users/{uid}/sessions", handlers::users_sessions)
+        .post("/sessions/{sid}/get", handlers::sessions_get)
+        .post("/sessions/{sid}/compact", handlers::sessions_compact)
+        .post("/sessions/{sid}/clear", handlers::sessions_clear)
+        .post("/sessions/{sid}/query", handlers::sessions_query)
+        .post("/status", handlers::status)
+        .post("/update", handlers::update)
         .run(Settings::get().server.port)
         .await?;
 

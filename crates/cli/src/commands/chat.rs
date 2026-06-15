@@ -9,9 +9,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_share::{
-    Chunk, ChunkData, ClearQuery, CompactQuery, HandleQuery, MessagesQuery, SessionID,
-};
+use ovsy_share::{Chunk, ChunkData, CompactQuery, HandleQuery, SessionID, UserSessionsQuery};
 use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
@@ -21,8 +19,10 @@ use reqwest::Client;
 use std::{io, process::Command};
 use tokio::task::JoinHandle;
 
+const USER_ID: u128 = 0;
+
 /// API: Handles the `chat` command
-pub async fn handle() -> Result<()> {
+pub async fn handle_chat() -> Result<()> {
     let port = Settings::get().server.port;
 
     // check server:
@@ -283,11 +283,28 @@ async fn chat_worker(
     let client = reqwest::Client::new();
     let base_url = str!("http://127.0.0.1:{port}");
 
-    let session_id = SessionID::new(0);
+    let mut session_id = SessionID::new(USER_ID);
+
+    // load last session or create new:
+    let sessions_query = UserSessionsQuery::new(1); // limit: 1
+    let sessions_url = str!("{base_url}/users/{USER_ID}/sessions");
 
     if let Ok(res) = client
-        .post(str!("{base_url}/messages"))
-        .json(&MessagesQuery::new(session_id.clone()))
+        .post(&sessions_url)
+        .json(&sessions_query)
+        .send()
+        .await
+    {
+        if let Ok(active_sessions) = res.json::<Vec<SessionID>>().await
+            && let Some(last_session) = active_sessions.into_iter().next()
+        {
+            session_id = last_session;
+        }
+    }
+
+    // load session history:
+    if let Ok(res) = client
+        .post(str!("{base_url}/sessions/{session_id}/get"))
         .send()
         .await
     {
@@ -338,8 +355,7 @@ async fn chat_worker(
                             let session_id = session_id.clone();
 
                             let res = client
-                                .post(str!("{base_url}/clear"))
-                                .json(&ClearQuery::new(session_id.clone()))
+                                .post(str!("{base_url}/sessions/{session_id}/clear"))
                                 .send()
                                 .await;
 
@@ -379,8 +395,8 @@ async fn chat_worker(
                                     .unwrap_or_else(|| Settings::get().assistant.preserve_messages);
 
                                 let res = client
-                                    .post(str!("{base_url}/compact"))
-                                    .json(&CompactQuery::new(session_id.clone(), preserve))
+                                    .post(str!("{base_url}/sessions/{session_id}/compact"))
+                                    .json(&CompactQuery::new(preserve))
                                     .send()
                                     .await;
 
@@ -450,8 +466,8 @@ async fn chat_worker(
 
                     current_task = Some(tokio::spawn(async move {
                         let res = client
-                            .post(str!("{base_url}/handle"))
-                            .json(&HandleQuery::new(session_id, msg))
+                            .post(str!("{base_url}/sessions/{session_id}/query"))
+                            .json(&HandleQuery::new(msg))
                             .send()
                             .await;
 

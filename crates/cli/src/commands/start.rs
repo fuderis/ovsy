@@ -9,7 +9,7 @@ use std::{
 use tokio::process::Command;
 
 /// API: Handles the `start` command
-pub async fn handle(start_lms: bool) -> Result<()> {
+pub async fn handle_start(start_lms: bool) -> Result<()> {
     let server_path = path!("$/ovsy-core{}", if cfg!(windows) { ".exe" } else { "" });
 
     if !server_path.exists() {

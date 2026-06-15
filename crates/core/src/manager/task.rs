@@ -7,52 +7,11 @@ use ovsy_share::{AgentTask, Chunk};
 #[derive(Clone)]
 pub struct Task {
     pub task: Arc<AgentTask>,
-    tasks: Arc<Mutex<Tasks>>,
-    tx: Sender,
+    pub tasks: Arc<Mutex<Tasks>>,
+    pub tx: Sender,
 }
 
 impl Task {
-    /// Handles the agent task or pendings it
-    #[async_recursion]
-    pub async fn handle(tx: Sender, task_id: i64, tasks: Arc<Mutex<Tasks>>) {
-        let mut lock = tasks.lock().await;
-        let Some(task) = lock.pending.remove(&task_id) else {
-            return;
-        };
-
-        let tx = tx.clone();
-        let tasks = tasks.clone();
-
-        // handle agent task:
-        let messages = lock.messages.clone();
-        let child = tokio::spawn(async move {
-            let handle = Self {
-                task: arc!(task),
-                tasks: tasks.clone(),
-                tx: tx.clone(),
-            };
-
-            let session_id = handle.task.session_id;
-            let session = tasks.lock().await.session.clone();
-            if let Err(e) = crate::handlers::handle::handle_agent(
-                session_id,
-                session,
-                messages,
-                handle.task.agent_name.clone(),
-                tx,
-                handle.clone(),
-            )
-            .await
-            {
-                error!("[handle_agent{{sid={session_id}}}] {e}");
-                handle.tx.send(Chunk::error(str!("{e}"))).ok();
-                handle.finish_branch().await;
-            }
-        });
-
-        lock.working.insert(task_id, arc!(child));
-    }
-
     /// Returns true if this task is last
     pub async fn is_last(&self) -> bool {
         let lock = self.tasks.lock().await;
@@ -67,12 +26,12 @@ impl Task {
         lock.working.remove(&self.task.task_id);
         lock.finished.insert(self.task.task_id);
 
-        // ОПТИМИЗАЦИЯ ПАМЯТИ: сохраняем Messages в RAM только если они нужны наследникам
+        // save results to ram:
         if lock.is_result_needed(self.task.task_id) {
             lock.results.insert(self.task.task_id, agent_messages);
         }
 
-        // Если есть готовые к запуску зависимые задачи
+        // check pending tasks:
         if !lock.pending.is_empty() {
             let mut ready_ids = vec![];
             for (id, task) in lock.pending.iter() {
@@ -80,6 +39,7 @@ impl Task {
                     ready_ids.push(*id);
                 }
             }
+
             let ready_to_run: Vec<AgentTask> = ready_ids
                 .into_iter()
                 .filter_map(|id| lock.pending.remove(&id))
@@ -90,23 +50,11 @@ impl Task {
             for task in ready_to_run {
                 let tx = self.tx.clone();
                 let tasks = self.tasks.clone();
+
                 tokio::spawn(async move {
-                    Self::handle(tx, task.task_id, tasks).await;
+                    crate::handlers::sessions_query::handle_task(task.task_id, tx, tasks).await;
                 });
             }
-        }
-        // ФИНАЛ: Весь граф успешно выполнен! Записываем ВСЮ историю в БД одним махом
-        else if lock.working.is_empty() {
-            let session = lock.session.clone();
-            let ctx_messages = lock.messages.clone();
-            drop(lock);
-
-            tokio::spawn(async move {
-                let final_lock = ctx_messages.lock().await;
-                if let Err(e) = session.write_messages(final_lock.messages.clone()).await {
-                    error!("[Task::finish] Failed to atomic save final conversation: {e}");
-                }
-            });
         }
     }
 

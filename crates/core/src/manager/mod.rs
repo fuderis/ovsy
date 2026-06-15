@@ -88,6 +88,38 @@ impl Manager {
         MANAGER.lock().await.task_tool = arc!(tool);
     }
 
+    /// Ensures the agent is running and healthy, spawning it if necessary
+    pub async fn ensure_agent(name: &Arc<String>) -> Result<Option<(u16, String, Vec<Tool>)>> {
+        let needs_start = {
+            let guard = MANAGER.get().await;
+            if let Some(agent) = guard.agents.get(name) {
+                agent.check().await.unwrap_or(true)
+            } else {
+                true
+            }
+        };
+
+        if needs_start {
+            let agent_dir = app_data().join("agents").join(name.as_str());
+
+            if !agent_dir.exists() {
+                warn!("[MANAGER] Agent `{name}` requested but directory not found");
+                return Ok(None);
+            }
+
+            info!("[MANAGER] Agent `{name}` is missing or unresponsive. Attempting to start...");
+
+            let _ = Self::stop(name.clone()).await;
+
+            if let Err(e) = Self::run(agent_dir).await {
+                error!("[MANAGER] Failed to recover agent `{name}`: {e}");
+                return Ok(None);
+            }
+        }
+
+        Ok(Self::agent_options(name).await)
+    }
+
     /// Runs the AI agent server
     pub async fn run(dir: impl Into<PathBuf>) -> Result<()> {
         let path: PathBuf = dir.into();

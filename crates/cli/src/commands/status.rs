@@ -5,7 +5,7 @@ use reqwest::Client;
 use tokio::process::Command;
 
 /// API: Handles the `status` command
-pub async fn handle() -> Result<()> {
+pub async fn handle_status() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::new();
 

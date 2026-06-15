@@ -4,32 +4,36 @@ use ovsy_share::{AgentTask, Chunk, ChunkData, HandleQuery, settings::AssistantOp
 use reqwest::Client;
 
 /// API: The user message handler
-pub async fn handle(data: Json<HandleQuery>) -> Response {
-    let session_id = data.0.session_id;
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn sessions_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Response {
+    let session_id = sid.0;
+    let HandleQuery { message } = data.0;
 
-    let body = Stream::body(move |tx| async move {
-        if let Err(e) = handle_query(session_id, tx.clone(), data.0.message).await {
-            error!("[handle_query{{sid={session_id}}}] {e}");
-            tx.send(Chunk::error(str!(e))).ok();
+    let current = Span::current();
+    let body = Stream::body(move |tx| {
+        async move {
+            if let Err(e) = handle_query(session_id, tx.clone(), message).await {
+                error!("{e}");
+                tx.send(Chunk::error(str!(e))).ok();
+            }
         }
+        .instrument(current)
     });
 
     Response::ok().stream(body)
 }
 
 /// Handles the user query
-#[log(skip_all, fields(sid = %session_id))]
+#[log(skip_all)]
 async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
 
-    info!("Initialized user request processing");
+    info!("Initialized the user request processing");
 
     // init session & read messages:
     let session = Session::new(session_id).await?;
     let db_messages = session.read_messages().await?;
-
-    info!("{db_messages:#?}");
 
     // prepare messages:
     let messages = Messages::from(db_messages)
@@ -49,7 +53,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
         .send(messages.clone())
         .await?;
 
-    let mut tasks = vec![];
+    let mut tasks_list = vec![];
 
     // read ai chunks:
     while let Some(chunk) = response.next().await {
@@ -57,16 +61,16 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
             AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part))?,
             AiChunk::Tool(tool_call) => {
                 let task: AgentTask = tool_call.parse_args()?;
-                tasks.push(task.sess_id(session_id).tool_id(tool_call.id));
+                tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
             }
         }
     }
 
     // save messages to db:
-    if !tasks.is_empty() {
+    if !tasks_list.is_empty() {
         // remove broken dependencies:
-        let active_ids: HashSet<i64> = tasks.iter().map(|task| task.task_id).collect();
-        for task in tasks.iter_mut() {
+        let active_ids: HashSet<i64> = tasks_list.iter().map(|task| task.task_id).collect();
+        for task in tasks_list.iter_mut() {
             task.wait_for.retain(|id| active_ids.contains(id));
         }
 
@@ -78,7 +82,28 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
         }
 
         // delegate tasks:
-        handle_agents(tx.clone(), session, messages, tasks).await;
+        let tasks_len = tasks_list.len();
+        let tasks = Tasks::new(session, messages);
+
+        // collect tasks:
+        let mut running = vec![];
+        {
+            let mut lock = tasks.lock().await;
+
+            for task in tasks_list {
+                if task.wait_for.is_empty() {
+                    running.push(task.task_id);
+                }
+
+                lock.pending.insert(task.task_id, task);
+            }
+        };
+
+        // spawning tasks:
+        info!("Spawning agent tasks ({tasks_len})");
+        for task_id in running {
+            handle_task(task_id, tx.clone(), tasks.clone()).await;
+        }
     } else {
         tx.send(Chunk::finish())?;
         info!("The user request was processed without agent tasks");
@@ -91,46 +116,57 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
     Ok(())
 }
 
-/// Handles the all agent tasks
-async fn handle_agents(
-    tx: Sender,
-    session: Session,
-    messages: Arc<Mutex<Messages>>,
-    tasks_list: Vec<AgentTask>,
-) {
-    if tasks_list.is_empty() {
+/// Handles the agent task or pendings it
+#[async_recursion]
+#[log(skip_all, fields(tid = %task_id))]
+pub async fn handle_task(task_id: i64, tx: Sender, tasks: Arc<Mutex<Tasks>>) {
+    let mut lock = tasks.lock().await;
+    let Some(task) = lock.pending.remove(&task_id) else {
         return;
-    }
-
-    let tasks = Tasks::new(session, messages);
-
-    // collect tasks:
-    let mut running = vec![];
-    {
-        let mut lock = tasks.lock().await;
-
-        for task in tasks_list {
-            if task.wait_for.is_empty() {
-                running.push(task.task_id);
-            }
-
-            lock.pending.insert(task.task_id, task);
-        }
     };
 
-    // running tasks:
-    for id in running {
-        Task::handle(tx.clone(), id, tasks.clone()).await;
-    }
+    let tx = tx.clone();
+    let tasks = tasks.clone();
+
+    // handle agent task:
+    let messages = lock.messages.clone();
+    let current = Span::current();
+    let child = tokio::spawn(
+        async move {
+            let handle = Task {
+                task: arc!(task),
+                tasks: tasks.clone(),
+                tx: tx.clone(),
+            };
+
+            let session_id = handle.task.session_id;
+            let session = tasks.lock().await.session.clone();
+            if let Err(e) = handle_agent(
+                handle.task.agent_name.clone(),
+                session,
+                messages,
+                tx,
+                handle.clone(),
+            )
+            .await
+            {
+                error!("[handle_agent{{sid={session_id}}} -> handle] {e}");
+                handle.tx.send(Chunk::error(str!("{e}"))).ok();
+                handle.finish_branch().await;
+            }
+        }
+        .instrument(current),
+    );
+
+    lock.working.insert(task_id, arc!(child));
 }
 
 /// Handles the AI-agent
-#[log(skip_all, fields(sid = %session_id, agent = %agent_name))]
+#[log(skip_all, fields(agent = %agent_name))]
 pub async fn handle_agent(
-    session_id: SessionID,
+    agent_name: String,
     session: Session,
     messages: Arc<Mutex<Messages>>,
-    agent_name: String,
     tx: Sender,
     task: Task,
 ) -> Result<()> {
@@ -138,14 +174,15 @@ pub async fn handle_agent(
     let arc_name = arc!(task_info.agent_name.clone());
 
     // check agent for exists:
-    let (port, prompt, tools) = if let Some(ops) = Manager::agent_options(&arc_name).await {
-        ops
-    } else {
-        let err_msg = str!("Agent `{}` is not available", task_info.agent_name);
-        tx.send(Chunk::error(err_msg).task_info(task_info.clone_minimal()))
-            .ok();
-        task.finish_branch().await;
-        return Ok(());
+    let (mut port, prompt, tools) = match Manager::ensure_agent(&arc_name).await {
+        Ok(Some(ops)) => ops,
+        _ => {
+            return Err(str!(
+                "Agent `{}` is not available or failed to start",
+                task_info.agent_name
+            )
+            .into());
+        }
     };
 
     // logging to thinking block:
@@ -225,13 +262,55 @@ pub async fn handle_agent(
         .ok();
         drop(log_json);
 
+        let request_url = str!("http://127.0.0.1:{port}/call/{}", func.name);
+        let request_body = func.parse_args::<JsonValue>()?;
+
         // send to agent server:
-        let response = client
-            .post(&str!("http://127.0.0.1:{port}/call/{}", func.name))
+        let mut response = client
+            .post(&request_url)
             .header("Content-Type", "application/json")
-            .json(&func.parse_args::<JsonValue>()?)
+            .json(&request_body)
             .send()
-            .await?;
+            .await;
+
+        if response.is_err() {
+            warn!(
+                "Agent `{}` didn't respond. Attempting tactical restart...",
+                task_info.agent_name
+            );
+            tx.send(
+                Chunk::think(str!(
+                    "Connection lost. Restarting `{}` agent...",
+                    task_info.agent_name
+                ))
+                .task_info(task_info.clone_minimal()),
+            )
+            .ok();
+
+            let _ = Manager::stop(arc_name.clone()).await;
+
+            if let Ok(Some((new_port, _, _))) = Manager::ensure_agent(&arc_name).await {
+                port = new_port;
+
+                response = client
+                    .post(&str!("http://127.0.0.1:{port}/call/{}", func.name))
+                    .header("Content-Type", "application/json")
+                    .json(&request_body)
+                    .send()
+                    .await;
+            }
+        }
+
+        let response = match response {
+            Ok(res) => res,
+            Err(e) => {
+                return Err(str!(
+                    "Agent `{}` crashed and failed to recover: {e}",
+                    task_info.agent_name,
+                )
+                .into());
+            }
+        };
 
         // init stream reader:
         let bytes_stream = response.bytes_stream().map(|v| v.map_err(Into::into));
@@ -276,8 +355,9 @@ pub async fn handle_agent(
     tx.send(Chunk::finish().task_info(task.task.clone_minimal()))
         .ok();
 
-    // finish query cicle:
+    // finish query cycle:
     if task.is_last().await {
+        info!("The last task was completed, saving the session");
         tx.send(Chunk::finish()).ok();
 
         // save messages to database:
@@ -287,6 +367,7 @@ pub async fn handle_agent(
 
     // finish task:
     task.finish(final_content).await;
+
     Ok(())
 }
 

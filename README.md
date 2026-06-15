@@ -132,21 +132,27 @@ the orchestrator provides a set of dedicated endpoints.
 
 > All requests are made using the POST method, and both request and response bodies expect JSON format.
 
-  * **POST `/messages`**: Retrieves the message history for a specific session by its `SessionID`.
+  * **POST `/users/{uid}/sessions`**: Retrieves a list of all existing user sessions by their ID.
+    * **limit (optional)**: Specifies the number of the most recent sessions to return.
+
+  * **POST `/sessions/{sid}/get`**: Retrieves the message history for a specific session by its `SessionID`.
   Used to restore the conversation context in the UI.
 
-  * **POST `/clear`**: Clears the session history by `SessionID`, deleting all associated messages from the database.
-  Allows resetting the context to start a fresh conversation.
+  * **POST `/sessions/{sid}/clear`**: Clears the session history by `SessionID`, deleting all associated messages
+  from the database. Allows resetting the context to start a fresh conversation.
 
-  * **POST `/handle`**: The primary endpoint for interacting with the system.
+  * **POST `/sessions/{sid}/query`**: The primary endpoint for interacting with the system.
   It receives a full user dialog (messages), routes it to the appropriate agents,
   and returns the generated response as SSE.
+    * **message**: The new user message to be processed and appended to the conversation history.
   
-  * **POST `/compact`**: Utilizes AI to summarize (compress) the chat history.
+  * **POST `/sessions/{sid}/compact`**: Utilizes AI to summarize (compress) the chat history.
   This helps reduce token consumption while preserving the essential context of the conversation.
+    * **preserve (optional)**: The number of recent message pairs (User -> Assistant + Tool) to keep intact (uncompressed)
+    at the end of the history.
 
   * **POST `/status`** Returns the current state of the server along with a list of all currently running agents
-    (including their IDs, statuses, and workload).
+  (including their IDs, statuses, and workload).
 
   * **POST `/update`**: Dynamically applies server configuration changes from the config file.
   If necessary, it restarts outdated agents and initializes newly added,

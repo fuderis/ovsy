@@ -53,7 +53,7 @@ fi
 echo -e "${CYAN}Done${NC}"
 
 # 3. Build project using Cargo:
-echo -e " ${BLUE}==>${NC} Running cargo build:"
+echo -e "${BLUE}==>${NC} Running cargo build:"
 
 if ! cargo build --release; then
     echo "Error: Cargo build failed."
@@ -62,7 +62,7 @@ fi
 
 # 4. Deploying
 underline
-echo -e " ${BLUE}==>${NC} Deploying binaries and agents:"
+echo -e "${BLUE}==>${NC} Deploying binaries and agents:"
 
 mkdir -p "$INSTALL_DIR/agents"
 mkdir -p "$INSTALL_DIR/bin"
@@ -126,7 +126,7 @@ fi
 
 # 5. Register in PATH:
 underline
-echo -e " ${BLUE}==>${NC} Registering in PATH:"
+echo -e "${BLUE}==>${NC} Registering in PATH:"
 
 LOCAL_BIN_DIR="$HOME/.local/bin"
 if [[ -z "$EXE" ]]; then

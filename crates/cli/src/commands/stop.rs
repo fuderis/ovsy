@@ -8,7 +8,7 @@ use std::{
 use tokio::process::Command;
 
 /// API: Handles the `stop` command
-pub async fn handle(stop_lms: bool) -> Result<()> {
+pub async fn handle_stop(stop_lms: bool) -> Result<()> {
     let port = Settings::get().server.port;
 
     // stop Ovsy server:

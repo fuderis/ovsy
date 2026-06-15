@@ -5,7 +5,7 @@ pub use ovsy_share::{SessionID, Settings, app_data, result::*};
 pub use atoman::*;
 pub use chrono::{DateTime, Local, Utc};
 pub use macron::*;
-pub use pearce::{Header, Headers, Json, Query, Response, Status};
+pub use pearce::{Header, Headers, Json, Paths, Query, Response, Status};
 
 pub use serde::{Deserialize, Serialize};
 pub use serde_json::{self as json, Value as JsonValue, json};

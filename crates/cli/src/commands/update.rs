@@ -5,7 +5,7 @@ use reqwest::Client;
 use std::io::{self, Write};
 
 /// API: Handles the `udpate` command
-pub async fn handle() -> Result<()> {
+pub async fn handle_update() -> Result<()> {
     let dim = Color::AnsiColor(247);
     let port = Settings::get().server.port;
 
