@@ -1,7 +1,7 @@
 use crate::{power::*, prelude::*};
 
 /// API: Handles the `power` tool
-pub async fn handle(tx: Arc<StreamSender<Bytes>>, data: JsonValue) -> Result<()> {
+pub async fn handle_power(tx: Arc<StreamSender<Bytes>>, data: JsonValue) -> Result<()> {
     let action: PowerAction = json::from_value(data)?;
 
     match Power::execute(action.clone()).await {
@@ -11,7 +11,7 @@ pub async fn handle(tx: Arc<StreamSender<Bytes>>, data: JsonValue) -> Result<()>
             let fmt_local = |utc_time: DateTime<Utc>| {
                 utc_time
                     .with_timezone(&Local)
-                    .format("%A, %B %d, %Y %I:%M:%S %p UTC%:z")
+                    .format("%A, %I:%M:%S %p (%:z), %B %d, %Y")
                     .to_string()
             };
 

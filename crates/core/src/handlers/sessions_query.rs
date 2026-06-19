@@ -373,18 +373,19 @@ pub async fn handle_agent(
 
 /// Generates the system prompt
 fn system_prompt(ai_conf: &AssistantOptions) -> String {
-    let now_utc = Utc::now();
     let now_local = Local::now();
-    let time_format = "%A, %B %d, %I:%M:%S %p";
+    let now_utc = Utc::now();
 
     ai_conf
         .system_prompt
         .replace(
             "{DATETIME_LOCAL}",
-            &now_local.format(time_format).to_string(),
+            &now_local
+                .format("%A, %B %d, %Y, %I:%M:%S %p %Z")
+                .to_string(),
         )
         .replace(
             "{DATETIME_GLOBAL}",
-            &now_utc.format(time_format).to_string(),
+            &now_utc.format("%A, %B %d, %Y, %I:%M:%S %p UTC").to_string(),
         )
 }

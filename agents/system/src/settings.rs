@@ -25,15 +25,15 @@ impl ::std::default::Default for AgentOptions {
                             str!("shutdown"), str!("reboot"), str!("suspend"), str!("lock"), str!("logout"), str!("cancel"), str!("status")
                         ])
                 )
-                .optional_property("timestamp",
-                    Schema::string("The absolute target ISO 8601 UTC datetime string (add a time zone offset at the end of the date, e.g. +00:00, to know which time zone was used). Omit for immediate actions, 'status', or 'cancel'.")
-                )
                 .optional_property("timeout",
-                    Schema::object("Use ONLY for relative delays (e.g., 'in 1 hour', 'after 15 mins', 'in 2 days', etc.). Fill only the required fields.")
+                    Schema::object("Use ONLY for relative delays (e.g., 'in 1 hour', 'after 15 mins', 'in 2 days', etc.). Fill only the required fields. Omit for immediate actions, 'status', or 'cancel'.")
                         .optional_property("days", Schema::integer(""))
                         .optional_property("hours", Schema::integer(""))
                         .optional_property("minutes", Schema::integer(""))
                         .optional_property("seconds", Schema::integer(""))
+                )
+                .optional_property("timestamp",
+                    Schema::string("The absolute target ISO 8601 UTC datetime string. Omit for immediate actions, 'status', or 'cancel'.")
                 ),
 
             Tool::new("volume", "Manages and controls the system audio hardware. Supports reading volume, setting absolute levels, shifting volume relatively, and toggling mute states.")
@@ -73,11 +73,7 @@ Operational Rules and Tool-Calling Logic:
    - Map the user's request to the correct `mode` enum value: "shutdown", "reboot", "suspend", "lock", "logout", "cancel", or "status".
    - METADATA & CONTROL: If the user wants to check what is scheduled ("status") or abort a pending action ("cancel"), invoke the `power` tool with the respective mode and OMIT the `timestamp` parameter.
    - IMMEDIATE EXECUTION: If the user requests a power state change immediately (e.g., "now", "right away") or does not specify any time/delay, invoke the `power` tool with the desired mode and OMIT the `timestamp` parameter entirely.
-   - DEFERRED SCHEDULING: If the user specifies a delay (e.g., "in 5 minutes", "in 2 hours") or a specific target time (e.g., "at 22:30", "tomorrow at noon"), you MUST calculate the absolute target date and time relative to the current system time. Convert this target time into a strict UTC ISO 8601 string (e.g., '2026-05-30T15:00:00Z') and pass it as the `timestamp` parameter.
-
-CRITICAL INSTRUCTIONS:
-- Absolute Datetime Generation: Always pay strict attention to relative time markers. You must accurately compute the future target timestamp based on the current date and time, translating it into the UTC timezone prior to formatting.
-- Strict Parameter Exclusion: DO NOT guess or provide a default value for `timestamp` if the action is intended to be executed immediately, or if the mode is "status" or "cancel". Omit the parameter entirely."#
+"#
             ),
             tools,
         }

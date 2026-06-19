@@ -29,6 +29,7 @@ impl Power {
                     Ok(PowerStatus::NoActiveTask)
                 }
             }
+
             Status => {
                 if let Some(active) = &*PowerAction::get().await {
                     let elapsed = active.created_at.elapsed().as_secs();
@@ -42,7 +43,6 @@ impl Power {
                     };
 
                     let remaining = total_timeout.saturating_sub(elapsed);
-
                     let target_time = active.timestamp.unwrap_or_else(|| {
                         Utc::now() + chrono::Duration::seconds(remaining as i64)
                     });
@@ -56,30 +56,37 @@ impl Power {
                     Ok(PowerStatus::NoActiveTask)
                 }
             }
+
             exec_mode => {
-                let timeout_secs = if let Some(ref t) = action.timeout {
-                    t.to_seconds()
+                let now = Utc::now();
+
+                // take target time:
+                let target_time = if let Some(ref t) = action.timeout {
+                    Some(now + chrono::Duration::seconds(t.to_seconds() as i64))
                 } else if let Some(target_time) = action.timestamp {
-                    let now = Utc::now();
-                    if target_time <= now {
-                        0
+                    if target_time > now {
+                        Some(target_time)
                     } else {
-                        (target_time - now).num_seconds() as u64
+                        return Err(str!("Invalid timestamp: requested time is in the past").into());
                     }
                 } else {
-                    0
+                    None
+                };
+
+                // calculate target time as seconds:
+                let timeout_secs = match target_time {
+                    Some(target) => (target - now).num_seconds().max(0) as u64,
+                    None => 0,
                 };
 
                 if timeout_secs == 0 {
                     Self::run_command(exec_mode).await?;
                     Ok(PowerStatus::Executed)
                 } else {
-                    let target_time = action.timestamp.unwrap_or_else(|| {
-                        Utc::now() + chrono::Duration::seconds(timeout_secs as i64)
-                    });
+                    let final_target = target_time.unwrap();
 
                     let mut action_clone = action;
-                    action_clone.timestamp = Some(target_time);
+                    action_clone.timestamp = Some(final_target);
 
                     PowerAction::set(action_clone.clone()).await;
 
@@ -123,7 +130,7 @@ impl Power {
 
                     Ok(PowerStatus::Deferred {
                         mode: exec_mode,
-                        target_time,
+                        target_time: final_target,
                         remaining_secs: timeout_secs,
                     })
                 }

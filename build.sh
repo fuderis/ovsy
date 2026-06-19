@@ -4,7 +4,7 @@
 UNDERLINE_COUNT=40
 INSTALL_DIR="$HOME/.ovsy"
 PORT=7878
-BINARIES=("ovsy-cli" "ovsy-core")
+BINARIES=("ovsy-core" "ovsy-cli")
 
 # Colors:
 NC='\033[0m'
@@ -41,7 +41,7 @@ if [ ! -d ".git" ]; then
 fi
 
 # 2. Kill existing processes to release file locks:
-echo -n "Cleaning port $PORT... "
+echo -e "${BLUE}==>${NC} Cleaning port ${BLUE}$PORT${NC}... "
 if [[ -z "$EXE" ]]; then
     fuser -k $PORT/tcp >/dev/null 2>&1
 else
@@ -50,7 +50,6 @@ else
         taskkill //F //PID "$pid" >/dev/null 2>&1
     done
 fi
-echo -e "${CYAN}Done${NC}"
 
 # 3. Build project using Cargo:
 echo -e "${BLUE}==>${NC} Running cargo build:"
@@ -136,9 +135,11 @@ if [[ -z "$EXE" ]]; then
     mkdir -p "$LOCAL_BIN_DIR"
     ln -sf "$INSTALL_DIR/bin/ovsy-cli" "$LOCAL_BIN_DIR/ovsy"
 
-    OUTPUT_MSG="Symlink created: $LOCAL_BIN_DIR/ovsy -> $INSTALL_DIR/bin/ovsy-cli"
-    SHORT_MSG=$(echo "$OUTPUT_MSG" | sed "s|$HOME|~|g")
-    echo -e "  [${GREEN}OK${NC}] $SHORT_MSG"
+    BINARY_PATH_="$INSTALL_DIR/bin/ovsy-cli"
+    SYMLINK_PATH_="$LOCAL_BIN_DIR/ovsy"
+    BINARY_PATH=$(echo "$BINARY_PATH_" | sed "s|$HOME|~|g")
+    SYMLINK_PATH=$(echo "$SYMLINK_PATH_" | sed "s|$HOME|~|g")
+    echo -e "  [${GREEN}OK${NC}] ${BOLD}Symlink created${NC} $BINARY_PATH ${GREEN}->${NC} $SYMLINK_PATH"
 
     if [[ ":$PATH:" != *":$LOCAL_BIN_DIR:"* ]]; then
         echo -e "${RED}Warning: $LOCAL_BIN_DIR is not in your PATH.${NC}"
