@@ -35,3 +35,4 @@ chrono = { version = "0.4.42", features = ["serde"] }
 regex = "1.12.2"
 rand = "0.10.1"
 sha2 = "0.11.0"
+tracing = "0.1.44"

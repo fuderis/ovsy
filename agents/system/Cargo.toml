@@ -29,3 +29,4 @@ serde_json.workspace = true
 clap.workspace = true
 regex.workspace = true
 chrono.workspace = true
+tracing.workspace = true

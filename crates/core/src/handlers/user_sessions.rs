@@ -4,7 +4,7 @@ use tokio::fs;
 
 /// API: Handles the session messages retrieval
 #[log(skip_all, fields(uid = %uid.0))]
-pub async fn users_sessions(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Response {
+pub async fn user_sessions(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Response {
     let user_id = uid.0;
     let UserSessionsQuery { limit } = data.0;
 

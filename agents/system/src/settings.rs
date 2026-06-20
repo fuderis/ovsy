@@ -44,6 +44,12 @@ impl ::std::default::Default for AgentOptions {
                 .optional_property("value",
                     Schema::integer("The absolute target volume percentage for 'set' (0-200), or a relative change integer for 'add' (e.g., +15, -10). Omit for 'get', 'mute', and 'unmute' modes.")
                 ),
+
+            Tool::new("theme", "Manages the system's visual appearance and color scheme. Supports switching between dark and light modes, or retrieving the current theme state.")
+                .required_property("mode",
+                    Schema::string("The action mode for the system theme.")
+                        .variants(set![str!("dark"), str!("light"), str!("get")])
+                ),
         ];
 
         Self {
@@ -52,7 +58,7 @@ impl ::std::default::Default for AgentOptions {
                 "The comprehensive system manager capable of retrieving system specifications,
 controlling audio volume, and managing power actions (shutdown, reboot, suspend, lock, logout)
 with absolute datetime scheduling (timers), power/volume status tracking, and cancellation via
-a single unified interface."
+a single unified interface, toggling system appearance themes (dark/light) or return current theme status."
             ),
             prompt: str!(
                 r#"You are the System Manager. Your primary responsibilities are to manage the system's power states (including task scheduling, status monitoring, and cancellation), retrieve hardware and OS specifications, and control audio volume levels.
@@ -73,6 +79,11 @@ Operational Rules and Tool-Calling Logic:
    - Map the user's request to the correct `mode` enum value: "shutdown", "reboot", "suspend", "lock", "logout", "cancel", or "status".
    - METADATA & CONTROL: If the user wants to check what is scheduled ("status") or abort a pending action ("cancel"), invoke the `power` tool with the respective mode and OMIT the `timestamp` parameter.
    - IMMEDIATE EXECUTION: If the user requests a power state change immediately (e.g., "now", "right away") or does not specify any time/delay, invoke the `power` tool with the desired mode and OMIT the `timestamp` parameter entirely.
+
+4. System Theme Management (`theme`):
+   - Map the user's appearance request to the correct `mode` enum value: "dark", "light", or "get".
+   - DARK/LIGHT: If the user wants to enable dark or light mode, use mode "dark" or "light".
+   - GET: If the user asks about the current active theme or wants to check it, use mode "get".
 "#
             ),
             tools,

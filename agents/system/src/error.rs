@@ -29,4 +29,32 @@ pub enum Error {
     #[from(skip)]
     #[display(fmt = "Value is required for '{0}' mode")]
     ExpectedValue(VolumeMode),
+
+    #[display(fmt = "Unsupported operating system")]
+    UnsupportedOS,
+
+    #[cfg(target_os = "linux")]
+    #[display(fmt = "Failed to execute gsettings: {0}")]
+    GsettingsExecute(std::io::Error),
+
+    #[cfg(target_os = "linux")]
+    #[display(fmt = "gsettings exited with non-zero status")]
+    GsettingsExitStatus,
+
+    #[cfg(target_os = "macos")]
+    #[display(fmt = "Failed to execute osascript: {0}")]
+    OsascriptExecute(std::io::Error),
+
+    #[cfg(target_os = "macos")]
+    #[display(fmt = "osascript exited with non-zero status")]
+    OsascriptExitStatus,
+
+    #[cfg(target_os = "windows")]
+    #[from(skip)]
+    #[display(fmt = "Task join error: {0}")]
+    TaskJoin(DynError),
+
+    #[cfg(target_os = "windows")]
+    #[display(fmt = "Failed to write Windows registry: {0}")]
+    Registry(std::io::Error),
 }

@@ -1,7 +1,6 @@
 use super::AppState;
 use crate::prelude::*;
 use anylm::{Content, Messages};
-use chrono::Local;
 
 use ratatui::{
     Frame,
@@ -99,14 +98,8 @@ fn render_chat(f: &mut Frame, area: Rect, app: &mut AppState, msgs: &Arc<Message
                 history.push(hr_line);
             }
 
-            let time_str = msg
-                .timestamp
-                .map(|t| {
-                    t.with_timezone(&Local)
-                        .format("%A %I:%M %p (%:z)")
-                        .to_string()
-                })
-                .unwrap_or_else(|| "??:??".to_string());
+            let utc_local = &app.session_id.dirty_get().now_local();
+            let time_str = utc_local.format("%A %I:%M %p (%:z)").to_string();
 
             let meta_line = Line::from(vec![
                 Span::styled("● ", Style::default().fg(Color::Cyan)),

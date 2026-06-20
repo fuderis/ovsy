@@ -20,6 +20,7 @@ use std::{io, process::Command};
 use tokio::task::JoinHandle;
 
 const USER_ID: u128 = 0;
+const USER_TIMEZONE: i16 = 5 * 60;
 
 /// API: Handles the `chat` command
 pub async fn handle_chat() -> Result<()> {
@@ -38,7 +39,7 @@ pub async fn handle_chat() -> Result<()> {
                 time::sleep(Duration::from_millis(500)).await;
                 if client.get(&status_url).send().await.is_ok() {
                     is_ok = true;
-                    break;
+                    // break;
                 }
             }
 
@@ -57,11 +58,35 @@ pub async fn handle_chat() -> Result<()> {
     let (input_tx, input_rx) = mpsc::unbounded_channel::<ChatAction>();
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
 
+    // load last session or create new:
+    let mut session_id = SessionID::new(USER_ID, USER_TIMEZONE);
+    let sessions_query = UserSessionsQuery::new(1); // limit: 1
+    let base_url = str!("http://127.0.0.1:{port}");
+    let sessions_url = str!("{base_url}/users/{USER_ID}/sessions");
+
+    if let Ok(res) = client
+        .post(&sessions_url)
+        .json(&sessions_query)
+        .send()
+        .await
+    {
+        if let Ok(active_sessions) = res.json::<Vec<SessionID>>().await
+            && let Some(last_session) = active_sessions.into_iter().next()
+        {
+            session_id = last_session;
+        }
+    }
+
     // init app state:
-    let mut app = AppState::new(input_tx);
+    let mut app = AppState::new(session_id, input_tx);
 
     // start chat worker:
-    tokio::spawn(chat_worker(input_rx, ui_tx, app.messages.clone()));
+    tokio::spawn(chat_worker(
+        app.session_id.clone(),
+        input_rx,
+        ui_tx,
+        app.messages.clone(),
+    ));
 
     // render tui app:
     enable_raw_mode()?;
@@ -101,9 +126,9 @@ async fn run_app<B: Backend>(
             .draw(|f| chat::render_tui(f, app))
             .map_err(|e| e.to_string())?;
 
-        // processing incoming data from the server:
+        // collect all available chunks:
         if let Ok(chunk) = ui_rx.try_recv() {
-            handle_chunk(app, chunk).await;
+            handle_chunk(app, &mut app.messages.lock().await, chunk).await;
         }
 
         // handling terminal event:
@@ -116,7 +141,8 @@ async fn run_app<B: Backend>(
     Ok(())
 }
 
-/// Process input drivers and keyboard hooks. Returns true if application should terminate.
+/// Process input drivers and keyboard hooks
+/// (returns true if application should terminate)
 async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
     match event {
         Event::Mouse(mouse_event) => {
@@ -275,6 +301,7 @@ async fn handle_input(app: &mut AppState) {
 
 /// A worker for networking
 async fn chat_worker(
+    session_id: Arc<State<SessionID>>,
     mut input_rx: mpsc::UnboundedReceiver<ChatAction>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
     messages: Arc<State<Messages>>,
@@ -282,25 +309,6 @@ async fn chat_worker(
     let port = Settings::get().server.port;
     let client = reqwest::Client::new();
     let base_url = str!("http://127.0.0.1:{port}");
-
-    let mut session_id = SessionID::new(USER_ID);
-
-    // load last session or create new:
-    let sessions_query = UserSessionsQuery::new(1); // limit: 1
-    let sessions_url = str!("{base_url}/users/{USER_ID}/sessions");
-
-    if let Ok(res) = client
-        .post(&sessions_url)
-        .json(&sessions_query)
-        .send()
-        .await
-    {
-        if let Ok(active_sessions) = res.json::<Vec<SessionID>>().await
-            && let Some(last_session) = active_sessions.into_iter().next()
-        {
-            session_id = last_session;
-        }
-    }
 
     // load session history:
     if let Ok(res) = client
@@ -347,30 +355,44 @@ async fn chat_worker(
                     }
 
                     match args[0].to_lowercase().as_str() {
+                        "/new" => {
+                            // gen new session id:
+                            session_id.set(SessionID::new(USER_ID, USER_TIMEZONE)).await;
+
+                            // clear messages state:
+                            messages.set(Messages::new()).await;
+
+                            let _ = ui_tx.send(Chunk {
+                                data: ChunkData::Finish,
+                                agent: None,
+                            });
+                        }
+
                         "/clear" | "/clean" => {
                             let ui_tx = ui_tx.clone();
                             let client = client.clone();
                             let base_url = base_url.clone();
                             let messages = messages.clone();
-                            let session_id = session_id.clone();
 
-                            let res = client
+                            let result = client
                                 .post(str!("{base_url}/sessions/{session_id}/clear"))
                                 .send()
                                 .await;
 
-                            {
-                                let mut msgs = messages.lock().await;
-                                msgs.messages.clear();
-                                msgs.tokens_count = 0;
-                                msgs.sync();
-                            }
+                            // check result:
+                            match result {
+                                Ok(_) => {
+                                    // clear messages state:
+                                    messages.set(Messages::new()).await;
+                                }
 
-                            if let Err(e) = res {
-                                let _ = ui_tx.send(Chunk::error(str!(
-                                    "Failed to clear remote history: {}",
-                                    e
-                                )));
+                                Err(e) => {
+                                    // send error:
+                                    let _ = ui_tx.send(Chunk::error(str!(
+                                        "Failed to clear remote history: {}",
+                                        e
+                                    )));
+                                }
                             }
 
                             let _ = ui_tx.send(Chunk {
@@ -492,7 +514,7 @@ async fn chat_worker(
 }
 
 /// Process backend runtime text chunks
-async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
+async fn handle_chunk(app: &mut AppState, msgs: &mut StateGuard<Messages>, chunk: Chunk) {
     match chunk {
         Chunk {
             data: ChunkData::Thinking(think),
@@ -505,7 +527,6 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             data: ChunkData::Tools(tool_calls),
             ..
         } => {
-            let mut msgs = app.messages.lock().await;
             if let Some(msg) = msgs.messages.get_mut(app.response_index) {
                 msg.tool_calls.extend(tool_calls);
                 msg.count_tokens();
@@ -517,10 +538,9 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             agent,
             data: ChunkData::Answer(answer),
         } => {
-            let mut msgs = app.messages.lock().await;
             let id_str = agent.as_ref().map(|task| task.tool_call_id.as_str());
 
-            // push_str атомарно находит нужный индекс или создает сообщение (tool/assistant)
+            // push answer part into last message:
             msgs.push_str(id_str, &answer);
             app.chat_scroll = u16::MAX;
         }
@@ -529,9 +549,7 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             data: ChunkData::Finish,
             agent,
         } => {
-            let mut msgs = app.messages.lock().await;
             let idx = app.response_index;
-
             if idx < msgs.messages.len() && !msgs.messages[idx].tool_calls.is_empty() {
                 let ordered_ids: Vec<String> = msgs.messages[idx]
                     .tool_calls
@@ -586,10 +604,9 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             let err_msg = str!("Error: {error}");
 
             if let Some(task) = agent {
-                let mut msgs = app.messages.lock().await;
                 let current_tool_id = task.tool_call_id.clone();
 
-                // Используем push_str для безопасного обновления контента сообщения ошибки инструмента
+                // push error to last message:
                 msgs.push_str(Some(&current_tool_id), &format!("\n{}", err_msg));
                 app.chat_scroll = u16::MAX;
 
@@ -609,7 +626,6 @@ async fn handle_chunk(app: &mut AppState, chunk: Chunk) {
             } else {
                 app.is_busy = false;
                 app.status.take();
-                let mut msgs = app.messages.lock().await;
                 msgs.add_message(Message::system(vec![
                     str!("Critical Error: {error}").into(),
                 ]));

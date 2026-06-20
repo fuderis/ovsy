@@ -5,7 +5,7 @@ use reqwest::Client;
 
 /// API: The user message handler
 #[log(skip_all, fields(sid = %sid.0))]
-pub async fn sessions_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Response {
+pub async fn session_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Response {
     let session_id = sid.0;
     let HandleQuery { message } = data.0;
 
@@ -38,7 +38,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
     // prepare messages:
     let messages = Messages::from(db_messages)
         .system(vec![
-            system_prompt(&ai_conf).into(),
+            system_prompt(&session_id, &ai_conf).into(),
             ai_conf
                 .assist_prompt
                 .replace("{AGENTS_LIST}", &Manager::agents_list_doc().await)
@@ -212,7 +212,10 @@ pub async fn handle_agent(
 
     // prepare messages:
     let agent_messages = Messages::new()
-        .system(vec![system_prompt(&ai_conf).into(), prompt.into()])
+        .system(vec![
+            system_prompt(&session.id, &ai_conf).into(),
+            prompt.into(),
+        ])
         .assistant(
             task.context()
                 .await
@@ -262,7 +265,7 @@ pub async fn handle_agent(
         .ok();
         drop(log_json);
 
-        let request_url = str!("http://127.0.0.1:{port}/call/{}", func.name);
+        let request_url = str!("http://127.0.0.1:{port}/tools/call/{}", func.name);
         let request_body = func.parse_args::<JsonValue>()?;
 
         // send to agent server:
@@ -291,9 +294,8 @@ pub async fn handle_agent(
 
             if let Ok(Some((new_port, _, _))) = Manager::ensure_agent(&arc_name).await {
                 port = new_port;
-
                 response = client
-                    .post(&str!("http://127.0.0.1:{port}/call/{}", func.name))
+                    .post(&str!("http://127.0.0.1:{port}/tools/call/{}", func.name))
                     .header("Content-Type", "application/json")
                     .json(&request_body)
                     .send()
@@ -372,9 +374,9 @@ pub async fn handle_agent(
 }
 
 /// Generates the system prompt
-fn system_prompt(ai_conf: &AssistantOptions) -> String {
-    let now_local = Local::now();
+fn system_prompt(session_id: &SessionID, ai_conf: &AssistantOptions) -> String {
     let now_utc = Utc::now();
+    let now_local = session_id.now_local();
 
     ai_conf
         .system_prompt

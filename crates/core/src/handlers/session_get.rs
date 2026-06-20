@@ -4,7 +4,7 @@ use ovsy_share::SessionID;
 
 /// API: Handles the session messages retrieval
 #[log(skip_all, fields(sid = %sid.0))]
-pub async fn sessions_get(sid: Paths<SessionID>) -> Response {
+pub async fn session_get(sid: Paths<SessionID>) -> Response {
     let session_id = sid.0;
 
     match get_or_init(session_id).await {

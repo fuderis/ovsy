@@ -4,7 +4,7 @@ use ovsy_share::{Chunk, CompactQuery, SessionID};
 
 /// API: Handles the session compression
 #[log(skip_all, fields(sid = %sid.0))]
-pub async fn sessions_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) -> Response {
+pub async fn session_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) -> Response {
     let session_id = sid.0;
     let CompactQuery { preserve } = data.0;
 

@@ -1,9 +1,8 @@
 use crate::{prelude::*, volume::*};
 
 /// API: Handles the `volume` tool
-pub async fn handle_volume(tx: Arc<StreamSender<Bytes>>, data: JsonValue) -> Result<()> {
-    let action: VolumeAction = json::from_value(data)?;
-
+#[log(skip_all, fields(action))]
+pub async fn handle_volume(tx: Arc<StreamSender<Bytes>>, action: VolumeAction) -> Result<()> {
     match Volume::execute(action.mode, action.value).await {
         Ok(status) => {
             use VolumeMode::*;

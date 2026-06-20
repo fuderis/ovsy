@@ -1,9 +1,8 @@
 use crate::{power::*, prelude::*};
 
 /// API: Handles the `power` tool
-pub async fn handle_power(tx: Arc<StreamSender<Bytes>>, data: JsonValue) -> Result<()> {
-    let action: PowerAction = json::from_value(data)?;
-
+#[log(skip_all, fields(action))]
+pub async fn handle_power(tx: Arc<StreamSender<Bytes>>, action: PowerAction) -> Result<()> {
     match Power::execute(action.clone()).await {
         Ok(status) => {
             use PowerStatus::*;

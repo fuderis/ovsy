@@ -163,6 +163,10 @@ the orchestrator provides a set of dedicated endpoints.
 To keep routing overhead at an absolute minimum, each agent exposes an intentionally minimalist API surface.
 The endpoints are designed to handle initialization, tracking, and execution with zero computational waste.
 
+  * **POST `/tools/call/{tool}`:** Handles direct, isolated execution of a specific tool requested by the orchestrator.
+  By binding each execution to a dedicated, strict context, it minimizes the risk of model hallucinations
+  and ensures that the tool's payload is utilized to its maximum efficiency.
+
   * **POST `/ping`:** Used for real-time telemetry, health diagnostics, and log tracing.
   Instead of a simple uptime signal, it returns structural metadata allowing the orchestrator
   to instantly locate the agent's operational footprint.
@@ -170,10 +174,7 @@ The endpoints are designed to handle initialization, tracking, and execution wit
   * **POST `/info`:** Exposes the agent’s profile, system prompt, and capabilities.
   This endpoint is invoked exclusively during the agent's initial bootstrap when the assistant starts,
   as well as during hot-reloads via the `ovsy update` command.
-
-  * **POST `/call/{tool}`:** Handles direct, isolated execution of a specific tool requested by the orchestrator.
-  By binding each execution to a dedicated, strict context, it minimizes the risk of model hallucinations
-  and ensures that the tool's payload is utilized to its maximum efficiency.
+  
 
 ### Architectural Rationale
 

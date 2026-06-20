@@ -49,9 +49,9 @@ async fn main() -> Result<()> {
 
     // start server:
     Server::new()
-        .post("/ping", handlers::ping::handle)
-        .post("/info", handlers::info::handle)
-        .post("/call/{tool}", handlers::call::handle)
+        .post("/ping", handlers::handle_ping)
+        .post("/info", handlers::handle_info)
+        .post("/tools/call/{tool}", handlers::handle_tool_call)
         .run(args.port)
         .await
 }
