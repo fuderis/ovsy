@@ -47,27 +47,11 @@ impl Agent {
             exe = if cfg!(windows) { ".exe" } else { "" }
         ));
 
-        // Формируем путь к UDS сокету: app_data().join("uds/{agent_name}.sock")
-        // Предполагается, что функция app_data() возвращает PathBuf и доступна в контексте
         let sock_path = app_data().join(format!("uds/{}.sock", name));
-
-        // Убедимся, что директория для сокетов существует (актуально для Linux/macOS/Windows)
-        if let Some(parent) = sock_path.parent() {
-            let _ = tokio::fs::create_dir_all(parent).await;
-        }
-
-        // Удаляем старый файл сокета, если он остался после прошлого падения
-        if sock_path.exists() {
-            let _ = tokio::fs::remove_file(&sock_path).await;
-        }
 
         // build command:
         let mut cmd = Command::new(&exec_path);
-        // Передаем путь к сокету в аргументы агента (убедитесь, что бинарник принимает --socket)
-        cmd.args(&["--socket", &sock_path.to_string_lossy()])
-            .args(&["--max-logs", &str!(Settings::get().server.max_logs)])
-            .stdin(Stdio::piped())
-            .kill_on_drop(true);
+        cmd.stdin(Stdio::piped()).kill_on_drop(true);
 
         #[cfg(target_os = "linux")]
         {
@@ -93,15 +77,12 @@ impl Agent {
             }
         };
 
-        // Инициализируем ваш IPC клиент из pearce
         let client = Client::ipc(&sock_path.to_string_lossy());
         let mut attempts = 0;
 
         let info = loop {
             attempts += 1;
 
-            // Используем .post("/info") — ваш клиент сам подставит http://localhost/info
-            // и направит запрос напрямую в Unix Domain Socket
             let request_result =
                 time::timeout(Duration::from_millis(100), client.post("/info").send()).await;
 
@@ -111,7 +92,6 @@ impl Agent {
                 }
                 _ => {
                     if attempts >= 50 {
-                        // Не забудьте обновить определение вашей ошибки, чтобы она принимала sock_path
                         return Err(Error::AgentStartFailed {
                             name,
                             sock_path: sock_path.to_string_lossy().to_string(),
@@ -139,7 +119,6 @@ impl Agent {
 
     /// Returns true if needs to be updated
     pub async fn check(&self) -> Result<bool> {
-        // Проверка живости агента через UnixStream
         let is_alive = time::timeout(
             Duration::from_millis(100),
             UnixStream::connect(&self.sock_path),
