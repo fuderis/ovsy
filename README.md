@@ -1,6 +1,6 @@
 # Ovsy Assistant
 
-![Banner](/assets/banner.png)
+![Cover](/assets/cover.png)
 
 ## Overview
 
@@ -78,11 +78,17 @@ the engine implements strict runtime boundaries and three layers of defensive te
 
 ### Network Isolation
 
-Each agent process is isolated inside the local network loopback interface:
+To minimize context-switching overhead and maximize data throughput, agent communication is completely decoupled from the network stack.
+Instead of utilizing traditional TCP loopback interfaces, the orchestrator and agents communicate via local **Unix Domain Sockets (UDS)** (`AF_UNIX` on Windows).
 
-* **Dynamic Port Allocation:** Agents are bound to an ephemeral port fetched dynamically at runtime (`crate::free_port()`).
-* **Loopback Binding:** Communication is strictly constrained to `127.0.0.1`, mitigating any unauthorized external
-  network ingress to the agent's internal HTTP endpoints.
+* **File-System-Level Security:** Each agent process binds to a unique, dynamically generated socket file (`~/.ovsy/uds/{agent_name}.sock`).
+  Access control is strictly enforced using standard POSIX file permissions, completely isolating agent endpoints from external network ingress or unauthorized local processes.
+
+* **Zero Network Overhead:** By leveraging UDS, the system bypasses the entire routing, filtering, and TCP/IP loopback overhead of the operating system kernel.
+  This enables zero-copy-like data streaming directly between the orchestrator's async runtime and the agent processes via specialized IPC pipes.
+
+* **Dynamic Descriptors:** Sockets are provisioned and lifecycle-managed automatically by the manager layer. When an agent drops out of scope or is killed,
+  its corresponding socket descriptor on the filesystem is cleanly unlinked and destroyed to prevent resource leakage.
 
 ### Initialization
 
@@ -92,15 +98,22 @@ The system utilizes a split-phase verification strategy to guarantee that an age
   the agent's `/info` HTTP endpoint. To accommodate process spin-up times, heavy binary initialization,
   or cold starts, the loop allows up to 50 attempts spaced out by 100ms intervals, granting the agent
   a reliable 5-second window to warm up.
+
 * **Deadlock Prevention:** The HTTP handshake is wrapped in a tight `tokio::time::timeout` guard (100ms per request).
   This critical safety boundary prevents the orchestrator from blocking indefinitely if the agent successfully binds
   to the TCP port but hangs internally during its boot sequence.
+
 * **Liveness Monitoring:** Subsequent health monitoring via the `check` method periodically verifies the agent's state
   by attempting a shallow TCP handshake. If a connection is refused or times out, the agent is immediately marked as dead,
   triggering automated recovery or hot-reloading routines.
+
 * **Hot-Reloading:** The `check` method continuously compares the on-disk binary metadata timestamp
   against the process instantiation time (`_started`). If the binary has been overwritten or updated,
   the orchestrator flags the agent for a graceful restart.
+
+* **Liveness Monitoring:** Subsequent health monitoring via the `check` method periodically verifies the agent's state by attempting a shallow connection to its Unix Domain Socket.
+  If the connection is refused, times out, or the socket file disappears from the filesystem, the agent is immediately marked as dead,
+  triggering automated recovery or hot-reloading routines.
 
 ## Communication Protocol
 
@@ -183,16 +196,16 @@ However, for a production-grade, high-concurrency AI assistant like Ovsy,
 universal standards introduce severe engineering compromises:
 
   * **System Call Overhead:** MCP relies heavily on standardized **JSON-RPC** wrappers and multiple layers
-    of **Inter-Process Communication (IPC)**. This abstraction layer forces an excessive volume of system calls,
-    creating latency bottlenecks under heavy multi-agent workloads.
-  * **Memory Bloat:** Because MCP is designed to accommodate any arbitrary system,
-    it requires packaging and parsing bloated, generalized context objects.
-    This approach fundamentally violates zero-copy principles and leads to unnecessary **RAM** consumption.
-  * **Control and Abstraction:** By utilizing a tailored, SSE-based chunking design, Ovsy eliminates the abstraction
-    tax of generalized protocols.<br>
+  of **Inter-Process Communication (IPC)**. This abstraction layer forces an excessive volume of system calls,
+  creating latency bottlenecks under heavy multi-agent workloads.
 
-    The data pipeline is built exclusively for what the assistant needs:
-    streaming reasoning steps, handling targeted tool requests, and passing isolated outputs directly to the threads that need them.
+  * **Memory Bloat:** Because MCP is designed to accommodate any arbitrary system,
+  it requires packaging and parsing bloated, generalized context objects.
+  This approach fundamentally violates zero-copy principles and leads to unnecessary **RAM** consumption.
+
+  * **Control and Abstraction:** By utilizing a tailored, SSE-over-UDS chunking design, Ovsy eliminates the abstraction tax of generalized protocols.
+  The data pipeline is stripped down to native Unix domain communication, passing isolated streaming payloads directly to the Tokio execution threads
+  with sub-millisecond coordination latency.
 
 ## Framework Stack
 
