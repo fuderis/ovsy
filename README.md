@@ -103,17 +103,13 @@ The system utilizes a split-phase verification strategy to guarantee that an age
   This critical safety boundary prevents the orchestrator from blocking indefinitely if the agent successfully binds
   to the TCP port but hangs internally during its boot sequence.
 
-* **Liveness Monitoring:** Subsequent health monitoring via the `check` method periodically verifies the agent's state
-  by attempting a shallow TCP handshake. If a connection is refused or times out, the agent is immediately marked as dead,
+* **Liveness Monitoring:** Subsequent health monitoring via the `check` method periodically verifies the agent's state by attempting a shallow connection to its Unix Domain Socket.
+  If the connection is refused, times out, or the socket file disappears from the filesystem, the agent is immediately marked as dead,
   triggering automated recovery or hot-reloading routines.
 
 * **Hot-Reloading:** The `check` method continuously compares the on-disk binary metadata timestamp
   against the process instantiation time (`_started`). If the binary has been overwritten or updated,
   the orchestrator flags the agent for a graceful restart.
-
-* **Liveness Monitoring:** Subsequent health monitoring via the `check` method periodically verifies the agent's state by attempting a shallow connection to its Unix Domain Socket.
-  If the connection is refused, times out, or the socket file disappears from the filesystem, the agent is immediately marked as dead,
-  triggering automated recovery or hot-reloading routines.
 
 ## Communication Protocol
 
