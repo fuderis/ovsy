@@ -88,7 +88,7 @@ version = "0.1.25"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9005a731d0fc66ff333bcc1b1d39f61f3223b71d3df0bcbacca0a06474cde366"
 dependencies = [
- "atoman",
+ "atoman 0.2.24",
  "base64",
  "bytes",
  "chrono",
@@ -127,6 +127,22 @@ name = "atoman"
 version = "0.2.24"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "342633935533edc5c05bbdc0fe0194051a850322c0c0390a8c8cdbfc273b7370"
+dependencies = [
+ "arc-swap",
+ "bytes",
+ "futures",
+ "macron 0.1.18",
+ "once_cell",
+ "serde",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "atoman"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dfdfd54b68acaaa69cff1fd240eaf5c68fe884beafd4a67005e802440eb309ea"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -189,9 +205,9 @@ dependencies = [
 
 [[package]]
 name = "axum"
-version = "0.8.8"
+version = "0.8.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b52af3cb4058c895d37317bb27508dccc8e5f2d39454016b297bf4a400597b8"
+checksum = "31b698c5f9a010f6573133b09e0de5408834d0c82f8d7475a89fc1867a71cd90"
 dependencies = [
  "axum-core",
  "bytes",
@@ -395,7 +411,7 @@ version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0aa76a6ae4c88552d3af9715994deaf0b1774cc08477b6e393191ada6e4141ea"
 dependencies = [
- "atoman",
+ "atoman 0.2.24",
  "macron 0.1.18",
  "rand 0.10.1",
  "serde",
@@ -1083,9 +1099,9 @@ dependencies = [
 
 [[package]]
 name = "h2"
-version = "0.4.13"
+version = "0.4.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2f44da3a8150a6703ed5d34e164b875fd14c2cdab9af1252a9a1020bde2bdc54"
+checksum = "6cb093c84e8bd9b188d4c4a8cb6579fc016968d14c99882163cd3ff402a4f155"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1188,9 +1204,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.9.0"
+version = "1.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6299f016b246a94207e63da54dbe807655bf9e00044f73ded42c3ac5305fbcca"
+checksum = "55281c53a1894c864990125767da440a4e630446785086f52523b20033b74498"
 dependencies = [
  "atomic-waker",
  "bytes",
@@ -1979,7 +1995,7 @@ name = "ovsy-cli"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman",
+ "atoman 0.3.0",
  "chrono",
  "clap",
  "colored",
@@ -2001,7 +2017,7 @@ name = "ovsy-core"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman",
+ "atoman 0.3.0",
  "chrono",
  "cistern",
  "libc",
@@ -2020,7 +2036,7 @@ name = "ovsy-share"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman",
+ "atoman 0.3.0",
  "chrono",
  "macron 0.2.1",
  "rand 0.10.1",
@@ -2079,16 +2095,20 @@ dependencies = [
 
 [[package]]
 name = "pearce"
-version = "0.1.0"
+version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8afea34a12d50f17a52c8bc436be250d253fab0a08998839ee9385d878de7c0b"
+checksum = "7c8e82b77286210c50cb268eb74f3bf5abaf2f17143347c036d09fd21bf2a9fa"
 dependencies = [
- "atoman",
+ "atoman 0.3.0",
  "axum",
- "macron 0.1.18",
+ "hyper",
+ "hyper-util",
+ "macron 0.2.1",
+ "reqwest",
  "serde",
  "serde_json",
  "tokio",
+ "tower",
  "urlencoding",
  "validator",
 ]
@@ -3057,9 +3077,8 @@ name = "system-agent"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman",
+ "atoman 0.3.0",
  "chrono",
- "clap",
  "macron 0.2.1",
  "ovsy-share",
  "pearce",

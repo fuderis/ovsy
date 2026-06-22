@@ -7,8 +7,8 @@ pub enum Error {
     #[display(fmt = "Failed to get agent name (incorrect dir path)")]
     FailedGetAgentName,
 
-    #[display(fmt = "Agent `{name}` failed to start on port {port} after 10 attempts.")]
-    AgentStartFailed { name: String, port: u16 },
+    #[display(fmt = "Agent `{name}` failed to start on sock {sock_path} after 10 attempts.")]
+    AgentStartFailed { name: String, sock_path: String },
 
     #[display(fmt = "Failed to parse AgentInfo response payload: {0}")]
     AgentInfoParsingFailed(DynError),

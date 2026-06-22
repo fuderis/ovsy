@@ -2,7 +2,7 @@ use super::PowerMode;
 use crate::prelude::*;
 
 /// The deferred power operation
-static POWER_ACTION: State<Option<PowerAction>> = State::new();
+static POWER_ACTION: State<Option<PowerAction>> = State::default();
 
 /// The timeout before action
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

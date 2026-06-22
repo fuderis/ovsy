@@ -19,7 +19,7 @@ pub fn app_data() -> std::path::PathBuf {
 }
 /// Returns the app version
 pub fn app_version() -> &'static str {
-    "0.8.2"
+    "0.9.0"
 }
 
 pub mod result;

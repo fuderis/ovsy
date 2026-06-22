@@ -1,7 +1,7 @@
 use crate::{manager::*, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages, ToolCall};
 use ovsy_share::{AgentTask, Chunk, ChunkData, HandleQuery, settings::AssistantOptions};
-use reqwest::Client;
+use pearce::Client;
 
 /// API: The user message handler
 #[log(skip_all, fields(sid = %sid.0))]
@@ -174,7 +174,7 @@ pub async fn handle_agent(
     let arc_name = arc!(task_info.agent_name.clone());
 
     // check agent for exists:
-    let (mut port, prompt, tools) = match Manager::ensure_agent(&arc_name).await {
+    let (sock_path, prompt, tools) = match Manager::ensure_agent(&arc_name).await {
         Ok(Some(ops)) => ops,
         _ => {
             return Err(str!(
@@ -247,7 +247,7 @@ pub async fn handle_agent(
     }
 
     // handle tools:
-    let client = Client::new();
+    let client = Client::ipc(&sock_path.to_string_lossy());
     for ToolCall { func, .. } in tool_calls {
         let log_json = func.json_str.replace("\n", "\\n");
         info!(
@@ -265,12 +265,12 @@ pub async fn handle_agent(
         .ok();
         drop(log_json);
 
-        let request_url = str!("http://127.0.0.1:{port}/tools/call/{}", func.name);
+        let request_path = str!("/tools/call/{}", func.name);
         let request_body = func.parse_args::<JsonValue>()?;
 
         // send to agent server:
         let mut response = client
-            .post(&request_url)
+            .post(&request_path)
             .header("Content-Type", "application/json")
             .json(&request_body)
             .send()
@@ -292,10 +292,11 @@ pub async fn handle_agent(
 
             let _ = Manager::stop(arc_name.clone()).await;
 
-            if let Ok(Some((new_port, _, _))) = Manager::ensure_agent(&arc_name).await {
-                port = new_port;
-                response = client
-                    .post(&str!("http://127.0.0.1:{port}/tools/call/{}", func.name))
+            if let Ok(Some((_, _, _))) = Manager::ensure_agent(&arc_name).await {
+                let new_client = Client::ipc(&sock_path.to_string_lossy());
+
+                response = new_client
+                    .post(&request_path)
                     .header("Content-Type", "application/json")
                     .json(&request_body)
                     .send()

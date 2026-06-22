@@ -63,8 +63,8 @@ fi
 underline
 echo -e "${BLUE}==>${NC} Deploying binaries and agents:"
 
-mkdir -p "$INSTALL_DIR/agents"
 mkdir -p "$INSTALL_DIR/bin"
+mkdir -p "$INSTALL_DIR/bin/agents"
 
 # 4.1. Deploy core binaries:
 for bin_name in "${BINARIES[@]}"; do
@@ -101,7 +101,7 @@ if [ -d "agents" ]; then
         
         BIN_NAME="${agent_name}-agent${EXE}"
         SRC_BIN="target/release/${BIN_NAME}"
-        DEST_DIR="$INSTALL_DIR/agents/$agent_name"
+        DEST_DIR="$INSTALL_DIR/bin/agents/$agent_name"
         
         if [[ -f "$SRC_BIN" ]]; then
             mkdir -p "$DEST_DIR"

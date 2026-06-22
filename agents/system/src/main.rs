@@ -13,19 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use system_agent::{handlers, prelude::*};
-
-use clap::Parser;
 use pearce::Server;
-
-/// Agent arguments
-#[derive(Parser, Debug)]
-pub struct Args {
-    #[arg(short, long)]
-    pub port: u16,
-    #[arg(short, long)]
-    pub max_logs: usize,
-}
+use system_agent::{handlers, prelude::*};
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -41,17 +30,20 @@ async fn main() -> Result<()> {
         });
     }
 
-    let args = Args::parse();
-
-    // init logger & settings:
-    Logger::init(app_data().join("logs/system"), args.max_logs).await?;
+    // init settings && logger:
     Settings::init(app_data().join("config/system.toml")).await?;
+    Logger::init(
+        app_data().join("logs/system"),
+        Settings::get().server.max_logs,
+    )
+    .await?;
 
     // start server:
+    let sock = app_data().join(str!("uds/{}.sock", Settings::get().agent.name));
     Server::new()
         .post("/ping", handlers::handle_ping)
         .post("/info", handlers::handle_info)
         .post("/tools/call/{tool}", handlers::handle_tool_call)
-        .run(args.port)
+        .run(sock)
         .await
 }

@@ -48,7 +48,7 @@ Break it down into numbered sections.
 "#;
 
 /// The settings instance
-static SETTINGS: State<Config<Settings>> = State::new();
+static SETTINGS: State<Config<Settings>> = State::default();
 
 /// The server options
 #[derive(Clone, Debug, Serialize, Deserialize)]

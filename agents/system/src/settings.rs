@@ -2,7 +2,19 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 
 /// The settings instance
-static SETTINGS: State<Config<Settings>> = State::new();
+static SETTINGS: State<Config<Settings>> = State::default();
+
+/// The server options
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ServerOptions {
+    pub max_logs: usize,
+}
+
+impl ::std::default::Default for ServerOptions {
+    fn default() -> Self {
+        Self { max_logs: 1000 }
+    }
+}
 
 /// The agent configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -94,6 +106,7 @@ Operational Rules and Tool-Calling Logic:
 /// The settings
 #[derive(Default, Clone, Debug, Serialize, Deserialize)]
 pub struct Settings {
+    pub server: ServerOptions,
     pub agent: AgentOptions,
 }
 

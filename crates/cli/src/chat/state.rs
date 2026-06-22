@@ -50,7 +50,7 @@ impl AppState {
             input_scroll: 0,
 
             chat_area: Default::default(),
-            messages: arc!(State::new()),
+            messages: arc!(State::default()),
             response_index: 0,
             chat_scroll: 0,
             cycles: 0,

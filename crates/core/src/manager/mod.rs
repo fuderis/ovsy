@@ -14,7 +14,7 @@ use std::fmt::Write;
 use tokio::task::JoinSet;
 
 /// The agents manager state
-pub static MANAGER: State<Manager> = State::new();
+pub static MANAGER: State<Manager> = State::default();
 
 /// The agents manager
 #[derive(Default, Debug, Clone)]
@@ -27,7 +27,7 @@ pub struct Manager {
 impl Manager {
     /// Initializes & runs the agents management
     pub async fn init() -> Result<()> {
-        let scan_dir = app_data().join("agents");
+        let scan_dir = app_data().join("bin/agents");
 
         // check scan dir:
         if !scan_dir.exists() {
@@ -89,7 +89,7 @@ impl Manager {
     }
 
     /// Ensures the agent is running and healthy, spawning it if necessary
-    pub async fn ensure_agent(name: &Arc<String>) -> Result<Option<(u16, String, Vec<Tool>)>> {
+    pub async fn ensure_agent(name: &Arc<String>) -> Result<Option<(PathBuf, String, Vec<Tool>)>> {
         let needs_start = {
             let guard = MANAGER.get().await;
             if let Some(agent) = guard.agents.get(name) {
@@ -100,7 +100,7 @@ impl Manager {
         };
 
         if needs_start {
-            let agent_dir = app_data().join("agents").join(name.as_str());
+            let agent_dir = app_data().join("bin/agents").join(name.as_str());
 
             if !agent_dir.exists() {
                 warn!("[MANAGER] Agent `{name}` requested but directory not found");
@@ -263,10 +263,10 @@ impl Manager {
     }
 
     /// Returns the agent options (port, prompt, tools)
-    pub async fn agent_options(name: &Arc<String>) -> Option<(u16, String, Vec<Tool>)> {
+    pub async fn agent_options(name: &Arc<String>) -> Option<(PathBuf, String, Vec<Tool>)> {
         MANAGER.get().await.agents.get(name).map(|agent| {
             (
-                agent.port,
+                agent.sock_path.clone(),
                 agent.info.prompt.clone(),
                 agent.info.tools.clone(),
             )

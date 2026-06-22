@@ -2,11 +2,16 @@ use super::Manager;
 use crate::prelude::*;
 
 use ovsy_share::AgentInfo;
-use reqwest::Client;
-use std::{net::SocketAddr, process::Stdio, time::SystemTime};
+use pearce::Client;
+use std::{
+    process::Stdio,
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use tokio::{
-    net::TcpStream,
+    net::UnixStream,
     process::{Child, Command},
+    sync::Mutex,
     time,
 };
 
@@ -15,7 +20,7 @@ use tokio::{
 pub struct Agent {
     pub dir: PathBuf,
     pub exec_path: PathBuf,
-    pub port: u16,
+    pub sock_path: PathBuf,
     pub info: AgentInfo,
     _started: Option<SystemTime>,
     _child: Arc<Mutex<Option<Child>>>,
@@ -41,11 +46,25 @@ impl Agent {
             "{name}-agent{exe}",
             exe = if cfg!(windows) { ".exe" } else { "" }
         ));
-        let port = crate::free_port().await?;
+
+        // Формируем путь к UDS сокету: app_data().join("uds/{agent_name}.sock")
+        // Предполагается, что функция app_data() возвращает PathBuf и доступна в контексте
+        let sock_path = app_data().join(format!("uds/{}.sock", name));
+
+        // Убедимся, что директория для сокетов существует (актуально для Linux/macOS/Windows)
+        if let Some(parent) = sock_path.parent() {
+            let _ = tokio::fs::create_dir_all(parent).await;
+        }
+
+        // Удаляем старый файл сокета, если он остался после прошлого падения
+        if sock_path.exists() {
+            let _ = tokio::fs::remove_file(&sock_path).await;
+        }
 
         // build command:
         let mut cmd = Command::new(&exec_path);
-        cmd.args(&["--port", &str!(port)])
+        // Передаем путь к сокету в аргументы агента (убедитесь, что бинарник принимает --socket)
+        cmd.args(&["--socket", &sock_path.to_string_lossy()])
             .args(&["--max-logs", &str!(Settings::get().server.max_logs)])
             .stdin(Stdio::piped())
             .kill_on_drop(true);
@@ -74,16 +93,17 @@ impl Agent {
             }
         };
 
-        // get agent info:
+        // Инициализируем ваш IPC клиент из pearce
+        let client = Client::ipc(&sock_path.to_string_lossy());
         let mut attempts = 0;
-        let client = Client::new();
-        let info_url = str!("http://127.0.0.1:{port}/info");
 
         let info = loop {
             attempts += 1;
 
+            // Используем .post("/info") — ваш клиент сам подставит http://localhost/info
+            // и направит запрос напрямую в Unix Domain Socket
             let request_result =
-                time::timeout(Duration::from_millis(100), client.post(&info_url).send()).await;
+                time::timeout(Duration::from_millis(100), client.post("/info").send()).await;
 
             match request_result {
                 Ok(Ok(response)) => {
@@ -91,7 +111,12 @@ impl Agent {
                 }
                 _ => {
                     if attempts >= 50 {
-                        return Err(Error::AgentStartFailed { name, port }.into());
+                        // Не забудьте обновить определение вашей ошибки, чтобы она принимала sock_path
+                        return Err(Error::AgentStartFailed {
+                            name,
+                            sock_path: sock_path.to_string_lossy().to_string(),
+                        }
+                        .into());
                     }
 
                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -103,7 +128,7 @@ impl Agent {
         let agent = Self {
             dir,
             exec_path,
-            port,
+            sock_path,
             info,
             _started: Some(SystemTime::now()),
             _child: arc_mutex!(Some(child)),
@@ -114,10 +139,13 @@ impl Agent {
 
     /// Returns true if needs to be updated
     pub async fn check(&self) -> Result<bool> {
-        // check for alive:
-        let addr: SocketAddr = ([127, 0, 0, 1], self.port).into();
+        // Проверка живости агента через UnixStream
+        let is_alive = time::timeout(
+            Duration::from_millis(100),
+            UnixStream::connect(&self.sock_path),
+        )
+        .await;
 
-        let is_alive = time::timeout(Duration::from_millis(100), TcpStream::connect(addr)).await;
         if is_alive.is_err() || is_alive.unwrap().is_err() {
             // agent not responding..
             return Ok(true);
