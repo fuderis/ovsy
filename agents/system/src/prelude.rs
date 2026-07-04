@@ -5,7 +5,7 @@ pub use ovsy_share::{Chunk, DynError, Result, StdResult, app_data};
 pub use atoman::*;
 pub use macron::*;
 
-pub use pearce::{Json, Paths, Response};
+pub use pearce::{Bytes, Json, Paths, Response};
 
 pub use std::{
     path::{Path, PathBuf},

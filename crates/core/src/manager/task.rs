@@ -8,7 +8,7 @@ use ovsy_share::{AgentTask, Chunk};
 pub struct Task {
     pub task: Arc<AgentTask>,
     pub tasks: Arc<Mutex<Tasks>>,
-    pub tx: Sender,
+    pub tx: Sender<Bytes>,
 }
 
 impl Task {

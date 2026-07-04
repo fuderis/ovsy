@@ -1,7 +1,6 @@
 use crate::{manager::*, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages, ToolCall};
 use ovsy_share::{AgentTask, Chunk, ChunkData, HandleQuery, settings::AssistantOptions};
-use pearce::Client;
 
 /// API: The user message handler
 #[log(skip_all, fields(sid = %sid.0))]
@@ -10,22 +9,21 @@ pub async fn session_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Re
     let HandleQuery { message } = data.0;
 
     let current = Span::current();
-    let body = Stream::body(move |tx| {
+
+    Response::ok().stream(move |tx| {
         async move {
             if let Err(e) = handle_query(session_id, tx.clone(), message).await {
                 error!("{e}");
-                tx.send(Chunk::error(str!(e))).ok();
+                tx.send(Chunk::error(str!(e))).await.ok();
             }
         }
         .instrument(current)
-    });
-
-    Response::ok().stream(body)
+    })
 }
 
 /// Handles the user query
 #[log(skip_all)]
-async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Result<()> {
+async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message) -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
 
@@ -58,7 +56,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
     // read ai chunks:
     while let Some(chunk) = response.next().await {
         match chunk? {
-            AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part))?,
+            AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part)).await?,
             AiChunk::Tool(tool_call) => {
                 let task: AgentTask = tool_call.parse_args()?;
                 tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
@@ -78,7 +76,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
         if let Some(msg) = (&*messages.lock().await).messages.last()
             && msg.role.is_assistant()
         {
-            tx.send(Chunk::tools(msg.tool_calls.clone()))?;
+            tx.send(Chunk::tools(msg.tool_calls.clone())).await?;
         }
 
         // delegate tasks:
@@ -105,7 +103,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
             handle_task(task_id, tx.clone(), tasks.clone()).await;
         }
     } else {
-        tx.send(Chunk::finish())?;
+        tx.send(Chunk::finish()).await?;
         info!("The user request was processed without agent tasks");
 
         // save messages to database:
@@ -119,7 +117,7 @@ async fn handle_query(session_id: SessionID, tx: Sender, message: Message) -> Re
 /// Handles the agent task or pendings it
 #[async_recursion]
 #[log(skip_all, fields(tid = %task_id))]
-pub async fn handle_task(task_id: i64, tx: Sender, tasks: Arc<Mutex<Tasks>>) {
+pub async fn handle_task(task_id: i64, tx: Sender<Bytes>, tasks: Arc<Mutex<Tasks>>) {
     let mut lock = tasks.lock().await;
     let Some(task) = lock.pending.remove(&task_id) else {
         return;
@@ -151,7 +149,7 @@ pub async fn handle_task(task_id: i64, tx: Sender, tasks: Arc<Mutex<Tasks>>) {
             .await
             {
                 error!("[handle_agent{{sid={session_id}}} -> handle] {e}");
-                handle.tx.send(Chunk::error(str!("{e}"))).ok();
+                handle.tx.send(Chunk::error(str!("{e}"))).await.ok();
                 handle.finish_branch().await;
             }
         }
@@ -167,7 +165,7 @@ pub async fn handle_agent(
     agent_name: String,
     session: Session,
     messages: Arc<Mutex<Messages>>,
-    tx: Sender,
+    tx: Sender<Bytes>,
     task: Task,
 ) -> Result<()> {
     let task_info = task.task.clone();
@@ -204,6 +202,7 @@ pub async fn handle_agent(
         ))
         .task_info(task_info.clone_minimal()),
     )
+    .await
     .ok();
     drop(log_query);
 
@@ -240,7 +239,8 @@ pub async fn handle_agent(
     while let Some(chunk) = response.next().await {
         match chunk? {
             AiChunk::Text(text_part) => {
-                tx.send(Chunk::answer(text_part).task_info(task_info.clone_minimal()))?
+                tx.send(Chunk::answer(text_part).task_info(task_info.clone_minimal()))
+                    .await?
             }
             AiChunk::Tool(tool_call) => tool_calls.push(tool_call),
         }
@@ -256,12 +256,13 @@ pub async fn handle_agent(
         );
         tx.send(
             Chunk::think(str!(
-                "Calling `{}.{}` tool: {log_json}",
+                "Calling `{} -> {}` tool: {log_json}",
                 task_info.agent_name,
                 func.name
             ))
             .task_info(task_info.clone_minimal()),
         )
+        .await
         .ok();
         drop(log_json);
 
@@ -273,7 +274,7 @@ pub async fn handle_agent(
             .post(&request_path)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .send()
+            .stream::<Chunk>()
             .await;
 
         if response.is_err() {
@@ -288,23 +289,22 @@ pub async fn handle_agent(
                 ))
                 .task_info(task_info.clone_minimal()),
             )
+            .await
             .ok();
 
             let _ = Manager::stop(arc_name.clone()).await;
 
             if let Ok(Some((_, _, _))) = Manager::ensure_agent(&arc_name).await {
-                let new_client = Client::ipc(&sock_path.to_string_lossy());
-
-                response = new_client
+                response = Client::ipc(&sock_path.to_string_lossy())
                     .post(&request_path)
                     .header("Content-Type", "application/json")
                     .json(&request_body)
-                    .send()
+                    .stream::<Chunk>()
                     .await;
             }
         }
 
-        let response = match response {
+        let mut stream = match response {
             Ok(res) => res,
             Err(e) => {
                 return Err(str!(
@@ -315,13 +315,12 @@ pub async fn handle_agent(
             }
         };
 
-        // init stream reader:
-        let bytes_stream = response.bytes_stream().map(|v| v.map_err(Into::into));
-        let mut stream = Stream::read::<Chunk>(bytes_stream);
-
         // read stream chunks:
         let mut full_text = str!();
-        while let Some(chunk) = stream.read().await? {
+        info!("Trying to receive chunks..");
+        while let Some(chunk) = stream.recv().await? {
+            info!("{chunk:?}");
+
             match &chunk {
                 Chunk {
                     data: ChunkData::Answer(answer),
@@ -331,7 +330,7 @@ pub async fn handle_agent(
                 }
                 _ => {}
             }
-            tx.send(chunk.task_info(task_info.clone_minimal()))?;
+            tx.send(chunk.task_info(task_info.clone_minimal())).await?;
         }
 
         agent_messages.lock().await.push_content(None, full_text);
@@ -356,12 +355,13 @@ pub async fn handle_agent(
 
     // finish agent handling:
     tx.send(Chunk::finish().task_info(task.task.clone_minimal()))
+        .await
         .ok();
 
     // finish query cycle:
     if task.is_last().await {
         info!("The last task was completed, saving the session");
-        tx.send(Chunk::finish()).ok();
+        tx.send(Chunk::finish()).await.ok();
 
         // save messages to database:
         let to_save = messages.lock().await.slice(-1);

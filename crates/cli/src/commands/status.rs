@@ -1,17 +1,16 @@
 use crate::prelude::*;
 use colored::*;
 use ovsy_share::{AgentInfo, StatusData};
-use reqwest::Client;
 use tokio::process::Command;
 
-/// API: Handles the `status` command
+/// API: Handles the server status
 pub async fn handle_status() -> Result<()> {
     let port = Settings::get().server.port;
-    let client = Client::new();
+    let client = Client::tcp();
 
     // checking Ovsy server:
     let res = client
-        .get(str!("http://127.0.0.1:{port}/status"))
+        .get(&str!("http://127.0.0.1:{port}/status"))
         .send()
         .await;
 

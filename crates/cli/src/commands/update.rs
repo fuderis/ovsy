@@ -1,10 +1,9 @@
 use crate::{UNDERLINE_COUNT, prelude::*};
 use colored::*;
 use ovsy_share::{AgentInfo, StatusData};
-use reqwest::Client;
 use std::io::{self, Write};
 
-/// API: Handles the `udpate` command
+/// API: Handles the server refreshing (hot-reload)
 pub async fn handle_update() -> Result<()> {
     let dim = Color::AnsiColor(247);
     let port = Settings::get().server.port;
@@ -12,9 +11,9 @@ pub async fn handle_update() -> Result<()> {
     print!("{} ", "Updating Ovsy server...".bold());
     io::stdout().flush().ok();
 
-    let client = Client::new();
+    let client = Client::tcp();
     let res = client
-        .post(str!("http://127.0.0.1:{port}/update"))
+        .post(&str!("http://127.0.0.1:{port}/update"))
         .send()
         .await;
 

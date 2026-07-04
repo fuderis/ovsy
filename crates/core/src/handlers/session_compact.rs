@@ -9,7 +9,8 @@ pub async fn session_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) ->
     let CompactQuery { preserve } = data.0;
 
     let current = Span::current();
-    let body = Stream::body(move |tx| {
+
+    Response::ok().stream(move |tx| {
         async move {
             if let Err(e) = handle_compact(
                 session_id,
@@ -19,17 +20,15 @@ pub async fn session_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) ->
             .await
             {
                 error!("{e}");
-                tx.send(Chunk::error(str!(e))).ok();
+                tx.send(Chunk::error(str!(e))).await.ok();
             }
         }
         .instrument(current)
-    });
-
-    Response::ok().stream(body)
+    })
 }
 
 /// Compresses the session messages
-async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> Result<()> {
+async fn handle_compact(session_id: SessionID, tx: Sender<Bytes>, preserve: usize) -> Result<()> {
     info!("Compressing session messages (preserve: {preserve})");
 
     let ai_conf = Settings::get().assistant.clone();
@@ -44,7 +43,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> R
 
     if messages.messages.is_empty() {
         warn!("Nothing to compress, skip");
-        tx.send(Chunk::finish()).ok();
+        tx.send(Chunk::finish()).await?;
         return Ok(());
     }
 
@@ -59,7 +58,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> R
 
     while let Some(chunk) = response.next().await {
         if let AiChunk::Text(text_part) = chunk? {
-            tx.send(Chunk::answer(text_part.clone()))?;
+            tx.send(Chunk::answer(text_part.clone())).await?;
             full_compressed_text.push_str(&text_part);
         }
     }
@@ -71,7 +70,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender, preserve: usize) -> R
         .await?;
 
     // finish work:
-    tx.send(Chunk::finish()).ok();
+    tx.send(Chunk::finish()).await?;
 
     info!("Compression finished");
     Ok(())

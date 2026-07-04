@@ -29,4 +29,5 @@ serde_json.workspace = true
 regex.workspace = true
 chrono.workspace = true
 tracing.workspace = true
-# clap.workspace = true
+system-utils = { version = "0.1.4", features = ["full"] }
+music-index = "0.1.2"

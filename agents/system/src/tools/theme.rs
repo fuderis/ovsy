@@ -1,18 +1,21 @@
-use crate::{prelude::*, theme::*};
+use crate::prelude::*;
+use system_utils::{SystemTheme, ThemeStyle};
 
-/// API: Handles the `theme` tool
+#[derive(Deserialize)]
+pub struct ThemeAction {
+    style: ThemeStyle,
+}
+
+/// API: Handles the `theme` swithing
 #[log(skip_all, fields(action))]
-pub async fn handle_theme(tx: Arc<StreamSender<Bytes>>, action: ThemeAction) -> Result<()> {
-    match Theme::execute(action.clone()).await {
+pub async fn handle_set_theme(tx: Sender<Bytes>, action: ThemeAction) -> Result<()> {
+    match SystemTheme::switch(action.style.clone()).await {
         Ok(_) => {
-            let msg = str!("System swithed into {} theme", action.mode);
+            let msg = str!("System theme switched into {} mode", action.style);
             info!("{msg}");
-            tx.send(Chunk::answer(msg))?;
+            tx.send(Chunk::answer(msg)).await?;
             Ok(())
         }
-        Err(e) => {
-            error!("Switch system theme failed: {e}");
-            Err(str!("Switch system theme failed: {e}").into())
-        }
+        Err(e) => Err(str!("Switching system theme failed: {e}").into()),
     }
 }

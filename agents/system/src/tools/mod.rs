@@ -1,8 +1,14 @@
-pub mod power;
-pub use power::handle_power;
-
-pub mod volume;
-pub use volume::handle_volume;
+pub mod monitor;
+pub use monitor::*;
 
 pub mod theme;
-pub use theme::handle_theme;
+pub use theme::*;
+
+pub mod power;
+pub use power::*;
+
+pub mod audio;
+pub use audio::*;
+
+pub mod music;
+pub use music::*;

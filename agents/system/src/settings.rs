@@ -4,17 +4,112 @@ use anylm::{Schema, Tool};
 /// The settings instance
 static SETTINGS: State<Config<Settings>> = State::default();
 
-/// The server options
-#[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ServerOptions {
-    pub max_logs: usize,
-}
+const NAME: &str = "system";
 
-impl ::std::default::Default for ServerOptions {
-    fn default() -> Self {
-        Self { max_logs: 1000 }
-    }
-}
+const DESCRIPTION: &str = r#"System Manager capable of retrieving static system information,
+live performance metrics, connected hardware devices, scheduling
+power operations, managing audio volume and mute state, switching
+between light and dark system themes, searching the local music
+library, and starting music playback."#;
+
+const PROMPT: &str = r#"You are the System Manager.
+
+Your responsibilities include retrieving system information, monitoring live system metrics,
+managing power operations, controlling audio settings, and switching the system appearance.
+
+Tool Selection Rules
+
+1. System Information
+
+- If the user asks about the operating system, CPU, GPU, RAM, motherboard, storage devices,
+installed hardware or other static system specifications, call `get_system_info`.
+
+- If the user asks about current CPU usage, memory usage, disk usage, temperatures, battery,
+network activity or other live performance statistics, call `get_system_metrics`.
+
+- If the user asks which devices are currently connected to the system, call `get_devices_list`.
+
+2. Power Management
+
+- Use `schedule_power` whenever the user requests one of the following actions:
+    - shutdown
+    - reboot
+    - suspend
+    - lock
+    - logout
+
+- If the user specifies a future date or time, convert it into an ISO-8601 UTC timestamp and
+provide it as the `timestamp` parameter.
+
+- If the user requests the action immediately, omits any time reference, or says things like
+"now", "right away", or "immediately", omit the `timestamp` parameter entirely.
+
+- If the user asks what power action is currently scheduled, call `get_power_status`.
+
+- If the user asks to cancel a scheduled power action, call `cancel_power`.
+
+3. Volume
+
+- If the user asks for the current audio volume, call `get_volume`.
+
+- If the user asks whether the audio is muted, call `is_muted`.
+
+- If the user specifies an exact target volume (for example, "set the volume to 60%"),
+call `set_volume` with:
+    - volume = requested percentage
+
+- If the user requests to increase the volume (for example, "increase volume by 10%"),
+call `increase_volume` with:
+    - amount = requested percentage
+
+- If the user requests to decrease the volume (for example, "decrease volume by 5%",
+"turn it down by 5%"),
+call `decrease_volume` with:
+    - amount = requested percentage
+
+- If the user asks to mute the system, call `set_mute` with:
+    - mute = true
+
+- If the user asks to unmute the system, call `set_mute` with:
+    - mute = false
+
+4. Theme
+
+- If the user requests dark mode, call `set_theme` with:
+    - style = "dark"
+
+- If the user requests light mode, call `set_theme` with:
+    - style = "light"
+
+5. Music
+
+- If the user asks to search for music without requesting playback,
+call `search_music`.
+
+- If the user asks to play music, start playback, listen to a song,
+album, artist, genre, or playlist, call `play_music`.
+
+- Both music tools accept either:
+    - a general natural-language search via `query`, or
+    - structured search parameters:
+        - band
+        - album
+        - track
+        - genre
+
+- If the user's request can be expressed as a simple search phrase,
+prefer using only the `query` parameter.
+
+- Do not invent search parameters that the user did not specify.
+
+General Rules
+
+- Always use the appropriate tool instead of guessing system information.
+- Convert natural-language dates and times into ISO-8601 UTC timestamps before calling `schedule_power`.
+- Omit optional parameters instead of inventing values.
+- Never call multiple tools when a single tool fully satisfies the user's request.
+- Always use the appropriate tool instead of guessing system information or music library contents.
+"#;
 
 /// The agent configuration
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -28,78 +123,156 @@ pub struct AgentOptions {
 impl ::std::default::Default for AgentOptions {
     fn default() -> Self {
         let tools = vec![
-            Tool::new("info", "Retrieves comprehensive system information, including OS details, CPU model, RAM capacity/usage, GPU specifications, and disk storage status."),
+            //    SYSTEM MONITOR
+            Tool::new(
+                "get_system_info",
+                "Returns static system information including operating system, CPU, GPU, RAM, motherboard, storage devices, and other hardware details.",
+            ),
+            Tool::new(
+                "get_system_metrics",
+                "Returns current live system metrics including CPU usage, memory usage, temperatures, disk usage, network activity and other runtime statistics.",
+            ),
+            Tool::new(
+                "get_devices_list",
+                "Returns a formatted list of currently connected hardware devices.",
+            ),
 
-            Tool::new("power", "Manages the system power state. Supports immediate execution, absolute datetime scheduling, status checking, and task cancellation via a unified mode switch.")
-                .required_property("mode",
-                    Schema::string("The target power action mode.")
-                        .variants(set![
-                            str!("shutdown"), str!("reboot"), str!("suspend"), str!("lock"), str!("logout"), str!("cancel"), str!("status")
-                        ])
+            //   POWER MANAGEMENT
+            Tool::new(
+                "schedule_power",
+                "Schedules or immediately executes a system power action."
+            )
+            .required_property(
+                "mode",
+                Schema::string("Power action to perform.")
+                    .variants(set![
+                        str!("shutdown"),
+                        str!("reboot"),
+                        str!("suspend"),
+                        str!("lock"),
+                        str!("logout"),
+                    ])
+            )
+            .optional_property(
+                "timestamp",
+                Schema::string(
+                    "Optional ISO-8601 UTC datetime. If omitted, the action is executed immediately."
                 )
-                .optional_property("timeout",
-                    Schema::object("Use ONLY for relative delays (e.g., 'in 1 hour', 'after 15 mins', 'in 2 days', etc.). Fill only the required fields. Omit for immediate actions, 'status', or 'cancel'.")
-                        .optional_property("days", Schema::integer(""))
-                        .optional_property("hours", Schema::integer(""))
-                        .optional_property("minutes", Schema::integer(""))
-                        .optional_property("seconds", Schema::integer(""))
-                )
-                .optional_property("timestamp",
-                    Schema::string("The absolute target ISO 8601 UTC datetime string. Omit for immediate actions, 'status', or 'cancel'.")
-                ),
+            ),
 
-            Tool::new("volume", "Manages and controls the system audio hardware. Supports reading volume, setting absolute levels, shifting volume relatively, and toggling mute states.")
-                .required_property("mode",
-                    Schema::string("The explicit volume action mode to execute.")
-                        .variants(set![str!("get"), str!("set"), str!("add"), str!("mute"), str!("unmute")])
-                )
-                .optional_property("value",
-                    Schema::integer("The absolute target volume percentage for 'set' (0-200), or a relative change integer for 'add' (e.g., +15, -10). Omit for 'get', 'mute', and 'unmute' modes.")
-                ),
+            Tool::new(
+                "cancel_power",
+                "Cancels the currently scheduled power action if one exists.",
+            ),
+            Tool::new(
+                "get_power_status",
+                "Returns the currently scheduled power action and its execution time, if any.",
+            ),
 
-            Tool::new("theme", "Manages the system's visual appearance and color scheme. Supports switching between dark and light modes, or retrieving the current theme state.")
-                .required_property("mode",
-                    Schema::string("The action mode for the system theme.")
-                        .variants(set![str!("dark"), str!("light"), str!("get")])
-                ),
+            //    AUDIO CONTROL
+            Tool::new(
+                "set_volume",
+                "Sets the system audio volume to the specified percentage.",
+            )
+            .required_property(
+                "volume",
+                Schema::integer("Target audio volume percentage (0-100)."),
+            ),
+
+            Tool::new(
+                "increase_volume",
+                "Increases the system audio volume by the specified percentage.",
+            )
+            .required_property(
+                "amount",
+                Schema::integer("Amount to increase the audio volume by."),
+            ),
+
+            Tool::new(
+                "decrease_volume",
+                "Decreases the system audio volume by the specified percentage.",
+            )
+            .required_property(
+                "amount",
+                Schema::integer("Amount to decrease the audio volume by."),
+            ),
+
+            // MUSIC
+            Tool::new(
+                "search_music",
+                "Searches the local music library without starting playback.",
+            )
+            .optional_property(
+                "query",
+                Schema::string("General natural-language music search query."),
+            )
+            .optional_property(
+                "band",
+                Schema::string("Artist or band name."),
+            )
+            .optional_property(
+                "album",
+                Schema::string("Album title."),
+            )
+            .optional_property(
+                "track",
+                Schema::string("Track title."),
+            )
+            .optional_property(
+                "genre",
+                Schema::string("Music genre."),
+            ),
+
+            Tool::new(
+                "play_music",
+                "Searches the local music library and immediately starts playback.",
+            )
+            .optional_property(
+                "query",
+                Schema::string("General natural-language music search query."),
+            )
+            .optional_property(
+                "band",
+                Schema::string("Artist or band name."),
+            )
+            .optional_property(
+                "album",
+                Schema::string("Album title."),
+            )
+            .optional_property(
+                "track",
+                Schema::string("Track title."),
+            )
+            .optional_property(
+                "genre",
+                Schema::string("Music genre."),
+            ),
+
+            // THEME SWITCHER
+            Tool::new("set_theme", "Changes the system appearance theme.").required_property(
+                "style",
+                Schema::string("Target theme style.").variants(set![str!("light"), str!("dark"),]),
+            ),
         ];
 
         Self {
-            name: str!("system"),
-            description: str!(
-                "The comprehensive system manager capable of retrieving system specifications,
-controlling audio volume, and managing power actions (shutdown, reboot, suspend, lock, logout)
-with absolute datetime scheduling (timers), power/volume status tracking, and cancellation via
-a single unified interface, toggling system appearance themes (dark/light) or return current theme status."
-            ),
-            prompt: str!(
-                r#"You are the System Manager. Your primary responsibilities are to manage the system's power states (including task scheduling, status monitoring, and cancellation), retrieve hardware and OS specifications, and control audio volume levels.
-
-Operational Rules and Tool-Calling Logic:
-
-1. System Information (`info`):
-   - When the user asks for hardware specs, OS details, RAM, CPU, GPU, or general system statistics, immediately invoke the `info` tool.
-
-2. Audio Volume Control (`volume`):
-   - Map the user's audio request to the correct `mode` enum value: "get", "set", "add", "mute", or "unmute".
-   - GET: If the user wants to check the current volume or see if it is muted, use mode "get" (omit the `value` parameter).
-   - SET: If the user specifies an exact target level (e.g., "set volume to 50%", "make it 80%"), use mode "set". Pass the number as the `value` parameter. (Note: Values up to 200 are acceptable for software amplification on supported systems).
-   - ADD: If the user wants to relatively increase or decrease the volume (e.g., "turn it up by 10", "make it quieter by 5%"), use mode "add". Pass a positive or negative integer as the `value` parameter.
-   - MUTE/UNMUTE: If the user wants to silence the system or bring the sound back, use modes "mute" or "unmute" respectively (omit the `value` parameter).
-
-3. Power Operations (`power`):
-   - Map the user's request to the correct `mode` enum value: "shutdown", "reboot", "suspend", "lock", "logout", "cancel", or "status".
-   - METADATA & CONTROL: If the user wants to check what is scheduled ("status") or abort a pending action ("cancel"), invoke the `power` tool with the respective mode and OMIT the `timestamp` parameter.
-   - IMMEDIATE EXECUTION: If the user requests a power state change immediately (e.g., "now", "right away") or does not specify any time/delay, invoke the `power` tool with the desired mode and OMIT the `timestamp` parameter entirely.
-
-4. System Theme Management (`theme`):
-   - Map the user's appearance request to the correct `mode` enum value: "dark", "light", or "get".
-   - DARK/LIGHT: If the user wants to enable dark or light mode, use mode "dark" or "light".
-   - GET: If the user asks about the current active theme or wants to check it, use mode "get".
-"#
-            ),
+            name: str!(NAME),
+            description: str!(DESCRIPTION),
+            prompt: str!(PROMPT),
             tools,
         }
+    }
+}
+
+/// The server options
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ServerOptions {
+    pub max_logs: usize,
+}
+
+impl ::std::default::Default for ServerOptions {
+    fn default() -> Self {
+        Self { max_logs: 1000 }
     }
 }
 

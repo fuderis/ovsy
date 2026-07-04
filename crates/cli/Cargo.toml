@@ -22,8 +22,8 @@ ovsy-share.workspace = true
 atoman.workspace = true
 macron.workspace = true
 anylm.workspace = true
+pearce.workspace = true
 tokio.workspace = true
-reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
@@ -34,3 +34,4 @@ textwrap = "0.16.2"
 hyperrat = "0.1.1"
 unicode-width = "0.2.2"
 colored = "3.1.1"
+

@@ -1,7 +1,7 @@
 use crate::prelude::*;
 use tokio::time;
 
-/// API: Handles the `restart` command
+/// API: Handles the server restarting
 pub async fn handle_restart(restart_lms: bool) -> Result<()> {
     // stop server:
     super::handle_stop(restart_lms).await?;

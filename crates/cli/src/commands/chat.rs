@@ -15,19 +15,19 @@ use ratatui::{
     backend::{Backend, CrosstermBackend},
     style::Stylize,
 };
-use reqwest::Client;
 use std::{io, process::Command};
-use tokio::task::JoinHandle;
+use tokio::{task::JoinHandle, time::Instant};
 
+const FRAME_TIME: Duration = Duration::from_millis(33); // ~30 FPS
 const USER_ID: u128 = 0;
 const USER_TIMEZONE: i16 = 5 * 60;
 
-/// API: Handles the `chat` command
+/// API: Handles the cli chat
 pub async fn handle_chat() -> Result<()> {
     let port = Settings::get().server.port;
 
     // check server:
-    let client = Client::new();
+    let client = Client::tcp();
     let status_url = str!("http://127.0.0.1:{port}/update");
 
     if client.get(&status_url).send().await.is_err() {
@@ -127,8 +127,19 @@ async fn run_app<B: Backend>(
             .map_err(|e| e.to_string())?;
 
         // collect all available chunks:
-        if let Ok(chunk) = ui_rx.try_recv() {
-            handle_chunk(app, &mut app.messages.lock().await, chunk).await;
+        let start = Instant::now();
+
+        {
+            let mut msgs = app.messages.lock().await;
+
+            while start.elapsed() < FRAME_TIME {
+                match ui_rx.try_recv() {
+                    Ok(chunk) => {
+                        handle_chunk(app, &mut msgs, chunk).await;
+                    }
+                    Err(_) => break,
+                }
+            }
         }
 
         // handling terminal event:
@@ -307,12 +318,12 @@ async fn chat_worker(
     messages: Arc<State<Messages>>,
 ) {
     let port = Settings::get().server.port;
-    let client = reqwest::Client::new();
+    let client = Client::tcp();
     let base_url = str!("http://127.0.0.1:{port}");
 
     // load session history:
     if let Ok(res) = client
-        .post(str!("{base_url}/sessions/{session_id}/get"))
+        .post(&str!("{base_url}/sessions/{session_id}/get"))
         .send()
         .await
     {
@@ -370,12 +381,11 @@ async fn chat_worker(
 
                         "/clear" | "/clean" => {
                             let ui_tx = ui_tx.clone();
-                            let client = client.clone();
                             let base_url = base_url.clone();
                             let messages = messages.clone();
 
-                            let result = client
-                                .post(str!("{base_url}/sessions/{session_id}/clear"))
+                            let result = Client::tcp()
+                                .post(&str!("{base_url}/sessions/{session_id}/clear"))
                                 .send()
                                 .await;
 
@@ -403,7 +413,6 @@ async fn chat_worker(
 
                         "/compact" | "/compress" => {
                             let ui_tx = ui_tx.clone();
-                            let client = client.clone();
                             let base_url = base_url.clone();
                             let messages = messages.clone();
                             let session_id = session_id.clone();
@@ -416,14 +425,14 @@ async fn chat_worker(
                                     .and_then(|i| i.trim().parse::<usize>().ok())
                                     .unwrap_or_else(|| Settings::get().assistant.preserve_messages);
 
-                                let res = client
-                                    .post(str!("{base_url}/sessions/{session_id}/compact"))
+                                let res = Client::tcp()
+                                    .post(&str!("{base_url}/sessions/{session_id}/compact"))
                                     .json(&CompactQuery::new(preserve))
-                                    .send()
+                                    .stream::<Chunk>()
                                     .await;
 
                                 match res {
-                                    Ok(response) => {
+                                    Ok(mut stream) => {
                                         let mut msgs = messages.lock().await;
 
                                         let preserved_messages = msgs.slice(-(preserve as isize));
@@ -431,11 +440,7 @@ async fn chat_worker(
                                         msgs.messages = preserved_messages;
                                         msgs.count_tokens();
 
-                                        let bytes_stream =
-                                            response.bytes_stream().map(|c| c.map_err(Into::into));
-                                        let mut stream = Stream::read::<Chunk>(bytes_stream);
-
-                                        while let Ok(Some(chunk)) = stream.read().await {
+                                        while let Ok(Some(chunk)) = stream.recv().await {
                                             if let ChunkData::Answer(ref text) = chunk.data {
                                                 msgs.push_str(None, text);
                                             }
@@ -481,24 +486,20 @@ async fn chat_worker(
                 };
 
                 if let Some(msg) = message_to_send {
-                    let client = client.clone();
                     let base_url = base_url.clone();
                     let ui_tx = ui_tx.clone();
                     let session_id = session_id.clone();
 
                     current_task = Some(tokio::spawn(async move {
-                        let res = client
-                            .post(str!("{base_url}/sessions/{session_id}/query"))
+                        let res = Client::tcp()
+                            .post(&str!("{base_url}/sessions/{session_id}/query"))
                             .json(&HandleQuery::new(msg))
-                            .send()
+                            .stream::<Chunk>()
                             .await;
 
                         match res {
-                            Ok(response) => {
-                                let mut stream = Stream::read::<Chunk>(
-                                    response.bytes_stream().map(|c| c.map_err(Into::into)),
-                                );
-                                while let Ok(Some(chunk)) = stream.read().await {
+                            Ok(mut stream) => {
+                                while let Ok(Some(chunk)) = stream.recv().await {
                                     let _ = ui_tx.send(chunk);
                                 }
                             }
@@ -641,7 +642,7 @@ async fn handle_control_query(
 ) {
     {
         let mut msgs = messages.lock().await;
-        msgs.add_message(Message::user(vec!["".into()]));
+        msgs.add_message(Message::user(vec!["Last time, the tools were called, look at the results and tell me the status of the task".into()]));
         msgs.add_message(Message::assistant(vec![], vec![]));
     }
 

@@ -7,7 +7,7 @@ use std::{
 };
 use tokio::process::Command;
 
-/// API: Handles the `stop` command
+/// API: Handles the server shutdouwn
 pub async fn handle_stop(stop_lms: bool) -> Result<()> {
     let port = Settings::get().server.port;
 
