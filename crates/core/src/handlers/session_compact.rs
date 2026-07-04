@@ -20,7 +20,7 @@ pub async fn session_compact(sid: Paths<SessionID>, data: Json<CompactQuery>) ->
             .await
             {
                 error!("{e}");
-                tx.send(Chunk::error(str!(e))).await.ok();
+                tx.send(Chunk::error(str!(e))).ok();
             }
         }
         .instrument(current)
@@ -43,7 +43,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender<Bytes>, preserve: usiz
 
     if messages.messages.is_empty() {
         warn!("Nothing to compress, skip");
-        tx.send(Chunk::finish()).await?;
+        tx.send(Chunk::finish())?;
         return Ok(());
     }
 
@@ -58,7 +58,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender<Bytes>, preserve: usiz
 
     while let Some(chunk) = response.next().await {
         if let AiChunk::Text(text_part) = chunk? {
-            tx.send(Chunk::answer(text_part.clone())).await?;
+            tx.send(Chunk::answer(text_part.clone()))?;
             full_compressed_text.push_str(&text_part);
         }
     }
@@ -70,7 +70,7 @@ async fn handle_compact(session_id: SessionID, tx: Sender<Bytes>, preserve: usiz
         .await?;
 
     // finish work:
-    tx.send(Chunk::finish()).await?;
+    tx.send(Chunk::finish())?;
 
     info!("Compression finished");
     Ok(())

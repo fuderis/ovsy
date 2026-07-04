@@ -22,7 +22,7 @@ pub async fn handle_set_theme(tx: Sender<Bytes>, action: ThemeAction) -> Result<
         Ok(_) => {
             let msg = str!("System theme switched into {} mode", action.style);
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Switching system theme failed: {e}").into()),

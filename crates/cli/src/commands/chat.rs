@@ -642,7 +642,7 @@ async fn handle_control_query(
 ) {
     {
         let mut msgs = messages.lock().await;
-        msgs.add_message(Message::user(vec!["Last time, the tools were called, look at the results and tell me the status of the task".into()]));
+        msgs.add_message(Message::user(vec!["This is a follow-up step. Review the results of all tool calls from the previous response. If the user's request has already been completed, provide the final answer. Otherwise, determine what remains to be done and continue by calling additional tools if necessary.".into()]));
         msgs.add_message(Message::assistant(vec![], vec![]));
     }
 

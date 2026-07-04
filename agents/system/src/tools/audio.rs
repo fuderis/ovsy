@@ -50,7 +50,7 @@ pub async fn handle_set_volume(tx: Sender<Bytes>, action: SetVolumeAction) -> Re
                 action.volume
             );
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to update audio volume: {e:?}").into()),
@@ -63,7 +63,7 @@ pub async fn handle_increase_volume(tx: Sender<Bytes>, action: DeltaVolumeAction
         Ok(volume) => {
             let msg = str!("Audio volume increased successfully. Current volume: {volume}%.",);
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to update audio volume: {e:?}").into()),
@@ -76,7 +76,7 @@ pub async fn handle_decrease_volume(tx: Sender<Bytes>, action: DeltaVolumeAction
         Ok(volume) => {
             let msg = str!("Audio volume decreased successfully. Current volume: {volume}%.",);
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to update audio volume: {e:?}").into()),
@@ -89,7 +89,7 @@ pub async fn handle_get_volume(tx: Sender<Bytes>) -> Result<()> {
         Ok(volume) => {
             let msg = str!("Current audio volume {volume}%.");
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to get audio volume: {e:?}").into()),
@@ -111,7 +111,7 @@ pub async fn handle_set_mute(tx: Sender<Bytes>, action: MuteAction) -> Result<()
                 "Audio unmuted successfully."
             };
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to update audio mute state: {e:?}").into()),
@@ -128,7 +128,7 @@ pub async fn handle_is_muted(tx: Sender<Bytes>) -> Result<()> {
                 "Audio is currently unmuted."
             };
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to get audio mute state: {e:?}").into()),

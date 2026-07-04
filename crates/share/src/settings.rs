@@ -13,10 +13,11 @@ const SYSTEM_PROMPT: &'static str = r#"
 # ACTUAL SYSTEM INFO:
 
 1. Datetime (now):
-- Global: {DATETIME_GLOBAL}
+- Global (UTC): {DATETIME_GLOBAL}
 - Local: {DATETIME_LOCAL}
-  
-(If the user did not specify a time zone in the request, assume that he meant the local time.)
+
+Use the local datetime in all user-facing responses unless another timezone is explicitly requested.
+Use the global UTC datetime for all tool calls unless a tool explicitly requires a different timezone.
 "#;
 
 /// The default assistant prompt
@@ -82,13 +83,15 @@ pub struct AssistantOptions {
 impl ::std::default::Default for AssistantOptions {
     fn default() -> Self {
         let mut completions = AiOptions::default();
-        completions.kind = ApiKind::LmStudio;
-        completions.model = str!("qwen/qwen2.5-vl-7b");
+
+        completions.kind = ApiKind::Cerebras;
+        completions.env_var.replace(str!("CEREBRAS_API_KEY"));
+        completions.model = str!("gpt-oss-120b");
         completions.temperature.replace(0.6);
-        completions.max_tokens.replace(8096);
+        completions.max_tokens.replace(16_384);
 
         let mut compression = completions.clone();
-        compression.temperature.replace(0.3);
+        compression.temperature.replace(0.4);
 
         let mut embeddings = AiOptions::default();
         embeddings.kind = ApiKind::LmStudio;

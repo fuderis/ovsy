@@ -9,7 +9,7 @@ pub async fn handle_tool_call(name: Paths<String>, data: Json<JsonValue>) -> Res
     Response::ok().stream(async move |tx| {
         if let Err(e) = tool_call(tx.clone(), name.0, data.0).await {
             error!("{e}");
-            tx.send(Chunk::error(e.to_string())).await.ok();
+            tx.send(Chunk::error(e.to_string())).ok();
         }
     })
 }
@@ -28,7 +28,7 @@ async fn tool_call(tx: Sender<Bytes>, name: String, data: JsonValue) -> Result<(
         // power management
         "schedule_power" => tools::handle_schedule_power(tx.clone(), parse(data)?).await,
         "cancel_power" => tools::handle_cancel_power(tx.clone()).await,
-        "power_status" => tools::handle_power_status(tx.clone()).await,
+        "get_power_status" => tools::handle_power_status(tx.clone()).await,
 
         // audio control
         "get_volume" => tools::handle_get_volume(tx.clone()).await,

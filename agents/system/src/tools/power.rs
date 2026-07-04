@@ -60,7 +60,8 @@ pub async fn handle_schedule_power(tx: Sender<Bytes>, action: PowerAction) -> Re
             );
 
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await
+            tx.send(Chunk::answer(msg))?;
+            Ok(())
         }
 
         Err(e) => Err(str!("Power operation failed: {e}").into()),
@@ -75,7 +76,8 @@ pub async fn handle_cancel_power(tx: Sender<Bytes>) -> Result<()> {
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg)).await
+    tx.send(Chunk::answer(msg))?;
+    Ok(())
 }
 
 #[log(skip_all)]
@@ -96,5 +98,6 @@ pub async fn handle_power_status(tx: Sender<Bytes>) -> Result<()> {
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg)).await
+    tx.send(Chunk::answer(msg))?;
+    Ok(())
 }

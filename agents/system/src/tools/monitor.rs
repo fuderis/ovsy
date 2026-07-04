@@ -26,7 +26,8 @@ pub async fn handle_system_info(tx: Sender<Bytes>) -> Result<()> {
     let info = SYSTEM_MONITOR.lock().await.info();
     let msg = str!(info);
 
-    tx.send(Chunk::answer(msg)).await
+    tx.send(Chunk::answer(msg))?;
+    Ok(())
 }
 
 #[log(skip_all)]
@@ -38,7 +39,8 @@ pub async fn handle_system_metrics(tx: Sender<Bytes>) -> Result<()> {
     let msg = str!(metrics);
 
     info!("System metrics collected.");
-    tx.send(Chunk::answer(msg)).await
+    tx.send(Chunk::answer(msg))?;
+    Ok(())
 }
 
 #[log(skip_all)]
@@ -50,5 +52,6 @@ pub async fn handle_devices_list(tx: Sender<Bytes>) -> Result<()> {
     let msg = str!(devices);
 
     info!("Connected devices enumerated.");
-    tx.send(Chunk::answer(msg)).await
+    tx.send(Chunk::answer(msg))?;
+    Ok(())
 }

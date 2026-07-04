@@ -11,5 +11,8 @@ pub enum Error {
     AgentStartFailed { name: String, sock_path: String },
 
     #[display(fmt = "Failed to parse AgentInfo response payload: {0}")]
-    AgentInfoParsingFailed(DynError),
+    AgentInfoParsingFailed(#[source] DynError),
+
+    #[display(fmt = "The TypeScript runtime is not initialized, check logs")]
+    RuntimeNotInitialized,
 }

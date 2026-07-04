@@ -31,4 +31,5 @@ chrono.workspace = true
 reqwest.workspace = true
 tracing.workspace = true
 libc = "0.2.186"
+boa_engine = "0.21.1"
 

@@ -98,8 +98,12 @@ fn render_chat(f: &mut Frame, area: Rect, app: &mut AppState, msgs: &Arc<Message
                 history.push(hr_line);
             }
 
-            let utc_local = &app.session_id.dirty_get().now_local();
-            let time_str = utc_local.format("%A %I:%M %p (%:z)").to_string();
+            let time_str = msg
+                .timestamp
+                .unwrap_or(Utc::now())
+                .with_timezone(&Local)
+                .format("%A, %I:%M %p (%:z)")
+                .to_string();
 
             let meta_line = Line::from(vec![
                 Span::styled("● ", Style::default().fg(Color::Cyan)),

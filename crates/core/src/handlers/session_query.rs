@@ -1,4 +1,4 @@
-use crate::{manager::*, prelude::*};
+use crate::{Runtime, manager::*, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages, ToolCall};
 use ovsy_share::{AgentTask, Chunk, ChunkData, HandleQuery, settings::AssistantOptions};
 
@@ -14,7 +14,7 @@ pub async fn session_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Re
         async move {
             if let Err(e) = handle_query(session_id, tx.clone(), message).await {
                 error!("{e}");
-                tx.send(Chunk::error(str!(e))).await.ok();
+                tx.send(Chunk::error(str!(e))).ok();
             }
         }
         .instrument(current)
@@ -47,19 +47,76 @@ async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message
 
     // send request:
     let mut response = Completions::try_from(options)?
-        .tool(Manager::task_tool().await)
+        .tools(Manager::basic_tools().await)
         .send(messages.clone())
         .await?;
 
     let mut tasks_list = vec![];
+    let mut evals_list = vec![];
+
+    #[derive(Deserialize)]
+    struct EvalAction {
+        task_id: Option<i64>,
+        parameter: Option<String>,
+        code: String,
+    }
 
     // read ai chunks:
     while let Some(chunk) = response.next().await {
         match chunk? {
-            AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part)).await?,
-            AiChunk::Tool(tool_call) => {
-                let task: AgentTask = tool_call.parse_args()?;
-                tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
+            AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part))?,
+            AiChunk::Tool(tool_call) => match tool_call.func.name.as_ref() {
+                "handle_agent" => {
+                    let task: AgentTask = tool_call.parse_args()?;
+                    tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
+                }
+
+                "javascript_eval" => {
+                    let eval: EvalAction = tool_call.parse_args()?;
+                    evals_list.push((tool_call.id, eval));
+                }
+
+                _ => {}
+            },
+        }
+    }
+
+    if !evals_list.is_empty() {
+        let mut runtime = Runtime::new();
+
+        for (tool_call_id, eval) in evals_list {
+            let result: String = runtime.eval(&eval.code)?;
+
+            if let Some(task_id) = eval.task_id {
+                let Some(task) = tasks_list.iter_mut().find(|t| t.task_id == task_id) else {
+                    warn!("Task #{task_id} not found");
+                    continue;
+                };
+
+                if let Some(parameter) = &eval.parameter {
+                    let placeholder = format!("{{{{{parameter}}}}}");
+
+                    if task.task_query.contains(&placeholder) {
+                        task.task_query = task.task_query.replace(&placeholder, &result);
+                    } else {
+                        warn!("Placeholder '{parameter}' not found in task #{task_id}");
+                    }
+                } else {
+                    if !task.task_query.ends_with('\n') {
+                        task.task_query.push('\n');
+                    }
+
+                    task.task_query.push_str(&result);
+                }
+            } else {
+                tx.send(Chunk::answer(format!("\n\n{result}")).task_info(AgentTask {
+                    task_id: 0,
+                    session_id,
+                    tool_call_id,
+                    task_query: str!(),
+                    wait_for: set![],
+                    agent_name: str!("js_eval"),
+                }))?;
             }
         }
     }
@@ -76,7 +133,7 @@ async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message
         if let Some(msg) = (&*messages.lock().await).messages.last()
             && msg.role.is_assistant()
         {
-            tx.send(Chunk::tools(msg.tool_calls.clone())).await?;
+            tx.send(Chunk::tools(msg.tool_calls.clone()))?;
         }
 
         // delegate tasks:
@@ -103,7 +160,7 @@ async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message
             handle_task(task_id, tx.clone(), tasks.clone()).await;
         }
     } else {
-        tx.send(Chunk::finish()).await?;
+        tx.send(Chunk::finish())?;
         info!("The user request was processed without agent tasks");
 
         // save messages to database:
@@ -149,7 +206,7 @@ pub async fn handle_task(task_id: i64, tx: Sender<Bytes>, tasks: Arc<Mutex<Tasks
             .await
             {
                 error!("[handle_agent{{sid={session_id}}} -> handle] {e}");
-                handle.tx.send(Chunk::error(str!("{e}"))).await.ok();
+                handle.tx.send(Chunk::error(str!("{e}"))).ok();
                 handle.finish_branch().await;
             }
         }
@@ -202,7 +259,6 @@ pub async fn handle_agent(
         ))
         .task_info(task_info.clone_minimal()),
     )
-    .await
     .ok();
     drop(log_query);
 
@@ -239,8 +295,7 @@ pub async fn handle_agent(
     while let Some(chunk) = response.next().await {
         match chunk? {
             AiChunk::Text(text_part) => {
-                tx.send(Chunk::answer(text_part).task_info(task_info.clone_minimal()))
-                    .await?
+                tx.send(Chunk::answer(text_part).task_info(task_info.clone_minimal()))?
             }
             AiChunk::Tool(tool_call) => tool_calls.push(tool_call),
         }
@@ -262,7 +317,6 @@ pub async fn handle_agent(
             ))
             .task_info(task_info.clone_minimal()),
         )
-        .await
         .ok();
         drop(log_json);
 
@@ -289,7 +343,6 @@ pub async fn handle_agent(
                 ))
                 .task_info(task_info.clone_minimal()),
             )
-            .await
             .ok();
 
             let _ = Manager::stop(arc_name.clone()).await;
@@ -330,7 +383,7 @@ pub async fn handle_agent(
                 }
                 _ => {}
             }
-            tx.send(chunk.task_info(task_info.clone_minimal())).await?;
+            tx.send(chunk.task_info(task_info.clone_minimal()))?;
         }
 
         agent_messages.lock().await.push_content(None, full_text);
@@ -355,13 +408,12 @@ pub async fn handle_agent(
 
     // finish agent handling:
     tx.send(Chunk::finish().task_info(task.task.clone_minimal()))
-        .await
         .ok();
 
     // finish query cycle:
     if task.is_last().await {
         info!("The last task was completed, saving the session");
-        tx.send(Chunk::finish()).await.ok();
+        tx.send(Chunk::finish()).ok();
 
         // save messages to database:
         let to_save = messages.lock().await.slice(-1);

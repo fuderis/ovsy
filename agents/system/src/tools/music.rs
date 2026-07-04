@@ -80,7 +80,7 @@ pub async fn handle_search_music(tx: Sender<Bytes>, action: MusicAction) -> Resu
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg)).await?;
+    tx.send(Chunk::answer(msg))?;
 
     Ok(())
 }
@@ -106,7 +106,7 @@ pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result
     if tracks.is_empty() {
         let msg = str!("No matching music was found.");
         info!("{msg}");
-        tx.send(Chunk::answer(msg)).await?;
+        tx.send(Chunk::answer(msg))?;
         return Ok(());
     }
 
@@ -120,7 +120,7 @@ pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result
     );
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg)).await?;
+    tx.send(Chunk::answer(msg))?;
 
     Ok(())
 }

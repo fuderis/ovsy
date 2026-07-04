@@ -49,7 +49,7 @@ pub async fn handle_media_play(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Media playback started successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to start media playback: {e:?}").into()),
@@ -62,7 +62,7 @@ pub async fn handle_media_pause(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Media playback paused successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to pause media playback: {e:?}").into()),
@@ -75,7 +75,7 @@ pub async fn handle_media_play_pause(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Media playback toggled successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to toggle media playback: {e:?}").into()),
@@ -88,7 +88,7 @@ pub async fn handle_media_stop(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Media playback stopped successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to stop media playback: {e:?}").into()),
@@ -101,7 +101,7 @@ pub async fn handle_media_next_track(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Skipped to the next track successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to skip to the next track: {e:?}").into()),
@@ -114,7 +114,7 @@ pub async fn handle_media_previous_track(tx: Sender<Bytes>) -> Result<()> {
         Ok(_) => {
             let msg = "Returned to the previous track successfully.";
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to return to the previous track: {e:?}").into()),
@@ -130,7 +130,7 @@ pub async fn handle_media_seek_forward(tx: Sender<Bytes>, action: SeekAction) ->
                 action.seconds
             );
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to seek forward: {e:?}").into()),
@@ -146,7 +146,7 @@ pub async fn handle_media_seek_backward(tx: Sender<Bytes>, action: SeekAction) -
                 action.seconds
             );
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to seek backward: {e:?}").into()),
@@ -160,7 +160,7 @@ pub async fn handle_media_metadata(tx: Sender<Bytes>) -> Result<()> {
             let msg = str!(metadata);
 
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to retrieve media metadata: {e:?}").into()),
@@ -173,7 +173,7 @@ pub async fn handle_media_position(tx: Sender<Bytes>) -> Result<()> {
         Ok(position) => {
             let msg = str!("Current playback position: {:?}.", position);
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to retrieve playback position: {e:?}").into()),
@@ -186,7 +186,7 @@ pub async fn handle_media_duration(tx: Sender<Bytes>) -> Result<()> {
         Ok(duration) => {
             let msg = str!("Current media duration: {:?}.", duration);
             info!("{msg}");
-            tx.send(Chunk::answer(msg)).await?;
+            tx.send(Chunk::answer(msg))?;
             Ok(())
         }
         Err(e) => Err(str!("Failed to retrieve media duration: {e:?}").into()),

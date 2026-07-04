@@ -21,7 +21,7 @@ pub static MANAGER: State<Manager> = State::default();
 pub struct Manager {
     pub agents: HashMap<Arc<String>, Arc<Agent>>,
     pub agents_doc: Arc<String>,
-    pub task_tool: Arc<Tool>,
+    pub tools: Arc<Vec<Tool>>,
 }
 
 impl Manager {
@@ -56,14 +56,14 @@ impl Manager {
         }
 
         // gen task delegation tool:
-        Self::gen_task_tool().await;
+        Self::gen_basic_tools().await;
 
         Ok(())
     }
 
-    /// Generates & sets the task schema
-    pub async fn gen_task_tool() {
-        let tool = Tool::new(
+    /// Generates & sets the basic tools schemes
+    pub async fn gen_basic_tools() {
+        let tools = vec![Tool::new(
             "handle_agent",
             "Delegates a task to a specific AI agent for execution (do not invent non-existent agents).",
         )
@@ -83,9 +83,34 @@ impl Manager {
             "wait_for",
             Schema::array("Identifiers of tasks that must be completed before this one (when need the results of another tasks).")
                 .items(Schema::integer("Identifier of task that must be completed before."))
-        );
+        ),
 
-        MANAGER.lock().await.task_tool = arc!(tool);
+        Tool::new(
+            "javascript_eval",
+            "Executes JavaScript code in an isolated runtime for deterministic computations. \
+Use this tool whenever the result must be exact instead of estimated by the language model. \
+This includes arithmetic, date and time calculations, timezone conversions, timestamp operations, duration calculations, calendar logic, string and array transformations, JSON processing, regular expressions, and other deterministic algorithms. \
+Do not perform these calculations yourself if they can be computed with JavaScript. \
+The result of the last evaluated expression is returned.",
+        )
+        .required_property(
+            "code",
+            Schema::string(
+                "Plain JavaScript (ECMAScript) code only. Do NOT use TypeScript syntax. \
+Use built-in APIs such as Math, Date, JSON, String, Array and RegExp whenever appropriate. \
+For dates, time, calendars, timestamps and timezone calculations, always use JavaScript instead of estimating the result. \
+The last expression must evaluate to the value that should be returned. \
+Do not wrap the code in markdown or use console.log() as output.",
+            ),
+        )
+        .optional_property(
+            "task_id",
+            Schema::integer(
+                "If specified, the execution result will be inserted into the corresponding task's data before the task is executed, allowing agents to receive the computed value instead of the original expression.",
+            ),
+        )];
+
+        MANAGER.lock().await.tools = arc!(tools);
     }
 
     /// Ensures the agent is running and healthy, spawning it if necessary
@@ -237,9 +262,9 @@ impl Manager {
         MANAGER.get().await.agents_doc.clone()
     }
 
-    /// Returns the task delegation tool
-    pub async fn task_tool() -> Tool {
-        (*MANAGER.get().await.task_tool).clone()
+    /// Returns the bsic tools list
+    pub async fn basic_tools() -> Vec<Tool> {
+        (*MANAGER.get().await.tools).clone()
     }
 
     /// Returns the agent system prompt
