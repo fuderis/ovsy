@@ -41,7 +41,6 @@ pub struct DeltaVolumeAction {
     amount: u32,
 }
 
-/// API: Sets the audio volume
 #[log(skip_all, fields(action))]
 pub async fn handle_set_volume(tx: Sender<Bytes>, action: SetVolumeAction) -> Result<()> {
     match AudioControl::set_volume(action.volume as u32).await {
@@ -58,7 +57,6 @@ pub async fn handle_set_volume(tx: Sender<Bytes>, action: SetVolumeAction) -> Re
     }
 }
 
-/// API: Increases the audio volume
 #[log(skip_all, fields(action))]
 pub async fn handle_increase_volume(tx: Sender<Bytes>, action: DeltaVolumeAction) -> Result<()> {
     match AudioControl::increase_volume(action.amount).await {
@@ -72,7 +70,6 @@ pub async fn handle_increase_volume(tx: Sender<Bytes>, action: DeltaVolumeAction
     }
 }
 
-/// API: Decreases the audio volume
 #[log(skip_all, fields(action))]
 pub async fn handle_decrease_volume(tx: Sender<Bytes>, action: DeltaVolumeAction) -> Result<()> {
     match AudioControl::decrease_volume(action.amount).await {
@@ -86,7 +83,6 @@ pub async fn handle_decrease_volume(tx: Sender<Bytes>, action: DeltaVolumeAction
     }
 }
 
-/// API: Returns the current audio volume
 #[log(skip_all)]
 pub async fn handle_get_volume(tx: Sender<Bytes>) -> Result<()> {
     match AudioControl::get_volume().await {
@@ -105,7 +101,6 @@ pub struct MuteAction {
     mute: bool,
 }
 
-/// API: Includes/Turns off the sound
 #[log(skip_all, fields(action))]
 pub async fn handle_set_mute(tx: Sender<Bytes>, action: MuteAction) -> Result<()> {
     match AudioControl::set_mute(action.mute).await {
@@ -123,7 +118,6 @@ pub async fn handle_set_mute(tx: Sender<Bytes>, action: MuteAction) -> Result<()
     }
 }
 
-/// API: Returns the audio mute status
 #[log(skip_all)]
 pub async fn handle_is_muted(tx: Sender<Bytes>) -> Result<()> {
     match AudioControl::is_muted().await {

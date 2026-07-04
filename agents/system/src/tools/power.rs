@@ -41,7 +41,6 @@ pub struct PowerAction {
     mode: PowerMode,
 }
 
-/// API: Handles the `power` tool
 #[log(skip_all, fields(action))]
 pub async fn handle_schedule_power(tx: Sender<Bytes>, action: PowerAction) -> Result<()> {
     let local = action
@@ -68,7 +67,6 @@ pub async fn handle_schedule_power(tx: Sender<Bytes>, action: PowerAction) -> Re
     }
 }
 
-/// API: Handles the `power` tool
 #[log(skip_all)]
 pub async fn handle_cancel_power(tx: Sender<Bytes>) -> Result<()> {
     let msg = match PowerManager::cancel().await {
@@ -80,7 +78,6 @@ pub async fn handle_cancel_power(tx: Sender<Bytes>) -> Result<()> {
     tx.send(Chunk::answer(msg)).await
 }
 
-/// API: Handles the `power` tool
 #[log(skip_all)]
 pub async fn handle_power_status(tx: Sender<Bytes>) -> Result<()> {
     let msg = match PowerManager::status().await {

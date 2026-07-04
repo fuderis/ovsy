@@ -21,36 +21,33 @@ pub fn system_monitor_tools() -> Vec<Tool> {
     ]
 }
 
-/// API: Returns static system information
 #[log(skip_all)]
 pub async fn handle_system_info(tx: Sender<Bytes>) -> Result<()> {
     let info = SYSTEM_MONITOR.lock().await.info();
-    let msg = format!("{info}");
+    let msg = str!(info);
 
     tx.send(Chunk::answer(msg)).await
 }
 
-/// API: Returns current live system metrics
 #[log(skip_all)]
 pub async fn handle_system_metrics(tx: Sender<Bytes>) -> Result<()> {
     let metrics = SYSTEM_MONITOR
         .lock()
         .await
         .refresh_metrics_with_interval(Duration::from_secs(10));
-    let msg = format!("{metrics}",);
+    let msg = str!(metrics);
 
     info!("System metrics collected.");
     tx.send(Chunk::answer(msg)).await
 }
 
-/// API: Returns the list of connected devices
 #[log(skip_all)]
 pub async fn handle_devices_list(tx: Sender<Bytes>) -> Result<()> {
     let devices = SYSTEM_MONITOR
         .lock()
         .await
         .refresh_devices_with_interval(Duration::from_secs(60));
-    let msg = format!("{devices}",);
+    let msg = str!(devices);
 
     info!("Connected devices enumerated.");
     tx.send(Chunk::answer(msg)).await

@@ -8,9 +8,10 @@ const NAME: &str = "system";
 
 const DESCRIPTION: &str = r#"System Manager capable of retrieving static system information,
 live performance metrics, connected hardware devices, scheduling
-power operations, managing audio volume and mute state, switching
-between light and dark system themes, searching the local music
-library, and starting music playback."#;
+power operations, managing audio volume and mute state, controlling
+media playback and retrieving media metadata, switching between
+light and dark system themes, searching the local music library,
+and starting music playback."#;
 
 const PROMPT: &str = r#"You are the System Manager.
 
@@ -73,7 +74,45 @@ call `decrease_volume` with:
 - If the user asks to unmute the system, call `set_mute` with:
     - mute = false
 
-4. Theme
+4. Media Playback
+
+- If the user asks to play or resume the currently active media session,
+call `media_play`.
+
+- If the user asks to pause playback,
+call `media_pause`.
+
+- If the user asks to toggle between play and pause,
+call `media_play_pause`.
+
+- If the user asks to stop playback,
+call `media_stop`.
+
+- If the user asks to skip to the next track,
+call `media_next_track`.
+
+- If the user asks to return to the previous track,
+call `media_previous_track`.
+
+- If the user asks to seek forward by a specific number of seconds,
+call `media_seek_forward` with:
+    - seconds = requested number of seconds
+
+- If the user asks to seek backward by a specific number of seconds,
+call `media_seek_backward` with:
+    - seconds = requested number of seconds
+
+- If the user asks what is currently playing, requests track information,
+artist, album, playback state, artwork, duration or current position,
+call `media_metadata`.
+
+- If the user asks only for the current playback position,
+call `media_position`.
+
+- If the user asks only for the duration of the current media,
+call `media_duration`.
+
+5. Theme
 
 - If the user requests dark mode, call `set_theme` with:
     - style = "dark"
@@ -81,7 +120,7 @@ call `decrease_volume` with:
 - If the user requests light mode, call `set_theme` with:
     - style = "light"
 
-5. Music
+6. Music
 
 - If the user asks to search for music without requesting playback,
 call `search_music`.
@@ -109,6 +148,9 @@ General Rules
 - Omit optional parameters instead of inventing values.
 - Never call multiple tools when a single tool fully satisfies the user's request.
 - Always use the appropriate tool instead of guessing system information or music library contents.
+- Prefer media playback tools when the user refers to controlling the 
+  currently active media session, and use music library tools only when 
+  the user wants to search or start playback from the local music library.
 "#;
 
 /// The agent configuration
@@ -125,6 +167,7 @@ impl ::std::default::Default for AgentOptions {
         let tools = vec![
             tools::system_monitor_tools(),
             tools::audio_control_tools(),
+            tools::media_control_tools(),
             tools::power_management_tools(),
             tools::music_indexer_tools(),
             tools::theme_switcher_tools(),

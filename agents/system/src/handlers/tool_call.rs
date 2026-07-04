@@ -38,6 +38,19 @@ async fn tool_call(tx: Sender<Bytes>, name: String, data: JsonValue) -> Result<(
         "is_muted" => tools::handle_is_muted(tx.clone()).await,
         "set_mute" => tools::handle_set_mute(tx.clone(), parse(data)?).await,
 
+        // media control
+        "media_play" => tools::handle_media_play(tx.clone()).await,
+        "media_pause" => tools::handle_media_pause(tx.clone()).await,
+        "media_play_pause" => tools::handle_media_play_pause(tx.clone()).await,
+        "media_stop" => tools::handle_media_stop(tx.clone()).await,
+        "media_next_track" => tools::handle_media_next_track(tx.clone()).await,
+        "media_previous_track" => tools::handle_media_previous_track(tx.clone()).await,
+        "media_seek_forward" => tools::handle_media_seek_forward(tx.clone(), parse(data)?).await,
+        "media_seek_backward" => tools::handle_media_seek_backward(tx.clone(), parse(data)?).await,
+        "media_metadata" => tools::handle_media_metadata(tx.clone()).await,
+        "media_position" => tools::handle_media_position(tx.clone()).await,
+        "media_duration" => tools::handle_media_duration(tx.clone()).await,
+
         // music indexer
         "search_music" => tools::handle_search_music(tx.clone(), parse(data)?).await,
         "play_music" => tools::handle_play_music(tx.clone(), parse(data)?).await,

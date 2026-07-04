@@ -55,7 +55,6 @@ async fn music_index() -> Result<MusicIndexer> {
         .ok_or_else(|| str!("Failed to initialize music indexer").into())
 }
 
-/// API: Handles the music searching
 #[log(skip_all, fields(action))]
 pub async fn handle_search_music(tx: Sender<Bytes>, action: MusicAction) -> Result<()> {
     let music_index = music_index().await?;
@@ -86,7 +85,6 @@ pub async fn handle_search_music(tx: Sender<Bytes>, action: MusicAction) -> Resu
     Ok(())
 }
 
-/// Handles the music playback
 #[log(skip_all, fields(action))]
 pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result<()> {
     let music_index = music_index().await?;

@@ -16,7 +16,6 @@ pub struct ThemeAction {
     style: ThemeStyle,
 }
 
-/// API: Handles the `theme` swithing
 #[log(skip_all, fields(action))]
 pub async fn handle_set_theme(tx: Sender<Bytes>, action: ThemeAction) -> Result<()> {
     match SystemTheme::switch(action.style.clone()).await {

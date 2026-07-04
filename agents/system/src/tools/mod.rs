@@ -10,5 +10,8 @@ pub use power::*;
 pub mod audio;
 pub use audio::*;
 
+pub mod media;
+pub use media::*;
+
 pub mod music;
 pub use music::*;
