@@ -1,5 +1,15 @@
 use crate::prelude::*;
+use anylm::{Schema, Tool};
 use system_utils::{SystemTheme, ThemeStyle};
+
+pub fn theme_switcher_tools() -> Vec<Tool> {
+    vec![
+        Tool::new("set_theme", "Changes the system appearance theme.").required_property(
+            "style",
+            Schema::string("Target theme style.").variants(set![str!("light"), str!("dark"),]),
+        ),
+    ]
+}
 
 #[derive(Deserialize)]
 pub struct ThemeAction {

@@ -1,5 +1,39 @@
 use crate::prelude::*;
+use anylm::{Schema, Tool};
 use system_utils::{PowerManager, power::PowerMode};
+
+pub fn power_management_tools() -> Vec<Tool> {
+    vec![
+        Tool::new(
+            "schedule_power",
+            "Schedules or immediately executes a system power action.",
+        )
+        .required_property(
+            "mode",
+            Schema::string("Power action to perform.").variants(set![
+                str!("shutdown"),
+                str!("reboot"),
+                str!("suspend"),
+                str!("lock"),
+                str!("logout"),
+            ]),
+        )
+        .optional_property(
+            "timestamp",
+            Schema::string(
+                "Optional ISO-8601 UTC datetime. If omitted, the action is executed immediately.",
+            ),
+        ),
+        Tool::new(
+            "cancel_power",
+            "Cancels the currently scheduled power action if one exists.",
+        ),
+        Tool::new(
+            "get_power_status",
+            "Returns the currently scheduled power action and its execution time, if any.",
+        ),
+    ]
+}
 
 #[derive(Deserialize)]
 pub struct PowerAction {

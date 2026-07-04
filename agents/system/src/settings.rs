@@ -1,5 +1,5 @@
-use crate::prelude::*;
-use anylm::{Schema, Tool};
+use crate::{prelude::*, tools};
+use anylm::Tool;
 
 /// The settings instance
 static SETTINGS: State<Config<Settings>> = State::default();
@@ -123,137 +123,15 @@ pub struct AgentOptions {
 impl ::std::default::Default for AgentOptions {
     fn default() -> Self {
         let tools = vec![
-            //    SYSTEM MONITOR
-            Tool::new(
-                "get_system_info",
-                "Returns static system information including operating system, CPU, GPU, RAM, motherboard, storage devices, and other hardware details.",
-            ),
-            Tool::new(
-                "get_system_metrics",
-                "Returns current live system metrics including CPU usage, memory usage, temperatures, disk usage, network activity and other runtime statistics.",
-            ),
-            Tool::new(
-                "get_devices_list",
-                "Returns a formatted list of currently connected hardware devices.",
-            ),
-
-            //   POWER MANAGEMENT
-            Tool::new(
-                "schedule_power",
-                "Schedules or immediately executes a system power action."
-            )
-            .required_property(
-                "mode",
-                Schema::string("Power action to perform.")
-                    .variants(set![
-                        str!("shutdown"),
-                        str!("reboot"),
-                        str!("suspend"),
-                        str!("lock"),
-                        str!("logout"),
-                    ])
-            )
-            .optional_property(
-                "timestamp",
-                Schema::string(
-                    "Optional ISO-8601 UTC datetime. If omitted, the action is executed immediately."
-                )
-            ),
-
-            Tool::new(
-                "cancel_power",
-                "Cancels the currently scheduled power action if one exists.",
-            ),
-            Tool::new(
-                "get_power_status",
-                "Returns the currently scheduled power action and its execution time, if any.",
-            ),
-
-            //    AUDIO CONTROL
-            Tool::new(
-                "set_volume",
-                "Sets the system audio volume to the specified percentage.",
-            )
-            .required_property(
-                "volume",
-                Schema::integer("Target audio volume percentage (0-100)."),
-            ),
-
-            Tool::new(
-                "increase_volume",
-                "Increases the system audio volume by the specified percentage.",
-            )
-            .required_property(
-                "amount",
-                Schema::integer("Amount to increase the audio volume by."),
-            ),
-
-            Tool::new(
-                "decrease_volume",
-                "Decreases the system audio volume by the specified percentage.",
-            )
-            .required_property(
-                "amount",
-                Schema::integer("Amount to decrease the audio volume by."),
-            ),
-
-            // MUSIC
-            Tool::new(
-                "search_music",
-                "Searches the local music library without starting playback.",
-            )
-            .optional_property(
-                "query",
-                Schema::string("General natural-language music search query."),
-            )
-            .optional_property(
-                "band",
-                Schema::string("Artist or band name."),
-            )
-            .optional_property(
-                "album",
-                Schema::string("Album title."),
-            )
-            .optional_property(
-                "track",
-                Schema::string("Track title."),
-            )
-            .optional_property(
-                "genre",
-                Schema::string("Music genre."),
-            ),
-
-            Tool::new(
-                "play_music",
-                "Searches the local music library and immediately starts playback.",
-            )
-            .optional_property(
-                "query",
-                Schema::string("General natural-language music search query."),
-            )
-            .optional_property(
-                "band",
-                Schema::string("Artist or band name."),
-            )
-            .optional_property(
-                "album",
-                Schema::string("Album title."),
-            )
-            .optional_property(
-                "track",
-                Schema::string("Track title."),
-            )
-            .optional_property(
-                "genre",
-                Schema::string("Music genre."),
-            ),
-
-            // THEME SWITCHER
-            Tool::new("set_theme", "Changes the system appearance theme.").required_property(
-                "style",
-                Schema::string("Target theme style.").variants(set![str!("light"), str!("dark"),]),
-            ),
-        ];
+            tools::system_monitor_tools(),
+            tools::audio_control_tools(),
+            tools::power_management_tools(),
+            tools::music_indexer_tools(),
+            tools::theme_switcher_tools(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect();
 
         Self {
             name: str!(NAME),

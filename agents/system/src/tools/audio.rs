@@ -1,5 +1,35 @@
 use crate::prelude::*;
+use anylm::{Schema, Tool};
 use system_utils::AudioControl;
+
+pub fn audio_control_tools() -> Vec<Tool> {
+    vec![
+        Tool::new(
+            "set_volume",
+            "Sets the system audio volume to the specified percentage.",
+        )
+        .required_property(
+            "volume",
+            Schema::integer("Target audio volume percentage (0-100)."),
+        ),
+        Tool::new(
+            "increase_volume",
+            "Increases the system audio volume by the specified percentage.",
+        )
+        .required_property(
+            "amount",
+            Schema::integer("Amount to increase the audio volume by."),
+        ),
+        Tool::new(
+            "decrease_volume",
+            "Decreases the system audio volume by the specified percentage.",
+        )
+        .required_property(
+            "amount",
+            Schema::integer("Amount to decrease the audio volume by."),
+        ),
+    ]
+}
 
 #[derive(Deserialize)]
 pub struct SetVolumeAction {

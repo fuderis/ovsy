@@ -1,7 +1,25 @@
 use crate::prelude::*;
+use anylm::Tool;
 use system_utils::SystemMonitor;
 
 static SYSTEM_MONITOR: State<SystemMonitor> = State::default();
+
+pub fn system_monitor_tools() -> Vec<Tool> {
+    vec![
+        Tool::new(
+            "get_system_info",
+            "Returns static system information including operating system, CPU, GPU, RAM, motherboard, storage devices, and other hardware details.",
+        ),
+        Tool::new(
+            "get_system_metrics",
+            "Returns current live system metrics including CPU usage, memory usage, temperatures, disk usage, network activity and other runtime statistics.",
+        ),
+        Tool::new(
+            "get_devices_list",
+            "Returns a formatted list of currently connected hardware devices.",
+        ),
+    ]
+}
 
 /// API: Returns static system information
 #[log(skip_all)]

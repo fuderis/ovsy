@@ -1,5 +1,35 @@
 use crate::prelude::*;
+use anylm::{Schema, Tool};
 use music_index::{MusicIndexer, SearchIntent};
+
+pub fn music_indexer_tools() -> Vec<Tool> {
+    vec![
+        Tool::new(
+            "search_music",
+            "Searches the local music library without starting playback.",
+        )
+        .optional_property(
+            "query",
+            Schema::string("General natural-language music search query."),
+        )
+        .optional_property("band", Schema::string("Artist or band name."))
+        .optional_property("album", Schema::string("Album title."))
+        .optional_property("track", Schema::string("Track title."))
+        .optional_property("genre", Schema::string("Music genre.")),
+        Tool::new(
+            "play_music",
+            "Searches the local music library and immediately starts playback.",
+        )
+        .optional_property(
+            "query",
+            Schema::string("General natural-language music search query."),
+        )
+        .optional_property("band", Schema::string("Artist or band name."))
+        .optional_property("album", Schema::string("Album title."))
+        .optional_property("track", Schema::string("Track title."))
+        .optional_property("genre", Schema::string("Music genre.")),
+    ]
+}
 
 static MUSIC_INDEX: State<Option<MusicIndexer>> = State::default();
 
