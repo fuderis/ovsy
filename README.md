@@ -26,8 +26,11 @@ by a central execution loop (**handle_task**).
 1. **Task Evaluation and Execution**
 
 When a user submits a query, the orchestrator determines if background tasks are required:
-  * **Parallel Execution:** The engine builds a dependency graph of the required actions. Tasks without active upstream dependencies bypass sequential queues and are instantly spawned across separate threads. This allows multiple agents or tools to execute concurrently during a single generation cycle.
-  * **Context Isolation:** To prevent token bloat and reduce latency, agents do not receive the entire conversation history. Instead, context is strictly limited to the specific task description and the exact output payloads of any dependent upstream tasks. Every agent maintains its own isolated system prompt and configuration (AgentInfo).
+  * **Parallel Execution:** The engine builds a dependency graph of the required actions. Tasks without active upstream dependencies bypass sequential queues
+    and are instantly spawned across separate threads. This allows multiple agents or tools to execute concurrently during a single generation cycle.
+  * **Context Isolation:** To prevent token bloat and reduce latency, agents do not receive the entire conversation history. Instead,
+    context is strictly limited to the specific task description and the exact output payloads of any dependent upstream tasks.
+    Every agent maintains its own isolated system prompt and configuration (AgentInfo).
 
 2. **Embedded Self-Healing Loop**
 
@@ -39,6 +42,17 @@ If a running agent encounters an error during execution, the orchestrator initia
     to conserve computing resources.
   * **Automated Diagnostics:** All runtime exceptions, operational errors, and critical failures are automatically flushed
     to disk via the system logger (`logs/errors`) to ensure full offline traceability for developers.
+
+3. **Embedded JavaScript Interpreter**
+
+To eliminate unnecessary orchestration cycles, Ovsy embeds the **Boa Engine** JavaScript interpreter directly into the execution pipeline.
+  * **Inline Expression Evaluation:** Agents can execute arbitrary JavaScript snippets without spawning an external runtime,
+    allowing lightweight computations, data transformations, and conditional logic to be performed with minimal overhead.
+  * **Direct Task Routing:** Instead of returning the evaluation result to the orchestrator and triggering a new planning iteration,
+    the interpreter can immediately forward the produced value to another task by its `task_id`.
+    This enables dependent tasks to continue execution within the same orchestration cycle, reducing latency and avoiding redundant LLM generations.
+  * **Reduced Token Consumption:** Since intermediate results no longer need to be serialized into the conversation and reinterpreted during the next planning pass,
+    the assistant significantly decreases token usage while improving overall throughput.
 
 ## Process Lifecycle and Safety
 
