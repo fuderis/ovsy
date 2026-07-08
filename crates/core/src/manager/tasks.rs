@@ -1,4 +1,4 @@
-use crate::prelude::*;
+use crate::{Session, prelude::*};
 use anylm::{Content, Messages};
 use ovsy_share::AgentTask;
 use tokio::task::JoinHandle;
@@ -9,13 +9,13 @@ pub struct Tasks {
     pub pending: HashMap<i64, AgentTask>,
     pub finished: HashSet<i64>,
     pub results: HashMap<i64, Vec<Content>>,
-    pub session: Session,
+    pub session: Arc<Mutex<Session>>,
     pub messages: Arc<Mutex<Messages>>,
 }
 
 impl Tasks {
     /// Creates a new workflow
-    pub fn new(session: Session, messages: Arc<Mutex<Messages>>) -> Arc<Mutex<Self>> {
+    pub fn new(session: Arc<Mutex<Session>>, messages: Arc<Mutex<Messages>>) -> Arc<Mutex<Self>> {
         arc!(Mutex::new(Self {
             pending: HashMap::new(),
             working: HashMap::new(),

@@ -2,12 +2,11 @@ use super::ChatAction;
 use crate::prelude::*;
 
 use anylm::Messages;
-use ovsy_share::SessionID;
 use ratatui::layout::Rect;
 
 /// The app state
 pub struct AppState {
-    pub session_id: Arc<State<SessionID>>,
+    pub session_id: Arc<State<SessionId>>,
     pub tx: UnboundedSender<ChatAction>,
 
     pub input_area: Rect,
@@ -31,7 +30,7 @@ pub struct AppState {
 
 impl AppState {
     /// Creates a new app state
-    pub fn new(session_id: SessionID, tx: UnboundedSender<ChatAction>) -> Self {
+    pub fn new(session_id: SessionId, tx: UnboundedSender<ChatAction>) -> Self {
         let commands = vec![
             ("/new", "Create a new empty session"),
             ("/compact", "Compress the dialog context"),

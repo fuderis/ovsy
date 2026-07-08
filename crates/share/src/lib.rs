@@ -13,14 +13,7 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-/// Returns the app data dir
-pub fn app_data() -> std::path::PathBuf {
-    macron::path!("~/.ovsy")
-}
-/// Returns the app version
-pub fn app_version() -> &'static str {
-    "0.11.0"
-}
+pub const VERSION: &str = "0.12.0";
 
 pub mod result;
 pub use result::{DynError, Result, StdResult};
@@ -29,7 +22,10 @@ pub mod settings;
 pub use settings::Settings;
 
 pub mod session_id;
-pub use session_id::SessionID;
+pub use session_id::SessionId;
+
+pub mod session_info;
+pub use session_info::SessionInfo;
 
 pub mod chunk;
 pub use chunk::{Chunk, ChunkData};

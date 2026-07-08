@@ -1,18 +1,25 @@
-use crate::{Runtime, manager::*, prelude::*};
+use crate::{Runtime, Session, manager::*, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages, ToolCall};
-use ovsy_share::{AgentTask, Chunk, ChunkData, HandleQuery, settings::AssistantOptions};
+use chrono::FixedOffset;
+use ovsy_share::{
+    AgentTask, Chunk, ChunkData, HandleQuery, SessionInfo, settings::AssistantOptions,
+};
 
 /// API: The user message handler
 #[log(skip_all, fields(sid = %sid.0))]
-pub async fn session_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Response {
+pub async fn handle_query(sid: Paths<SessionId>, data: Json<HandleQuery>) -> Response {
     let session_id = sid.0;
     let HandleQuery { message } = data.0;
 
     let current = Span::current();
 
     Response::ok().stream(move |tx| {
+        let current2 = current.clone();
         async move {
-            if let Err(e) = handle_query(session_id, tx.clone(), message).await {
+            if let Err(e) = handle(session_id, tx.clone(), message)
+                .instrument(current2)
+                .await
+            {
                 error!("{e}");
                 tx.send(Chunk::error(str!(e))).ok();
             }
@@ -22,21 +29,22 @@ pub async fn session_query(sid: Paths<SessionID>, data: Json<HandleQuery>) -> Re
 }
 
 /// Handles the user query
-#[log(skip_all)]
-async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message) -> Result<()> {
+async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
 
     info!("Initialized the user request processing");
 
     // init session & read messages:
-    let session = Session::new(session_id).await?;
-    let db_messages = session.read_messages().await?;
+    let Some(session) = Session::get(&session_id) else {
+        return Err(Error::UnknownSessionId(session_id).into());
+    };
+    let db_messages = session.lock().await.read_messages().await?;
 
     // prepare messages:
     let messages = Messages::from(db_messages)
         .system(vec![
-            system_prompt(&session_id, &ai_conf).into(),
+            system_prompt(&session.lock().await.info, &ai_conf).into(),
             ai_conf
                 .assist_prompt
                 .replace("{AGENTS_LIST}", &Manager::agents_list_doc().await)
@@ -165,7 +173,7 @@ async fn handle_query(session_id: SessionID, tx: Sender<Bytes>, message: Message
 
         // save messages to database:
         let to_save = messages.lock().await.slice(-1);
-        session.write_messages(to_save).await?;
+        session.lock().await.write_messages(to_save).await?;
     }
 
     Ok(())
@@ -220,7 +228,7 @@ pub async fn handle_task(task_id: i64, tx: Sender<Bytes>, tasks: Arc<Mutex<Tasks
 #[log(skip_all, fields(agent = %agent_name))]
 pub async fn handle_agent(
     agent_name: String,
-    session: Session,
+    session: Arc<Mutex<Session>>,
     messages: Arc<Mutex<Messages>>,
     tx: Sender<Bytes>,
     task: Task,
@@ -268,8 +276,8 @@ pub async fn handle_agent(
     // prepare messages:
     let agent_messages = Messages::new()
         .system(vec![
-            system_prompt(&session.id, &ai_conf).into(),
-            prompt.into(),
+            system_prompt(&session.lock().await.info, &ai_conf).into(),
+            prompt.trim().into(),
         ])
         .assistant(
             task.context()
@@ -417,7 +425,7 @@ pub async fn handle_agent(
 
         // save messages to database:
         let to_save = messages.lock().await.slice(-1);
-        session.write_messages(to_save).await?;
+        session.lock().await.write_messages(to_save).await?;
     }
 
     // finish task:
@@ -427,12 +435,13 @@ pub async fn handle_agent(
 }
 
 /// Generates the system prompt
-fn system_prompt(session_id: &SessionID, ai_conf: &AssistantOptions) -> String {
+fn system_prompt(info: &SessionInfo, ai_conf: &AssistantOptions) -> String {
     let now_utc = Utc::now();
-    let now_local = session_id.now_local();
+    let now_local = now_local(info.timezone);
 
     ai_conf
         .system_prompt
+        .trim()
         .replace(
             "{DATETIME_LOCAL}",
             &now_local
@@ -443,4 +452,22 @@ fn system_prompt(session_id: &SessionID, ai_conf: &AssistantOptions) -> String {
             "{DATETIME_GLOBAL}",
             &now_utc.format("%A, %B %d, %Y, %I:%M:%S %p UTC").to_string(),
         )
+        .replace(
+            "{CURRENT_PATH}",
+            &info
+                .current_path
+                .clone()
+                .map(|path| path.to_string_lossy().to_string())
+                .unwrap_or_default(),
+        )
+}
+
+/// Returns the session local date time
+fn now_local(timezone_m: i16) -> DateTime<FixedOffset> {
+    let offset_seconds = (timezone_m as i32) * 60;
+    let tz =
+        FixedOffset::east_opt(offset_seconds).unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
+
+    let utc_now = Utc::now();
+    utc_now.with_timezone(&tz)
 }

@@ -47,7 +47,7 @@ impl Agent {
             exe = if cfg!(windows) { ".exe" } else { "" }
         ));
 
-        let sock_path = app_data().join(format!("uds/{}.sock", name));
+        let sock_path = path!("/tmp/ovsy/uds/{}.sock", name);
 
         // build command:
         let mut cmd = Command::new(&exec_path);

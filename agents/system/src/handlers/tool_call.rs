@@ -16,44 +16,48 @@ pub async fn handle_tool_call(name: Paths<String>, data: Json<JsonValue>) -> Res
 
 async fn tool_call(tx: Sender<Bytes>, name: String, data: JsonValue) -> Result<()> {
     match name.as_ref() {
-        // system monitor
-        "get_system_info" => tools::handle_system_info(tx.clone()).await,
-        "get_system_metrics" => tools::handle_system_metrics(tx.clone()).await,
-        "get_devices_list" => tools::handle_devices_list(tx.clone()).await,
+        //     SYSTEM MONITOR
+        "get_system_info" => tools::monitor::handle_system_info(tx.clone()).await,
+        "get_system_metrics" => tools::monitor::handle_system_metrics(tx.clone()).await,
+        "get_devices_list" => tools::monitor::handle_devices_list(tx.clone()).await,
 
-        // system theme
-        "set_theme" => tools::handle_set_theme(tx.clone(), parse(data)?).await,
+        //     SYSTEM THEME
+        "set_theme" => tools::theme::handle_set_theme(tx.clone(), parse(data)?).await,
         // TODO: "get_theme" => tools::handle_get_theme(tx.clone(), parse(data)?).await,
 
-        // power management
-        "schedule_power" => tools::handle_schedule_power(tx.clone(), parse(data)?).await,
-        "cancel_power" => tools::handle_cancel_power(tx.clone()).await,
-        "get_power_status" => tools::handle_power_status(tx.clone()).await,
+        //     POWER MANAGEMENT
+        "schedule_power" => tools::power::handle_schedule_power(tx.clone(), parse(data)?).await,
+        "cancel_power" => tools::power::handle_cancel_power(tx.clone()).await,
+        "get_power_status" => tools::power::handle_power_status(tx.clone()).await,
 
-        // audio control
-        "get_volume" => tools::handle_get_volume(tx.clone()).await,
-        "set_volume" => tools::handle_set_volume(tx.clone(), parse(data)?).await,
-        "increase_volume" => tools::handle_increase_volume(tx.clone(), parse(data)?).await,
-        "decrease_volume" => tools::handle_decrease_volume(tx.clone(), parse(data)?).await,
-        "is_muted" => tools::handle_is_muted(tx.clone()).await,
-        "set_mute" => tools::handle_set_mute(tx.clone(), parse(data)?).await,
+        //     AUDIO CONTROL
+        "get_volume" => tools::audio::handle_get_volume(tx.clone()).await,
+        "set_volume" => tools::audio::handle_set_volume(tx.clone(), parse(data)?).await,
+        "increase_volume" => tools::audio::handle_increase_volume(tx.clone(), parse(data)?).await,
+        "decrease_volume" => tools::audio::handle_decrease_volume(tx.clone(), parse(data)?).await,
+        "is_muted" => tools::audio::handle_is_muted(tx.clone()).await,
+        "set_mute" => tools::audio::handle_set_mute(tx.clone(), parse(data)?).await,
 
-        // media control
-        "media_play" => tools::handle_media_play(tx.clone()).await,
-        "media_pause" => tools::handle_media_pause(tx.clone()).await,
-        "media_play_pause" => tools::handle_media_play_pause(tx.clone()).await,
-        "media_stop" => tools::handle_media_stop(tx.clone()).await,
-        "media_next_track" => tools::handle_media_next_track(tx.clone()).await,
-        "media_previous_track" => tools::handle_media_previous_track(tx.clone()).await,
-        "media_seek_forward" => tools::handle_media_seek_forward(tx.clone(), parse(data)?).await,
-        "media_seek_backward" => tools::handle_media_seek_backward(tx.clone(), parse(data)?).await,
-        "media_metadata" => tools::handle_media_metadata(tx.clone()).await,
-        "media_position" => tools::handle_media_position(tx.clone()).await,
-        "media_duration" => tools::handle_media_duration(tx.clone()).await,
+        //     MEDIA CONTROL
+        "media_play" => tools::media::handle_media_play(tx.clone()).await,
+        "media_pause" => tools::media::handle_media_pause(tx.clone()).await,
+        "media_play_pause" => tools::media::handle_media_play_pause(tx.clone()).await,
+        "media_stop" => tools::media::handle_media_stop(tx.clone()).await,
+        "media_next_track" => tools::media::handle_media_next_track(tx.clone()).await,
+        "media_previous_track" => tools::media::handle_media_previous_track(tx.clone()).await,
+        "media_seek_forward" => {
+            tools::media::handle_media_seek_forward(tx.clone(), parse(data)?).await
+        }
+        "media_seek_backward" => {
+            tools::media::handle_media_seek_backward(tx.clone(), parse(data)?).await
+        }
+        "media_metadata" => tools::media::handle_media_metadata(tx.clone()).await,
+        "media_position" => tools::media::handle_media_position(tx.clone()).await,
+        "media_duration" => tools::media::handle_media_duration(tx.clone()).await,
 
-        // music indexer
-        "search_music" => tools::handle_search_music(tx.clone(), parse(data)?).await,
-        "play_music" => tools::handle_play_music(tx.clone(), parse(data)?).await,
+        //     MUSIC INDEXER
+        "search_music" => tools::music::handle_search_music(tx.clone(), parse(data)?).await,
+        "play_music" => tools::music::handle_play_music(tx.clone(), parse(data)?).await,
 
         _ => Err(Error::UnknownTool(name).into()),
     }

@@ -9,7 +9,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_share::{Chunk, ChunkData, CompactQuery, HandleQuery, SessionID, UserSessionsQuery};
+use ovsy_share::{Chunk, ChunkData, CompactQuery, HandleQuery, SessionId, UserSessionsQuery};
 use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
@@ -20,9 +20,8 @@ use tokio::{task::JoinHandle, time::Instant};
 
 const FRAME_TIME: Duration = Duration::from_millis(33); // ~30 FPS
 const USER_ID: u128 = 0;
-const USER_TIMEZONE: i16 = 5 * 60;
 
-/// API: Handles the cli chat
+/// Handles the CLI chat
 pub async fn handle_chat() -> Result<()> {
     let port = Settings::get().server.port;
 
@@ -39,7 +38,7 @@ pub async fn handle_chat() -> Result<()> {
                 time::sleep(Duration::from_millis(500)).await;
                 if client.get(&status_url).send().await.is_ok() {
                     is_ok = true;
-                    // break;
+                    break;
                 }
             }
 
@@ -59,7 +58,7 @@ pub async fn handle_chat() -> Result<()> {
     let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
 
     // load last session or create new:
-    let mut session_id = SessionID::new(USER_ID, USER_TIMEZONE);
+    let mut session_id = SessionId::new(USER_ID);
     let sessions_query = UserSessionsQuery::new(1); // limit: 1
     let base_url = str!("http://127.0.0.1:{port}");
     let sessions_url = str!("{base_url}/users/{USER_ID}/sessions");
@@ -70,7 +69,7 @@ pub async fn handle_chat() -> Result<()> {
         .send()
         .await
     {
-        if let Ok(active_sessions) = res.json::<Vec<SessionID>>().await
+        if let Ok(active_sessions) = res.json::<Vec<SessionId>>().await
             && let Some(last_session) = active_sessions.into_iter().next()
         {
             session_id = last_session;
@@ -96,8 +95,22 @@ pub async fn handle_chat() -> Result<()> {
 
     let res = run_app(&mut terminal, &mut app, &mut ui_rx).await;
 
+    // --- ГАРАНТИРОВАННЫЙ ВЫХОД ИЗ RAW MODE ДО СЕТЕВЫХ ЗАПРОСОВ ---
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+
+    // --- GRACEFUL SHUTDOWN: Закрытие сессии на бэкенде ---
+    println!("Flushing DB records and closing session cleanly...");
+
+    let finish_url = format!("http://127.0.0.1:{port}/sessions/{}/finish", app.session_id);
+    let client = Client::tcp();
+
+    if let Err(e) = client.post(&finish_url).send().await {
+        eprintln!("Warning: Failed to finish session cleanly on backend: {e}");
+    } else {
+        println!("Ovsy session closed successfully.");
+    }
+
     res
 }
 
@@ -312,7 +325,7 @@ async fn handle_input(app: &mut AppState) {
 
 /// A worker for networking
 async fn chat_worker(
-    session_id: Arc<State<SessionID>>,
+    session_id: Arc<State<SessionId>>,
     mut input_rx: mpsc::UnboundedReceiver<ChatAction>,
     ui_tx: mpsc::UnboundedSender<Chunk>,
     messages: Arc<State<Messages>>,
@@ -321,9 +334,20 @@ async fn chat_worker(
     let client = Client::tcp();
     let base_url = str!("http://127.0.0.1:{port}");
 
-    // load session history:
+    // Замыкание для ленивой сборки SessionInfo из контекста CLI окружения
+    let get_session_info = || {
+        let tz_minutes = (chrono::Local::now().offset().local_minus_utc() / 60) as i16;
+        ovsy_share::SessionInfo {
+            current_path: std::env::current_dir().ok(),
+            timezone: tz_minutes,
+        }
+    };
+
+    // --- ПЕРВИЧНАЯ ИНИЦИАЛИЗАЦИЯ СЕССИИ ---
+    let session_info = get_session_info();
     if let Ok(res) = client
-        .post(&str!("{base_url}/sessions/{session_id}/get"))
+        .post(&str!("{base_url}/sessions/{session_id}/init"))
+        .json(&session_info)
         .send()
         .await
     {
@@ -367,11 +391,18 @@ async fn chat_worker(
 
                     match args[0].to_lowercase().as_str() {
                         "/new" => {
-                            // gen new session id:
-                            session_id.set(SessionID::new(USER_ID, USER_TIMEZONE)).await;
-
-                            // clear messages state:
+                            // Генерация нового ID локально
+                            let new_sid = SessionId::new(USER_ID);
+                            session_id.set(new_sid.clone()).await;
                             messages.set(Messages::new()).await;
+
+                            // Регистрация и инициализация новой сессии на бэкенде
+                            let session_info = get_session_info();
+                            let _ = client
+                                .post(&str!("{base_url}/sessions/{new_sid}/init"))
+                                .json(&session_info)
+                                .send()
+                                .await;
 
                             let _ = ui_tx.send(Chunk {
                                 data: ChunkData::Finish,
@@ -389,15 +420,11 @@ async fn chat_worker(
                                 .send()
                                 .await;
 
-                            // check result:
                             match result {
                                 Ok(_) => {
-                                    // clear messages state:
                                     messages.set(Messages::new()).await;
                                 }
-
                                 Err(e) => {
-                                    // send error:
                                     let _ = ui_tx.send(Chunk::error(str!(
                                         "Failed to clear remote history: {}",
                                         e

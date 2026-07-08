@@ -1,10 +1,10 @@
 use crate::prelude::*;
-use ovsy_share::{SessionID, UserSessionsQuery};
+use ovsy_share::{SessionId, UserSessionsQuery};
 use tokio::fs;
 
-/// API: Handles the session messages retrieval
+/// Handles the user sessions list
 #[log(skip_all, fields(uid = %uid.0))]
-pub async fn user_sessions(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Response {
+pub async fn handle_list(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Response {
     let user_id = uid.0;
     let UserSessionsQuery { limit } = data.0;
 
@@ -19,8 +19,8 @@ pub async fn user_sessions(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> R
 
 /// Retrieves the session messages and initializes the session if it doesn't exist
 #[log(skip_all)]
-async fn search_sessions(user_id: u128, limit: usize) -> Result<Vec<SessionID>> {
-    let sessions_dir = app_data().join(str!("db/{user_id}/sessions"));
+async fn search_sessions(user_id: u128, limit: usize) -> Result<Vec<SessionId>> {
+    let sessions_dir = path!("~/.local/share/ovsy/userdata/{user_id}/sessions");
 
     // open sessions dir:
     let mut entries = match fs::read_dir(&sessions_dir).await {
@@ -39,7 +39,7 @@ async fn search_sessions(user_id: u128, limit: usize) -> Result<Vec<SessionID>> 
 
         if file_type.is_dir() {
             if let Some(file_name_str) = entry.file_name().to_str() {
-                if let Ok(session_id) = file_name_str.parse::<SessionID>() {
+                if let Ok(session_id) = file_name_str.parse::<SessionId>() {
                     sessions.push(session_id);
                 }
             }

@@ -218,7 +218,13 @@ fn render_table(lines: &mut Vec<Line>, state: &mut ParserState, max_width: usize
         }
     }
 
-    let available_width = max_width.saturating_sub(2 + (col_count * 3));
+    // calculate frames: extreme borders (2) + internal dividers ((col_count - 1) * 3)
+    let borders_overhead = 2 + if col_count > 1 {
+        (col_count - 1) * 3
+    } else {
+        0
+    };
+    let available_width = max_width.saturating_sub(borders_overhead);
     let total_ideal_width: usize = ideal_widths.iter().sum();
     let mut final_widths = ideal_widths.clone();
 
@@ -250,18 +256,18 @@ fn render_table(lines: &mut Vec<Line>, state: &mut ParserState, max_width: usize
         let mut wrapped_cells = Vec::new();
         let mut max_cell_lines = 1;
 
-        for cell in row.iter().take(col_count) {
-            let wrapped: Vec<String> =
-                textwrap::wrap(&strip_markdown(cell), final_widths[wrapped_cells.len()])
-                    .into_iter()
-                    .map(|s| s.into_owned())
-                    .collect();
-            max_cell_lines = max_cell_lines.max(wrapped.iter().len());
+        for (i, cell) in row.iter().enumerate().take(col_count) {
+            let wrapped: Vec<String> = textwrap::wrap(&strip_markdown(cell), final_widths[i])
+                .into_iter()
+                .map(|s| s.into_owned())
+                .collect();
+            max_cell_lines = max_cell_lines.max(wrapped.len());
             wrapped_cells.push(wrapped);
         }
 
         for line_idx in 0..max_cell_lines {
             let mut line_spans = vec![Span::styled("│ ", Style::default().dim())];
+
             for (i, wrapped_lines) in wrapped_cells.iter().enumerate() {
                 let content = wrapped_lines.get(line_idx).cloned().unwrap_or_default();
                 let base_style = if r_idx == 0 {
@@ -270,12 +276,23 @@ fn render_table(lines: &mut Vec<Line>, state: &mut ParserState, max_width: usize
                     Style::default().white()
                 };
 
-                line_spans.extend(parse_inline_styles(&content, base_style));
-                line_spans.push(Span::styled(
-                    " ".repeat(final_widths[i].saturating_sub(content.width())),
-                    base_style,
-                ));
-                line_spans.push(Span::styled(" │ ", Style::default().dim()));
+                // adding the cleaned up content
+                if !content.is_empty() {
+                    line_spans.extend(parse_inline_styles(&content, base_style));
+                }
+
+                // padding with spaces is guaranteed to push like a Raw Span without parsing the inlines
+                let padding_len = final_widths[i].saturating_sub(content.width());
+                if padding_len > 0 {
+                    line_spans.push(Span::styled(" ".repeat(padding_len), base_style));
+                }
+
+                // drawing the dividers: if the last column is, we put the final right frame
+                if i < col_count - 1 {
+                    line_spans.push(Span::styled(" │ ", Style::default().dim()));
+                } else {
+                    line_spans.push(Span::styled(" │", Style::default().dim()));
+                }
             }
             lines.push(Line::from(line_spans));
         }
@@ -345,6 +362,10 @@ fn parse_inline_styles(content: &str, base_style: Style) -> Vec<Span<'static>> {
 
 /// Handles the markdown URL links
 fn push_text_with_urls(text: &str, base_style: Style) -> Vec<Span<'static>> {
+    if text.trim().is_empty() {
+        return vec![Span::styled(text.to_string(), base_style)];
+    }
+
     text.split_inclusive(|c: char| c.is_whitespace())
         .map(|word| {
             let trimmed = word.trim();

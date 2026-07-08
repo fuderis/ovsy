@@ -36,12 +36,10 @@ When a user submits a query, the orchestrator determines if background tasks are
 
 If a running agent encounters an error during execution, the orchestrator initiates a recursive cycle to attempt an automatic fix.
   * **Configurable Iteration Cap:** To prevent execution traps, the maximum number of recursive
-    self-healing attempts is strictly bounded by a limit defined in the system configuration file (`config/settings.toml`).
+    self-healing attempts is strictly bounded by a limit defined in the system configuration file (`~/.config/ovsy/settings.toml`).
   * **Critical Failure Bypass:** For critical infrastructure errors—such as a complete network failure
     when connecting to an external LLM provider—the engine immediately halts the loop, bypassing recursion entirely
     to conserve computing resources.
-  * **Automated Diagnostics:** All runtime exceptions, operational errors, and critical failures are automatically flushed
-    to disk via the system logger (`logs/errors`) to ensure full offline traceability for developers.
 
 3. **Embedded JavaScript Interpreter**
 
@@ -95,7 +93,7 @@ the engine implements strict runtime boundaries and three layers of defensive te
 To minimize context-switching overhead and maximize data throughput, agent communication is completely decoupled from the network stack.
 Instead of utilizing traditional TCP loopback interfaces, the orchestrator and agents communicate via local **Unix Domain Sockets (UDS)** (`AF_UNIX` on Windows).
 
-* **File-System-Level Security:** Each agent process binds to a unique, dynamically generated socket file (`~/.ovsy/uds/{agent_name}.sock`).
+* **File-System-Level Security:** Each agent process binds to a unique, dynamically generated socket file (`/tmp/ovsy/uds/{agent_name}.sock`).
   Access control is strictly enforced using standard POSIX file permissions, completely isolating agent endpoints from external network ingress or unauthorized local processes.
 
 * **Zero Network Overhead:** By leveraging UDS, the system bypasses the entire routing, filtering, and TCP/IP loopback overhead of the operating system kernel.
@@ -177,7 +175,7 @@ the orchestrator provides a set of dedicated endpoints.
   * **POST `/status`** Returns the current state of the server along with a list of all currently running agents
   (including their IDs, statuses, and workload).
 
-  * **POST `/update`**: Dynamically applies server configuration changes from the config file.
+  * **POST `/refresh`**: Dynamically applies server configuration changes from the config file.
   If necessary, it restarts outdated agents and initializes newly added,
   non-running agents on the fly without a full server reboot.
 

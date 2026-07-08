@@ -1,49 +1,50 @@
+pub mod key;
+use key::Key;
+
+pub mod metadata;
+use metadata::Metadata;
+
 use crate::prelude::*;
+
 use anylm::Message;
 use cistern::{Cistern, Kv};
-use ovsy_share::SessionID;
+use ovsy_share::{SessionId, SessionInfo};
 
-/// The session table key
-#[derive(Clone, Debug, Serialize, Deserialize, Eq, PartialEq)]
-#[serde(rename_all = "lowercase")]
-pub enum Key {
-    Metadata,
-    Message(usize),
-}
-
-/// The session metadata
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Metadata {
-    pub session_id: SessionID,
-    pub message_count: u64,
-    pub compressed_until: usize,
-}
-
-impl Metadata {
-    /// Creates a new session metadata by session id
-    pub fn new(session_id: SessionID) -> Self {
-        Self {
-            session_id,
-            message_count: 0,
-            compressed_until: 0,
-        }
-    }
-}
+type SharedSession = Arc<Mutex<Session>>;
+static SESSIONS: State<HashMap<SessionId, SharedSession>> = State::default();
 
 /// The user session manager
 #[derive(Clone)]
 pub struct Session {
-    pub id: SessionID,
+    pub id: SessionId,
+    pub info: SessionInfo,
     pub db: Arc<Cistern<Kv>>,
 }
 
 impl Session {
-    /// Creates a new user session instance
-    pub async fn new(id: SessionID) -> Result<Self> {
-        let dir = app_data().join(str!("db/{}/sessions/{id}", id.user_id));
+    /// Initializes the user session instance
+    pub async fn init(id: SessionId, info: SessionInfo) -> Result<SharedSession> {
+        let dir = path!("~/.local/share/ovsy/userdata/{}/sessions/{id}", id.user_id);
         let db = arc!(Cistern::connect(dir).await?);
+        let this = arc_mutex!(Self { id, info, db });
 
-        Ok(Self { id, db })
+        SESSIONS.lock().await.insert(id, this.clone());
+        Ok(this)
+    }
+
+    /// Returns the user session instance
+    pub fn get(id: &SessionId) -> Option<SharedSession> {
+        SESSIONS.dirty_get().get(id).map(Clone::clone)
+    }
+
+    /// Finishes the user session
+    pub async fn finish(id: &SessionId) -> Result<()> {
+        if let Some(session) = SESSIONS.lock().await.remove(id) {
+            let table_name = Self::table_name(id);
+            let table = session.lock().await.db.open_table(&table_name).await?;
+            table.flush().await?;
+        }
+        Ok(())
     }
 
     /// Reads the session metadata
@@ -103,8 +104,6 @@ impl Session {
         // update messages count:
         meta.message_count += 1;
         table.write(Key::Metadata, meta).await?;
-
-        // force flush buffer to disk:
         table.flush().await?;
 
         Ok(())
@@ -130,8 +129,6 @@ impl Session {
 
         // update messages count:
         table.write(Key::Metadata, meta).await?;
-
-        // force flush buffer to disk:
         table.flush().await?;
 
         Ok(())
@@ -202,7 +199,7 @@ impl Session {
     }
 
     /// Creates the table name by session id
-    fn table_name(session_id: &SessionID) -> String {
+    fn table_name(session_id: &SessionId) -> String {
         str!("{session_id}")
     }
 }

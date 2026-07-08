@@ -2,7 +2,7 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use system_utils::MediaControl;
 
-pub fn media_control_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new("media_play", "Starts media playback."),
         Tool::new("media_pause", "Pauses media playback."),

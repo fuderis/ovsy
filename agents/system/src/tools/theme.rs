@@ -2,7 +2,7 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use system_utils::{SystemTheme, ThemeStyle};
 
-pub fn theme_switcher_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new("set_theme", "Changes the system appearance theme.").required_property(
             "style",

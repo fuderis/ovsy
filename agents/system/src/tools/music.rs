@@ -2,7 +2,7 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use music_index::{MusicIndexer, SearchIntent};
 
-pub fn music_indexer_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new(
             "search_music",
@@ -44,7 +44,7 @@ pub struct MusicAction {
 
 async fn music_index() -> Result<MusicIndexer> {
     if MUSIC_INDEX.get().await.is_none() {
-        let index = MusicIndexer::scan_default(app_data().join("db/music.cache")).await?;
+        let index = MusicIndexer::scan_default(path!("~/.cache/ovsy/music-index.json")).await?;
         MUSIC_INDEX.set(Some(index)).await;
     }
 
@@ -111,7 +111,7 @@ pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result
     }
 
     music_index
-        .play(target, app_data().join("db/playlist.m3u"))
+        .play(target, path!("/tmp/ovsy/playlist.m3u"))
         .await?;
 
     let msg = str!(

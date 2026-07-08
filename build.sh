@@ -2,7 +2,7 @@
 
 # Configuration:
 UNDERLINE_COUNT=40
-INSTALL_DIR="$HOME/.ovsy"
+INSTALL_DIR="/opt/ovsy"
 PORT=7878
 BINARIES=("ovsy-core" "ovsy-cli")
 
@@ -61,15 +61,15 @@ fi
 
 # 4. Deploying
 underline
-echo -e "${BLUE}==>${NC} Deploying binaries and agents:"
+echo -e "${BLUE}==>${NC} Deploying binaries and agents to ${BLUE}$INSTALL_DIR${NC}:"
 
-mkdir -p "$INSTALL_DIR/bin"
-mkdir -p "$INSTALL_DIR/bin/agents"
+mkdir -p "$INSTALL_DIR"
+mkdir -p "$INSTALL_DIR/agents"
 
 # 4.1. Deploy core binaries:
 for bin_name in "${BINARIES[@]}"; do
     SRC="target/release/${bin_name}${EXE}"
-    DEST_DIR="$INSTALL_DIR/bin"
+    DEST_DIR="$INSTALL_DIR"
     DEST_NAME="${bin_name}${EXE}"
     DEST="$DEST_DIR/$DEST_NAME"
     BACKUP="$DEST.old"
@@ -101,7 +101,7 @@ if [ -d "agents" ]; then
         
         BIN_NAME="${agent_name}-agent${EXE}"
         SRC_BIN="target/release/${BIN_NAME}"
-        DEST_DIR="$INSTALL_DIR/bin/agents/$agent_name"
+        DEST_DIR="$INSTALL_DIR/agents/$agent_name"
         
         if [[ -f "$SRC_BIN" ]]; then
             mkdir -p "$DEST_DIR"
@@ -133,13 +133,13 @@ if [[ -z "$EXE" ]]; then
     # UNIX (Linux / macOS)
     # -------------------------------------------------------------------------
     mkdir -p "$LOCAL_BIN_DIR"
-    ln -sf "$INSTALL_DIR/bin/ovsy-cli" "$LOCAL_BIN_DIR/ovsy"
+    ln -sf "$INSTALL_DIR/ovsy-cli" "$LOCAL_BIN_DIR/ovsy"
 
-    BINARY_PATH_="$INSTALL_DIR/bin/ovsy-cli"
+    BINARY_PATH_="$INSTALL_DIR/ovsy-cli"
     SYMLINK_PATH_="$LOCAL_BIN_DIR/ovsy"
     BINARY_PATH=$(echo "$BINARY_PATH_" | sed "s|$HOME|~|g")
     SYMLINK_PATH=$(echo "$SYMLINK_PATH_" | sed "s|$HOME|~|g")
-    echo -e "  [${GREEN}OK${NC}] ${BOLD}Symlink created${NC} $BINARY_PATH ${GREEN}->${NC} $SYMLINK_PATH"
+    echo -e "  [${GREEN}OK${NC}] ${BOLD}Symlink created${NC} ${BLUE}$BINARY_PATH${NC} ${GREEN}->${NC} ${BLUE}$SYMLINK_PATH${NC}"
 
     if [[ ":$PATH:" != *":$LOCAL_BIN_DIR:"* ]]; then
         echo -e "${RED}Warning: $LOCAL_BIN_DIR is not in your PATH.${NC}"
@@ -159,11 +159,11 @@ else
     SHIM_FILE="$LOCAL_BIN_DIR/ovsy"
     
     echo "#!/bin/sh" > "$SHIM_FILE"
-    echo "\"$INSTALL_DIR/bin/ovsy-cli.exe\" \"\$@\"" >> "$SHIM_FILE"
+    echo "\"$INSTALL_DIR/ovsy-cli.exe\" \"\$@\"" >> "$SHIM_FILE"
     chmod +x "$SHIM_FILE"
     echo -e "  [${GREEN}OK${NC}] Created command shim in $SHIM_FILE"
 
-    WIN_INSTALL_DIR=$(cd "$INSTALL_DIR/bin" && pwd -W 2>/dev/null || cygpath -w "$INSTALL_DIR/bin")
+    WIN_INSTALL_DIR=$(cd "$INSTALL_DIR" && pwd -W 2>/dev/null || cygpath -w "$INSTALL_DIR")
     
     USER_PATH=$(reg query "HKCU\Environment" /v PATH 2>/dev/null | awk -F'    ' '/PATH/{print $4}' | sed 's/\r//')
     

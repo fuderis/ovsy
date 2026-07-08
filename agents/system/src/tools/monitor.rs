@@ -4,7 +4,7 @@ use system_utils::SystemMonitor;
 
 static SYSTEM_MONITOR: State<SystemMonitor> = State::default();
 
-pub fn system_monitor_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new(
             "get_system_info",

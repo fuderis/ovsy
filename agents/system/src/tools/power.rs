@@ -2,7 +2,7 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use system_utils::{PowerManager, power::PowerMode};
 
-pub fn power_management_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new(
             "schedule_power",

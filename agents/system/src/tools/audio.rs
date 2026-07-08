@@ -2,7 +2,7 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use system_utils::AudioControl;
 
-pub fn audio_control_tools() -> Vec<Tool> {
+pub fn tools_list() -> Vec<Tool> {
     vec![
         Tool::new(
             "set_volume",
@@ -27,6 +27,22 @@ pub fn audio_control_tools() -> Vec<Tool> {
         .required_property(
             "amount",
             Schema::integer("Amount to decrease the audio volume by."),
+        ),
+        Tool::new(
+            "get_volume",
+            "Returns the current system audio volume percentage (0-100).",
+        ),
+        Tool::new(
+            "is_muted",
+            "Checks if the system audio is currently muted. Returns a boolean representation.",
+        ),
+        Tool::new(
+            "set_mute",
+            "Mutes or unmutes the system audio based on the provided boolean flag.",
+        )
+        .required_property(
+            "mute",
+            Schema::boolean("True to mute the audio, false to unmute it."),
         ),
     ]
 }

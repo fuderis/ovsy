@@ -52,7 +52,7 @@ impl Task {
                 let tasks = self.tasks.clone();
 
                 tokio::spawn(async move {
-                    crate::handlers::session_query::handle_task(task.task_id, tx, tasks).await;
+                    crate::handlers::query::handle_task(task.task_id, tx, tasks).await;
                 });
             }
         }

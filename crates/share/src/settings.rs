@@ -12,9 +12,12 @@ use std::{
 const SYSTEM_PROMPT: &'static str = r#"
 # ACTUAL SYSTEM INFO:
 
+0. Current working directory:
+{CURRENT_PATH}
+
 1. Datetime (now):
-- Global (UTC): {DATETIME_GLOBAL}
-- Local: {DATETIME_LOCAL}
+* Global (UTC): {DATETIME_GLOBAL}
+* Local: {DATETIME_LOCAL}
 
 Use the local datetime in all user-facing responses unless another timezone is explicitly requested.
 Use the global UTC datetime for all tool calls unless a tool explicitly requires a different timezone.

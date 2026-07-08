@@ -13,15 +13,22 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod prelude;
+
+pub mod chat;
+
+pub mod commands;
+
+pub const UNDERLINE_COUNT: usize = 40;
+
 use clap::{Parser, Subcommand};
 use colored::*;
-use ovsy_cli::{commands, prelude::*};
-use ovsy_share::app_version;
+use prelude::*;
 
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
 #[command(name = "ovsy")]
-#[command(version = app_version())]
+#[command(version = VERSION)]
 #[command(about = "Ovsy Assistant - Ecosystem Controller & Client", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -33,6 +40,8 @@ struct Cli {
 enum Commands {
     /// Check the status of all ecosystem components
     Status,
+    /// Refreshes the server settings & agents list
+    Refresh,
 
     /// Start the Ovsy server in the background
     Start {
@@ -54,9 +63,6 @@ enum Commands {
         lms: bool,
     },
 
-    /// Update the server settings & agents list
-    Update,
-
     /// Enter interactive AI chat mode
     Chat,
 
@@ -67,22 +73,27 @@ enum Commands {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    use commands as cmds;
+
     // parse arguments:
     let cli = Cli::parse();
 
     // initialize settings:
-    Settings::init(app_data().join("config/settings.toml"))
+    Settings::init(path!("~/.config/ovsy/settings.toml"))
         .await
         .ok();
 
     if let Err(e) = match cli.command {
-        Some(Commands::Status) => commands::handle_status().await,
-        Some(Commands::Start { lms }) => commands::handle_start(lms).await,
-        Some(Commands::Stop { lms }) => commands::handle_stop(lms).await,
-        Some(Commands::Restart { lms }) => commands::handle_restart(lms).await,
-        Some(Commands::Update) => commands::handle_update().await,
-        Some(Commands::Chat) | None => commands::handle_chat().await,
-        Some(Commands::Config) => commands::handle_config().await,
+        //     SYSTEM
+        Some(Commands::Start { lms }) => cmds::system::handle_start(lms).await,
+        Some(Commands::Stop { lms }) => cmds::system::handle_stop(lms).await,
+        Some(Commands::Restart { lms }) => cmds::system::handle_restart(lms).await,
+        //     HEALTH
+        Some(Commands::Status) => cmds::health::handle_status().await,
+        Some(Commands::Refresh) => cmds::health::handle_refresh().await,
+        Some(Commands::Config) => cmds::health::handle_config().await,
+        //     CHAT
+        Some(Commands::Chat) | None => cmds::chat::handle_chat().await,
     } {
         eprintln!("\n{}: {}", "Error".red().bold(), e.to_string().white());
         std::process::exit(1);

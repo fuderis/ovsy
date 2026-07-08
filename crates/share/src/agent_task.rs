@@ -1,4 +1,4 @@
-use crate::SessionID;
+use crate::SessionId;
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashSet,
@@ -9,7 +9,7 @@ use std::{
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
 pub struct AgentTask {
     #[serde(default)]
-    pub session_id: SessionID,
+    pub session_id: SessionId,
     pub agent_name: String,
     #[serde(default = "AgentTask::random_id")]
     pub task_id: i64,
@@ -30,7 +30,7 @@ impl AgentTask {
     }
 
     /// Sets the session id
-    pub fn sess_id(mut self, id: SessionID) -> Self {
+    pub fn sess_id(mut self, id: SessionId) -> Self {
         self.session_id = id;
         self
     }

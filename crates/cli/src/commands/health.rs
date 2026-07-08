@@ -1,9 +1,65 @@
-use crate::prelude::*;
+use crate::{UNDERLINE_COUNT, prelude::*};
 use colored::*;
 use ovsy_share::{AgentInfo, StatusData};
+use std::io::{self, Write};
 use tokio::process::Command;
 
-/// API: Handles the server status
+/// API: Handles the server refreshing (hot-reload)
+pub async fn handle_refresh() -> Result<()> {
+    let dim = Color::AnsiColor(247);
+    let port = Settings::get().server.port;
+
+    print!("{} ", "Updating Ovsy server...".bold());
+    io::stdout().flush().ok();
+
+    let client = Client::tcp();
+    let res = client
+        .post(&str!("http://127.0.0.1:{port}/refresh"))
+        .send()
+        .await;
+
+    match res {
+        Ok(response) => {
+            println!("{}", str!("Online (port {port})").green());
+
+            let data: StatusData = response
+                .json()
+                .await
+                .map_err(|e| str!(str!("Failed to parse response: {e}")))?;
+
+            match data {
+                StatusData::Success { agents } => {
+                    if agents.is_empty() {
+                        println!("   {}", "No agents loaded".yellow().dimmed());
+                    } else {
+                        for AgentInfo { name, .. } in agents {
+                            println!(" • {}", name.dimmed());
+                        }
+                    }
+
+                    println!("\n{}", "Settings synchronized.".bright_white());
+                }
+                StatusData::Error { error } => {
+                    println!("   {} {}", "Error:".red().bold(), error.white());
+                }
+            }
+        }
+        Err(_) => {
+            println!("{}", "Offline".red());
+            return Err(str!("Server is not responding. Check if it's running.").into());
+        }
+    }
+
+    println!(
+        "{}",
+        "─".repeat(UNDERLINE_COUNT).color(Color::AnsiColor(240))
+    );
+    println!("{}\n", "Environment synchronized.".italic().color(dim));
+
+    Ok(())
+}
+
+/// API: Handles the server status checking
 pub async fn handle_status() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::tcp();
@@ -87,6 +143,30 @@ pub async fn handle_status() -> Result<()> {
             println!("   {}", "None".yellow().dimmed());
         }
     }
+
+    Ok(())
+}
+
+/// API: Opens the config on the default editor
+pub async fn handle_config() -> Result<()> {
+    let path = Settings::path();
+
+    println!("Opening config: {}", path.display().to_string().white());
+
+    #[cfg(target_os = "linux")]
+    let opener = "xdg-open";
+
+    #[cfg(target_os = "macos")]
+    let opener = "open";
+
+    #[cfg(target_os = "windows")]
+    let opener = "explorer";
+
+    #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+    Command::new(opener)
+        .arg(path)
+        .spawn()
+        .map_err(|e| str!("Failed to open config: {e}"))?;
 
     Ok(())
 }

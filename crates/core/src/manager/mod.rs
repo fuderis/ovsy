@@ -27,7 +27,7 @@ pub struct Manager {
 impl Manager {
     /// Initializes & runs the agents management
     pub async fn init() -> Result<()> {
-        let scan_dir = app_data().join("bin/agents");
+        let scan_dir = path!("~/.local/opt/ovsy/agents");
 
         // check scan dir:
         if !scan_dir.exists() {
@@ -125,8 +125,7 @@ Do not wrap the code in markdown or use console.log() as output.",
         };
 
         if needs_start {
-            let agent_dir = app_data().join("bin/agents").join(name.as_str());
-
+            let agent_dir = path!("$/agents").join(name.as_str());
             if !agent_dir.exists() {
                 warn!("[MANAGER] Agent `{name}` requested but directory not found");
                 return Ok(None);
@@ -225,7 +224,8 @@ Do not wrap the code in markdown or use console.log() as output.",
             let _ = writeln!(
                 doc_builder,
                 "* Agent `{}`: {}",
-                agent.info.name, agent.info.description
+                agent.info.name,
+                agent.info.description.trim()
             );
         }
 

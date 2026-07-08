@@ -6,12 +6,11 @@ use std::{
     net::TcpListener,
     process::Stdio,
 };
-use tokio::process::Command;
+use tokio::{process::Command, time::sleep};
 
 /// API: Handles the server launching
 pub async fn handle_start(start_lms: bool) -> Result<()> {
     let server_path = path!("$/ovsy-core{}", if cfg!(windows) { ".exe" } else { "" });
-
     if !server_path.exists() {
         return Err(str!("Server binary missing. Please, re-install Ovsy.").into());
     }
@@ -25,7 +24,7 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
     let is_port_free = TcpListener::bind(str!("127.0.0.1:{port}")).is_ok();
     if is_port_free {
         Command::new(server_path)
-            .current_dir(app_data())
+            .current_dir(path!("$/"))
             .kill_on_drop(false)
             .spawn()?;
     }
@@ -59,7 +58,7 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
 
                     // 100 tries * 100 мс = 10 seconds to start:
                     for _ in 0..100 {
-                        time::sleep(Duration::from_millis(100)).await;
+                        sleep(Duration::from_millis(100)).await;
 
                         let status_check = Command::new(bin_path).args(["status"]).output().await;
 
@@ -129,6 +128,80 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
 
     super::underline();
     println!("{}\n", "Ready for requests!".italic().dimmed());
+
+    Ok(())
+}
+
+/// API: Handles the server shutdouwn
+pub async fn handle_stop(stop_lms: bool) -> Result<()> {
+    let port = Settings::get().server.port;
+
+    // stop Ovsy server:
+    print!("Shutting down Ovsy Server... ");
+    io::stdout().flush().ok();
+
+    #[cfg(unix)]
+    {
+        let _ = Command::new("sh")
+            .args(["-c", &format!("fuser -k {}/tcp", port)])
+            .output()
+            .await;
+    }
+    #[cfg(windows)]
+    {
+        let cmd = format!(
+            "for /f \"tokens=5\" %a in ('netstat -aon ^| findstr \":{}\"') do taskkill /f /pid %a",
+            port
+        );
+        let _ = Command::new("cmd").args(["/C", &cmd]).output().await;
+    }
+    println!("{}", "Offline".red());
+
+    // stop LMS server:
+    let ai_conf = &Settings::get().assistant;
+    if stop_lms
+        && (ai_conf.completions.kind == ApiKind::LmStudio
+            || ai_conf.embeddings.kind == ApiKind::LmStudio)
+    {
+        print!("Shutting down LMS server... ");
+        io::stdout().flush().ok();
+
+        Command::new("lms")
+            .args(["server", "stop"])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .await
+            .ok();
+        println!("{}", "Offline".red());
+
+        print!(" ∟ Unloading models... ");
+        io::stdout().flush().ok();
+
+        // unload all LM Studio models:
+        let _ = Command::new("lms").args(["unload", "--all"]).output().await;
+        println!("{}", "Unloaded".red());
+    }
+
+    super::underline();
+    println!(
+        " {}\n",
+        "Processes terminated."
+            .italic()
+            .color(Color::AnsiColor(247))
+    );
+    Ok(())
+}
+
+/// API: Handles the server restarting
+pub async fn handle_restart(restart_lms: bool) -> Result<()> {
+    // stop server:
+    handle_stop(restart_lms).await?;
+    sleep(Duration::from_millis(800)).await;
+
+    // starting away:
+    handle_start(restart_lms).await?;
 
     Ok(())
 }

@@ -13,27 +13,54 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-use ovsy_core::{Manager, handlers, prelude::*};
+pub mod error;
+pub mod prelude;
+
+pub mod runtime;
+pub use runtime::Runtime;
+
+pub mod manager;
+pub use manager::{Agent, Manager};
+
+pub mod session;
+pub use session::Session;
+
+pub mod handlers;
+
+/// Returns a free local port
+pub async fn free_port() -> prelude::Result<u16> {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
+    Ok(listener.local_addr()?.port())
+}
+
 use pearce::Server;
+use prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    use handlers as hands;
+
     // init settings & logger:
-    Settings::init(app_data().join("config/settings.toml")).await?;
-    Logger::init(app_data().join("logs"), Settings::get().server.max_logs).await?;
+    Settings::init(path!("~/.config/ovsy/settings.toml")).await?;
+    Logger::init(path!("~/.cache/ovsy/logs"), Settings::get().server.max_logs).await?;
 
     // init agents manager:
     Manager::init().await?;
 
     // start server:
     Server::new()
-        .post("/users/{uid}/sessions", handlers::user_sessions)
-        .post("/sessions/{sid}/get", handlers::session_get)
-        .post("/sessions/{sid}/compact", handlers::session_compact)
-        .post("/sessions/{sid}/clear", handlers::session_clear)
-        .post("/sessions/{sid}/query", handlers::session_query)
-        .post("/status", handlers::status)
-        .post("/update", handlers::update)
+        //    USERS
+        .post("/users/{uid}/sessions", hands::user::handle_list)
+        //    SESSIONS
+        .post("/sessions/{sid}/init", hands::session::handle_init)
+        .post("/sessions/{sid}/finish", hands::session::handle_finish)
+        .post("/sessions/{sid}/compact", hands::session::handle_compact)
+        .post("/sessions/{sid}/clear", hands::session::handle_clear)
+        //    QUERY
+        .post("/sessions/{sid}/query", hands::query::handle_query)
+        //    HEALTH
+        .post("/status", hands::health::handle_status)
+        .post("/refresh", hands::health::handle_refresh)
         .run(Settings::get().server.port)
         .await?;
 

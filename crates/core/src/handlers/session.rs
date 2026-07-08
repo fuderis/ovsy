@@ -1,0 +1,173 @@
+use crate::{Session, prelude::*};
+use anylm::{AiChunk, Completions, Message, Messages};
+use ovsy_share::{Chunk, CompactQuery, SessionId, SessionInfo};
+
+/// Initializes the user session and returns its messages
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn handle_init(sid: Paths<SessionId>, data: Json<SessionInfo>) -> Response {
+    let session_id = sid.0;
+    let session_info = data.0;
+
+    // 1. Проверяем, есть ли уже активная сессия в памяти, или инициализируем новую
+    let session_shared = if let Some(existing) = Session::get(&session_id) {
+        existing
+    } else {
+        match Session::init(session_id, session_info).await {
+            Ok(s) => s,
+            Err(e) => {
+                error!("Failed to init session {session_id}: {e}");
+                return Response::bad_request().text(e.to_string());
+            }
+        }
+    };
+
+    // 2. Блокируем мутекс и читаем сообщения из базы данных
+    let lock = session_shared.lock().await;
+    match lock.read_messages().await {
+        Ok(messages) => Response::ok().json(&messages),
+        Err(e) => {
+            error!("Failed to read messages for session {session_id}: {e}");
+            Response::bad_request().text(e.to_string())
+        }
+    }
+}
+
+/// Finishes the user session and flushes DB to prevent sled locks
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn handle_finish(sid: Paths<SessionId>) -> Response {
+    let session_id = sid.0;
+
+    match Session::finish(&session_id).await {
+        Ok(_) => Response::ok().text("Session finished successfully"),
+        Err(e) => {
+            error!("Failed to finish session {session_id}: {e}");
+            Response::bad_request().text(e.to_string())
+        }
+    }
+}
+
+/// API: Handles the session compression
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> Response {
+    let session_id = sid.0;
+    let CompactQuery { preserve } = data.0;
+    let current = Span::current();
+
+    Response::ok().stream(move |tx| {
+        async move {
+            let preserve_count =
+                preserve.unwrap_or_else(|| Settings::get().assistant.preserve_messages);
+            info!("Compressing session messages (preserve: {preserve_count})");
+
+            let ai_conf = Settings::get().assistant.clone();
+
+            // Получаем сессию из глобального состояния
+            let Some(session_shared) = Session::get(&session_id) else {
+                let err_msg = format!("Undefined session id `{session_id}`");
+                error!("{err_msg}");
+                tx.send(Chunk::error(err_msg)).ok();
+                return;
+            };
+
+            // Читаем сообщения, предварительно залочив сессию
+            let db_messages = match session_shared.lock().await.read_messages().await {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    error!("Failed to read messages for compression: {e}");
+                    tx.send(Chunk::error(e.to_string())).ok();
+                    return;
+                }
+            };
+
+            let compress_count = db_messages.len();
+            if compress_count == 0 {
+                warn!("Nothing to compress, skip");
+                tx.send(Chunk::finish()).ok();
+                return;
+            }
+
+            let mut messages = Messages::from(db_messages);
+
+            // Выделяем сообщения, которые нужно оставить нетронутыми
+            let to_preserve: Vec<Message> = messages.slice(-(preserve_count as isize)).into();
+
+            // Формируем промпт для сжатия истории
+            let messages = messages.user(vec![ai_conf.compress_prompt.into()]).wrap();
+
+            // Отправляем запрос в LLM
+            let mut response = match Completions::try_from(ai_conf.compression) {
+                Ok(mut comp) => match comp.send(messages).await {
+                    Ok(res) => res,
+                    Err(e) => {
+                        error!("Failed to send compression request to LLM: {e}");
+                        tx.send(Chunk::error(e.to_string())).ok();
+                        return;
+                    }
+                },
+                Err(e) => {
+                    error!("Failed to prepare LLM completions config: {e}");
+                    tx.send(Chunk::error(e.to_string())).ok();
+                    return;
+                }
+            };
+
+            let mut full_compressed_text = String::new();
+
+            // Стримим ответ пользователю и параллельно собираем полный текст
+            while let Some(chunk) = response.next().await {
+                match chunk {
+                    Ok(AiChunk::Text(text_part)) => {
+                        if tx.send(Chunk::answer(text_part.clone())).is_err() {
+                            warn!("Stream receiver dropped by client, aborting compression");
+                            return;
+                        }
+                        full_compressed_text.push_str(&text_part);
+                    }
+                    Ok(_) => {}
+                    Err(e) => {
+                        error!("Error during LLM streaming: {e}");
+                        tx.send(Chunk::error(e.to_string())).ok();
+                        return;
+                    }
+                }
+            }
+
+            // Перезаписываем историю в БД: кладем сжатый вариант и сдвигаем сохраненные (preserve) сообщения
+            let compressed_message = Message::assistant(vec![full_compressed_text.into()], vec![]);
+            if let Err(e) = session_shared
+                .lock()
+                .await
+                .insert_and_shift(compressed_message, to_preserve, compress_count)
+                .await
+            {
+                error!("Failed to update DB with compressed history: {e}");
+                tx.send(Chunk::error(e.to_string())).ok();
+                return;
+            }
+
+            // Успешный финиш стрима
+            tx.send(Chunk::finish()).ok();
+            info!("Compression finished successfully for session {session_id}");
+        }
+        .instrument(current)
+    })
+}
+
+/// Completely clears the session message history
+#[log(skip_all, fields(sid = %sid.0))]
+pub async fn handle_clear(sid: Paths<SessionId>) -> Response {
+    let session_id = sid.0;
+    info!("Clearing history for session: {session_id}");
+
+    if let Some(session_shared) = Session::get(&session_id) {
+        // Обязательно вызываем lock(), так как это Arc<Mutex<Session>>
+        if let Err(e) = session_shared.lock().await.clear().await {
+            error!("Failed to clear session {session_id}: {e}");
+            return Response::bad_request().text(e.to_string());
+        }
+    } else {
+        warn!("Attempted to clear non-existent session {session_id}");
+    }
+
+    Response::ok()
+}

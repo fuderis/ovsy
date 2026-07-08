@@ -31,15 +31,15 @@ async fn main() -> Result<()> {
     }
 
     // init settings && logger:
-    Settings::init(app_data().join("config/system.toml")).await?;
+    Settings::init(path!("~/.config/ovsy/system.toml")).await?;
     Logger::init(
-        app_data().join("logs/system"),
+        path!("~/.cache/ovsy/logs/system"),
         Settings::get().server.max_logs,
     )
     .await?;
 
     // start server:
-    let sock = app_data().join(str!("uds/{}.sock", Settings::get().agent.name));
+    let sock = path!("/tmp/ovsy/uds/{}.sock", Settings::get().agent.name);
     Server::new()
         .post("/ping", handlers::handle_ping)
         .post("/info", handlers::handle_info)

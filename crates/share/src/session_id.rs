@@ -1,4 +1,4 @@
-use chrono::{DateTime, FixedOffset, TimeZone, Utc};
+use chrono::{DateTime, TimeZone, Utc};
 use macron::{Display, Error};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha2::{Digest, Sha512_256};
@@ -6,29 +6,25 @@ use std::{num::ParseIntError, str::FromStr};
 
 /// The session ID wrapper
 #[derive(Default, Debug, Display, Copy, Clone, Eq, PartialEq, Hash)]
-#[display(fmt = "{user_id}-{timezone}-{timestamp}-{salt}")]
-pub struct SessionID {
+#[display(fmt = "{user_id}-{timestamp}-{salt}")]
+pub struct SessionId {
     pub user_id: u128,
-    pub timezone: i16,
     pub timestamp: u128,
-    pub salt: u16,
+    pub salt: u8,
 }
 
-impl SessionID {
+impl SessionId {
     /// Creates a new session ID
-    pub fn new(user_id: u128, timezone: i16) -> Self {
+    pub fn new(user_id: u128) -> Self {
         let timestamp = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .expect("Time went backwards")
             .as_millis();
 
-        let salt = rand::random();
-
         Self {
             timestamp,
-            timezone,
             user_id,
-            salt,
+            salt: rand::random(),
         }
     }
 
@@ -47,56 +43,41 @@ impl SessionID {
         let hash = Sha512_256::digest(self.to_string());
         hash.iter().map(|b| format!("{:02x}", b)).collect()
     }
-
-    /// Returns the session local date time
-    pub fn now_local(&self) -> DateTime<FixedOffset> {
-        let offset_seconds = (self.timezone as i32) * 60;
-        let tz = FixedOffset::east_opt(offset_seconds)
-            .unwrap_or_else(|| FixedOffset::east_opt(0).unwrap());
-
-        let utc_now = Utc::now();
-        utc_now.with_timezone(&tz)
-    }
 }
 
-impl FromStr for SessionID {
-    type Err = SessionIDError;
+impl FromStr for SessionId {
+    type Err = SessionIdError;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mut parts = s.split('-');
 
-        let user_id_str = parts.next().ok_or(SessionIDError::InvalidFormat)?;
-        let timezone_str = parts.next().ok_or(SessionIDError::InvalidFormat)?;
-        let timestamp_str = parts.next().ok_or(SessionIDError::InvalidFormat)?;
-        let salt_str = parts.next().ok_or(SessionIDError::InvalidFormat)?;
+        let user_id_str = parts.next().ok_or(SessionIdError::InvalidFormat)?;
+        let timestamp_str = parts.next().ok_or(SessionIdError::InvalidFormat)?;
+        let salt_str = parts.next().ok_or(SessionIdError::InvalidFormat)?;
 
         if parts.next().is_some() {
-            return Err(SessionIDError::InvalidFormat);
+            return Err(SessionIdError::InvalidFormat);
         }
 
         let user_id = user_id_str
             .parse::<u128>()
-            .map_err(SessionIDError::InvalidUserId)?;
-        let timezone = timezone_str
-            .parse::<i16>()
-            .map_err(SessionIDError::InvalidUserId)?;
+            .map_err(SessionIdError::InvalidUserId)?;
         let timestamp = timestamp_str
             .parse::<u128>()
-            .map_err(SessionIDError::InvalidTimestamp)?;
+            .map_err(SessionIdError::InvalidTimestamp)?;
         let salt = salt_str
-            .parse::<u16>()
-            .map_err(SessionIDError::InvalidSalt)?;
+            .parse::<u8>()
+            .map_err(SessionIdError::InvalidSalt)?;
 
-        Ok(SessionID {
+        Ok(Self {
             user_id,
-            timezone,
             timestamp,
             salt,
         })
     }
 }
 
-impl Serialize for SessionID {
+impl Serialize for SessionId {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -105,7 +86,7 @@ impl Serialize for SessionID {
     }
 }
 
-impl<'de> Deserialize<'de> for SessionID {
+impl<'de> Deserialize<'de> for SessionId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where
         D: Deserializer<'de>,
@@ -117,7 +98,7 @@ impl<'de> Deserialize<'de> for SessionID {
 
 /// The session id parsing error
 #[derive(Debug, Display, Error)]
-pub enum SessionIDError {
+pub enum SessionIdError {
     InvalidFormat,
     InvalidUserId(ParseIntError),
     InvalidTimestamp(ParseIntError),

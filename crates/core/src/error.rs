@@ -1,5 +1,6 @@
 use crate::prelude::DynError;
 use macron::{Display, Error, From};
+use ovsy_share::SessionId;
 
 // The error
 #[derive(Debug, Display, Error, From)]
@@ -12,6 +13,9 @@ pub enum Error {
 
     #[display(fmt = "Failed to parse AgentInfo response payload: {0}")]
     AgentInfoParsingFailed(#[source] DynError),
+
+    #[display(fmt = "Unknown session id {0} has been received")]
+    UnknownSessionId(SessionId),
 
     #[display(fmt = "The TypeScript runtime is not initialized, check logs")]
     RuntimeNotInitialized,
