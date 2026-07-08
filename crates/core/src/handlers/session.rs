@@ -8,7 +8,7 @@ pub async fn handle_init(sid: Paths<SessionId>, data: Json<SessionInfo>) -> Resp
     let session_id = sid.0;
     let session_info = data.0;
 
-    // 1. Проверяем, есть ли уже активная сессия в памяти, или инициализируем новую
+    // check active session, or initialize a new one
     let session_shared = if let Some(existing) = Session::get(&session_id) {
         existing
     } else {
@@ -21,7 +21,7 @@ pub async fn handle_init(sid: Paths<SessionId>, data: Json<SessionInfo>) -> Resp
         }
     };
 
-    // 2. Блокируем мутекс и читаем сообщения из базы данных
+    // block mutex and read messages from the database
     let lock = session_shared.lock().await;
     match lock.read_messages().await {
         Ok(messages) => Response::ok().json(&messages),
@@ -61,7 +61,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
 
             let ai_conf = Settings::get().assistant.clone();
 
-            // Получаем сессию из глобального состояния
+            // get session from the global state
             let Some(session_shared) = Session::get(&session_id) else {
                 let err_msg = format!("Undefined session id `{session_id}`");
                 error!("{err_msg}");
@@ -69,7 +69,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                 return;
             };
 
-            // Читаем сообщения, предварительно залочив сессию
+            // read the messages after logging into the session
             let db_messages = match session_shared.lock().await.read_messages().await {
                 Ok(msgs) => msgs,
                 Err(e) => {
@@ -88,13 +88,13 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
 
             let mut messages = Messages::from(db_messages);
 
-            // Выделяем сообщения, которые нужно оставить нетронутыми
+            // select the messages that need to be left untouched
             let to_preserve: Vec<Message> = messages.slice(-(preserve_count as isize)).into();
 
-            // Формируем промпт для сжатия истории
+            // creating a prompt to compress the history
             let messages = messages.user(vec![ai_conf.compress_prompt.into()]).wrap();
 
-            // Отправляем запрос в LLM
+            // sending a request to the LLM
             let mut response = match Completions::try_from(ai_conf.compression) {
                 Ok(mut comp) => match comp.send(messages).await {
                     Ok(res) => res,
@@ -113,7 +113,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
 
             let mut full_compressed_text = String::new();
 
-            // Стримим ответ пользователю и параллельно собираем полный текст
+            // stream the response to the user and collect the full text
             while let Some(chunk) = response.next().await {
                 match chunk {
                     Ok(AiChunk::Text(text_part)) => {
@@ -132,7 +132,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                 }
             }
 
-            // Перезаписываем историю в БД: кладем сжатый вариант и сдвигаем сохраненные (preserve) сообщения
+            // rewriting the history in the database: put the compressed version and shift the saved messages
             let compressed_message = Message::assistant(vec![full_compressed_text.into()], vec![]);
             if let Err(e) = session_shared
                 .lock()
@@ -145,7 +145,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                 return;
             }
 
-            // Успешный финиш стрима
+            // successful finish the stream
             tx.send(Chunk::finish()).ok();
             info!("Compression finished successfully for session {session_id}");
         }
@@ -160,7 +160,6 @@ pub async fn handle_clear(sid: Paths<SessionId>) -> Response {
     info!("Clearing history for session: {session_id}");
 
     if let Some(session_shared) = Session::get(&session_id) {
-        // Обязательно вызываем lock(), так как это Arc<Mutex<Session>>
         if let Err(e) = session_shared.lock().await.clear().await {
             error!("Failed to clear session {session_id}: {e}");
             return Response::bad_request().text(e.to_string());

@@ -95,11 +95,11 @@ pub async fn handle_chat() -> Result<()> {
 
     let res = run_app(&mut terminal, &mut app, &mut ui_rx).await;
 
-    // --- ГАРАНТИРОВАННЫЙ ВЫХОД ИЗ RAW MODE ДО СЕТЕВЫХ ЗАПРОСОВ ---
+    // GUARANTEED EXIT: exit from raw mode before network requests
     disable_raw_mode()?;
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
-    // --- GRACEFUL SHUTDOWN: Закрытие сессии на бэкенде ---
+    // GRACEFUL SHUTDOWN: Closing the session on the backend
     println!("Flushing DB records and closing session cleanly...");
 
     let finish_url = format!("http://127.0.0.1:{port}/sessions/{}/finish", app.session_id);
@@ -334,7 +334,7 @@ async fn chat_worker(
     let client = Client::tcp();
     let base_url = str!("http://127.0.0.1:{port}");
 
-    // Замыкание для ленивой сборки SessionInfo из контекста CLI окружения
+    // closure for lazy assembly of sessionInfo from the context of the CLI environment
     let get_session_info = || {
         let tz_minutes = (chrono::Local::now().offset().local_minus_utc() / 60) as i16;
         ovsy_share::SessionInfo {
@@ -343,7 +343,7 @@ async fn chat_worker(
         }
     };
 
-    // --- ПЕРВИЧНАЯ ИНИЦИАЛИЗАЦИЯ СЕССИИ ---
+    // initial session initialization
     let session_info = get_session_info();
     if let Ok(res) = client
         .post(&str!("{base_url}/sessions/{session_id}/init"))
@@ -391,12 +391,12 @@ async fn chat_worker(
 
                     match args[0].to_lowercase().as_str() {
                         "/new" => {
-                            // Генерация нового ID локально
+                            // generating a new ID locally
                             let new_sid = SessionId::new(USER_ID);
                             session_id.set(new_sid.clone()).await;
                             messages.set(Messages::new()).await;
 
-                            // Регистрация и инициализация новой сессии на бэкенде
+                            // registering and initializing a new session on the backend
                             let session_info = get_session_info();
                             let _ = client
                                 .post(&str!("{base_url}/sessions/{new_sid}/init"))
