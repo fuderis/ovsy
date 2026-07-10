@@ -27,12 +27,6 @@ pub use session::Session;
 
 pub mod handlers;
 
-/// Returns a free local port
-pub async fn free_port() -> prelude::Result<u16> {
-    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
-    Ok(listener.local_addr()?.port())
-}
-
 use pearce::Server;
 use prelude::*;
 
@@ -41,8 +35,8 @@ async fn main() -> Result<()> {
     use handlers as hands;
 
     // init settings & logger:
-    Settings::init(path!("~/.config/ovsy/settings.toml")).await?;
-    Logger::init(path!("~/.cache/ovsy/logs"), Settings::get().server.max_logs).await?;
+    Settings::init(path!("$config$/settings.toml")).await?;
+    Logger::init(path!("$cache$/logs"), Settings::get().server.max_logs).await?;
 
     // init agents manager:
     Manager::init().await?;

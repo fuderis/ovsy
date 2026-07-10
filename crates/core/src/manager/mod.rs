@@ -27,7 +27,7 @@ pub struct Manager {
 impl Manager {
     /// Initializes & runs the agents management
     pub async fn init() -> Result<()> {
-        let scan_dir = path!("~/.local/opt/ovsy/agents");
+        let scan_dir = path!("$/agents");
 
         // check scan dir:
         if !scan_dir.exists() {

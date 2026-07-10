@@ -24,7 +24,7 @@ pub struct Session {
 impl Session {
     /// Initializes the user session instance
     pub async fn init(id: SessionId, info: SessionInfo) -> Result<SharedSession> {
-        let dir = path!("~/.local/share/ovsy/userdata/{}/sessions/{id}", id.user_id);
+        let dir = path!("$share$/userdata/{}/sessions/{id}", id.user_id);
         let db = arc!(Cistern::connect(dir).await?);
         let this = arc_mutex!(Self { id, info, db });
 

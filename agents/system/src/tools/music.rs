@@ -44,7 +44,7 @@ pub struct MusicAction {
 
 async fn music_index() -> Result<MusicIndexer> {
     if MUSIC_INDEX.get().await.is_none() {
-        let index = MusicIndexer::scan_default(path!("~/.cache/ovsy/music-index.json")).await?;
+        let index = MusicIndexer::scan_default(path!("$cache$/music-index.json")).await?;
         MUSIC_INDEX.set(Some(index)).await;
     }
 

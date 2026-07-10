@@ -2572,7 +2572,7 @@ dependencies = [
  "macron-impl-into 0.1.1",
  "macron-input",
  "macron-inputln",
- "macron-path",
+ "macron-path 0.1.3",
  "macron-regex",
  "macron-str",
 ]
@@ -2584,6 +2584,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9153767e22dca267dcdaacbcecdaed21f9c1866e8d727bad16e4e67be72b75e6"
 dependencies = [
  "async-recursion",
+ "macron-impl-display 0.2.0",
+ "macron-impl-error",
+ "macron-impl-from 0.2.0",
+ "macron-impl-into 0.2.0",
+ "macron-path 0.1.3",
+ "macron-regex",
+ "macron-str",
+]
+
+[[package]]
+name = "macron"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6b505794889972f2889e5c54e75bb4ada9f60155316c3de8af41bebaaa023ae0"
+dependencies = [
+ "async-recursion",
  "macron-collections",
  "macron-impl-display 0.2.0",
  "macron-impl-error",
@@ -2591,7 +2607,7 @@ dependencies = [
  "macron-impl-into 0.2.0",
  "macron-input",
  "macron-inputln",
- "macron-path",
+ "macron-path 0.2.0",
  "macron-regex",
  "macron-str",
 ]
@@ -2720,6 +2736,17 @@ name = "macron-path"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "40c9df1283060d6cbf9be984f35aac5936eb75a3ca28b1082f19a5c6a49424d6"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.117",
+]
+
+[[package]]
+name = "macron-path"
+version = "0.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a5e719b6511da7212323c1eabe7c67a3b528a93fb3507f8a41d36e84b602b808"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3423,7 +3450,7 @@ dependencies = [
  "colored",
  "crossterm",
  "hyperrat",
- "macron 0.2.1",
+ "macron 0.3.0",
  "ovsy-share",
  "pearce",
  "ratatui",
@@ -3444,7 +3471,7 @@ dependencies = [
  "chrono",
  "cistern",
  "libc",
- "macron 0.2.1",
+ "macron 0.3.0",
  "ovsy-share",
  "pearce",
  "reqwest",
@@ -3461,7 +3488,7 @@ dependencies = [
  "anylm",
  "atoman 0.4.2",
  "chrono",
- "macron 0.2.1",
+ "macron 0.3.0",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -4837,7 +4864,7 @@ dependencies = [
  "anylm",
  "atoman 0.4.2",
  "chrono",
- "macron 0.2.1",
+ "macron 0.3.0",
  "music-index",
  "ovsy-share",
  "pearce",

@@ -13,7 +13,8 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
-pub const VERSION: &str = "0.12.0";
+pub const APP_NAME: &str = "ovsy";
+pub const APP_VERSION: &str = "0.12.1";
 
 pub mod result;
 pub use result::{DynError, Result, StdResult};

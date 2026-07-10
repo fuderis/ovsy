@@ -28,7 +28,7 @@ use prelude::*;
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
 #[command(name = "ovsy")]
-#[command(version = VERSION)]
+#[command(version = APP_VERSION)]
 #[command(about = "Ovsy Assistant - Ecosystem Controller & Client", long_about = None)]
 struct Cli {
     #[command(subcommand)]
@@ -79,9 +79,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     // initialize settings:
-    Settings::init(path!("~/.config/ovsy/settings.toml"))
-        .await
-        .ok();
+    Settings::init(path!("$config$/settings.toml")).await.ok();
 
     if let Err(e) = match cli.command {
         //     SYSTEM

@@ -20,7 +20,7 @@ pub async fn handle_list(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Res
 /// Retrieves the session messages and initializes the session if it doesn't exist
 #[log(skip_all)]
 async fn search_sessions(user_id: u128, limit: usize) -> Result<Vec<SessionId>> {
-    let sessions_dir = path!("~/.local/share/ovsy/userdata/{user_id}/sessions");
+    let sessions_dir = path!("$share$/userdata/{user_id}/sessions");
 
     // open sessions dir:
     let mut entries = match fs::read_dir(&sessions_dir).await {
