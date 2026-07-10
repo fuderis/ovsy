@@ -1,8 +1,31 @@
 #!/bin/bash
 
-# Configuration:
-UNDERLINE_COUNT=40
-INSTALL_DIR="/opt/ovsy"
+# Platform configuration:
+case "$OSTYPE" in
+    linux*)
+        EXE=""
+        INSTALL_DIR="/opt/ovsy"
+        BIN_DIR="$HOME/.local/bin"
+    ;;
+
+    darwin*)
+        EXE=""
+        INSTALL_DIR="/usr/local/lib/ovsy"
+        BIN_DIR="/usr/local/bin"
+    ;;
+
+    msys*|cygwin*|win32*)
+        EXE=".exe"
+        INSTALL_DIR="$LOCALAPPDATA/Ovsy"
+        BIN_DIR="$HOME/.local/bin"
+    ;;
+
+    *)
+        echo "Unsupported platform: $OSTYPE"
+        exit 1
+    ;;
+esac
+
 PORT=7878
 BINARIES=("ovsy-core" "ovsy-cli")
 
@@ -16,16 +39,12 @@ BLUE='\033[1;34m'
 LINE='\033[0;90m'
 
 underline() {
+  UNDERLINE_COUNT=40
+
   echo -en "${LINE}"
   printf '%.0s─' $(seq 1 $UNDERLINE_COUNT)
   echo -e "${NC}"
 }
-
-# File extension:
-EXE=""
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    EXE=".exe"
-fi
 
 # 1. Search for project root directory (up to 3 levels):
 for i in {1..3}; do
@@ -36,20 +55,28 @@ for i in {1..3}; do
 done
 
 if [ ! -d ".git" ]; then
-    echo -e "${LIGHT_RED}Error: .git directory not found.${NC}"
+    echo -e "${RED}Error: .git directory not found.${NC}"
     exit 1
 fi
 
 # 2. Kill existing processes to release file locks:
 echo -e "${BLUE}==>${NC} Cleaning port ${BLUE}$PORT${NC}... "
-if [[ -z "$EXE" ]]; then
-    fuser -k $PORT/tcp >/dev/null 2>&1
-else
-    PIDS=$(netstat -aon | grep ":$PORT" | awk '{print $5}' | sort -u)
-    for pid in $PIDS; do
-        taskkill //F //PID "$pid" >/dev/null 2>&1
-    done
-fi
+case "$OSTYPE" in
+    linux*)
+        fuser -k "$PORT"/tcp >/dev/null 2>&1
+    ;;
+
+    darwin*)
+        lsof -ti tcp:"$PORT" | xargs -r kill >/dev/null 2>&1
+    ;;
+
+    msys*|cygwin*|win32*)
+        PIDS=$(netstat -aon | grep ":$PORT" | awk '{print $5}' | sort -u)
+        for pid in $PIDS; do
+            taskkill //F //PID "$pid" >/dev/null 2>&1
+        done
+    ;;
+esac
 
 # 3. Build project using Cargo:
 echo -e "${BLUE}==>${NC} Running cargo build:"
@@ -127,36 +154,34 @@ fi
 underline
 echo -e "${BLUE}==>${NC} Registering in PATH:"
 
-LOCAL_BIN_DIR="$HOME/.local/bin"
 if [[ -z "$EXE" ]]; then
     # -------------------------------------------------------------------------
     # UNIX (Linux / macOS)
     # -------------------------------------------------------------------------
-    mkdir -p "$LOCAL_BIN_DIR"
-    ln -sf "$INSTALL_DIR/ovsy-cli" "$LOCAL_BIN_DIR/ovsy"
+    ln -sf "$INSTALL_DIR/ovsy-cli" "$BIN_DIR/ovsy"
 
     BINARY_PATH_="$INSTALL_DIR/ovsy-cli"
-    SYMLINK_PATH_="$LOCAL_BIN_DIR/ovsy"
+    SYMLINK_PATH_="$BIN_DIR/ovsy"
     BINARY_PATH=$(echo "$BINARY_PATH_" | sed "s|$HOME|~|g")
     SYMLINK_PATH=$(echo "$SYMLINK_PATH_" | sed "s|$HOME|~|g")
     echo -e "  [${GREEN}OK${NC}] ${BOLD}Symlink created${NC} ${BLUE}$BINARY_PATH${NC} ${GREEN}->${NC} ${BLUE}$SYMLINK_PATH${NC}"
 
-    if [[ ":$PATH:" != *":$LOCAL_BIN_DIR:"* ]]; then
-        echo -e "${RED}Warning: $LOCAL_BIN_DIR is not in your PATH.${NC}"
+    if [[ ":$PATH:" != *":$BIN_DIR:"* ]]; then
+        echo -e "${RED}Warning: $BIN_DIR is not in your PATH.${NC}"
         
         CURRENT_SHELL=$(basename "$SHELL")
         RC_FILE="$HOME/.bashrc"
         [[ "$CURRENT_SHELL" == "zsh" ]] && RC_FILE="$HOME/.zshrc"
         
         echo -e "To fix this, add the following line to your ${BOLD}$RC_FILE${NC}:"
-        echo -e "  ${LINE}export PATH=\"\$HOME/.local/bin:\$PATH\"${NC}"
+        echo -e "  ${LINE}export PATH=\"$BIN_DIR:\$PATH\"${NC}"
     fi
 else
     # -------------------------------------------------------------------------
     # WINDOWS (Git Bash / MSYS / Cygwin)
     # -------------------------------------------------------------------------
-    mkdir -p "$LOCAL_BIN_DIR"
-    SHIM_FILE="$LOCAL_BIN_DIR/ovsy"
+    mkdir -p "$BIN_DIR"
+    SHIM_FILE="$BIN_DIR/ovsy"
     
     echo "#!/bin/sh" > "$SHIM_FILE"
     echo "\"$INSTALL_DIR/ovsy-cli.exe\" \"\$@\"" >> "$SHIM_FILE"
