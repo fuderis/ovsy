@@ -74,7 +74,7 @@ impl ::std::default::Default for ServerOptions {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct AssistantOptions {
     pub preserve_messages: usize,
-    pub max_cycles: usize,
+    pub max_retries: usize,
     pub system_prompt: String,
     pub assist_prompt: String,
     pub compress_prompt: String,
@@ -102,7 +102,7 @@ impl ::std::default::Default for AssistantOptions {
 
         Self {
             preserve_messages: 2,
-            max_cycles: 5,
+            max_retries: 5,
             system_prompt: str!(SYSTEM_PROMPT.trim()),
             assist_prompt: str!(ASSISTENT_PROMPT.trim()),
             compress_prompt: str!(COMPRESSION_PROMPT.trim()),

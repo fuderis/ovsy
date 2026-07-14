@@ -1,6 +1,6 @@
 use crate::{UNDERLINE_COUNT, prelude::*};
 use colored::*;
-use ovsy_share::{AgentInfo, StatusData};
+use ovsy_share::{AgentMetadata, StatusData};
 use std::io::{self, Write};
 use tokio::process::Command;
 
@@ -32,7 +32,7 @@ pub async fn handle_refresh() -> Result<()> {
                     if agents.is_empty() {
                         println!("   {}", "No agents loaded".yellow().dimmed());
                     } else {
-                        for AgentInfo { name, .. } in agents {
+                        for AgentMetadata { name, .. } in agents {
                             println!(" • {}", name.dimmed());
                         }
                     }
@@ -84,7 +84,7 @@ pub async fn handle_status() -> Result<()> {
                         if agents.is_empty() {
                             println!("   {}", "No agents loaded".yellow().dimmed());
                         } else {
-                            for AgentInfo { name, .. } in agents {
+                            for AgentMetadata { name, .. } in agents {
                                 println!(" • {}", name.dimmed());
                             }
                         }

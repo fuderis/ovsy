@@ -1,12 +1,12 @@
 use super::Tasks;
 use crate::prelude::*;
 use anylm::Content;
-use ovsy_share::{AgentTask, Chunk};
+use ovsy_share::{AgentTask, Event};
 
 /// The agent tasks handle
 #[derive(Clone)]
 pub struct Task {
-    pub task: Arc<AgentTask>,
+    pub task_info: Arc<AgentTask>,
     pub tasks: Arc<Mutex<Tasks>>,
     pub tx: Sender<Bytes>,
 }
@@ -23,12 +23,12 @@ impl Task {
     pub async fn finish(&self, agent_messages: Vec<Content>) {
         let mut lock = self.tasks.lock().await;
 
-        lock.working.remove(&self.task.task_id);
-        lock.finished.insert(self.task.task_id);
+        lock.working.remove(&self.task_info.task_id);
+        lock.finished.insert(self.task_info.task_id);
 
         // save results to ram:
-        if lock.is_result_needed(self.task.task_id) {
-            lock.results.insert(self.task.task_id, agent_messages);
+        if lock.is_result_needed(self.task_info.task_id) {
+            lock.results.insert(self.task_info.task_id, agent_messages);
         }
 
         // check pending tasks:
@@ -74,11 +74,11 @@ impl Task {
         let mut lock = self.tasks.lock().await;
         let mut to_abort = vec![];
 
-        if let Some(child) = lock.working.remove(&self.task.task_id) {
+        if let Some(child) = lock.working.remove(&self.task_info.task_id) {
             to_abort.push(child);
         };
 
-        let mut to_remove = vec![self.task.task_id];
+        let mut to_remove = vec![self.task_info.task_id];
         let mut i = 0;
 
         while i < to_remove.len() {
@@ -94,8 +94,8 @@ impl Task {
             for id in dependents {
                 if let Some(task) = lock.pending.remove(&id) {
                     let _ = self.tx.send(
-                        Chunk::error(str!("Cancelled: dependency task {} failed", task.task_id))
-                            .task_info(self.task.clone_minimal()),
+                        Event::error(str!("Cancelled: dependency task {} failed", task.task_id))
+                            .task_info(&self.task_info),
                     );
                     to_remove.push(id);
                 }
@@ -115,7 +115,7 @@ impl Task {
         let lock = self.tasks.lock().await;
         let mut results = vec![];
 
-        for id in &self.task.wait_for {
+        for id in &self.task_info.wait_for {
             if let Some(res) = lock.results.get(&id) {
                 results.push(res.clone())
             }

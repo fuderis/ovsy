@@ -4,6 +4,8 @@ use system_utils::{PowerManager, power::PowerMode};
 
 pub fn tools_list() -> Vec<Tool> {
     vec![
+        // ________________________________________
+        //              SCHEDULE POWER
         Tool::new(
             "schedule_power",
             "Schedules or immediately executes a system power action.",
@@ -24,10 +26,14 @@ pub fn tools_list() -> Vec<Tool> {
                 "Optional ISO-8601 UTC datetime. If omitted, the action is executed immediately.",
             ),
         ),
+        // ________________________________________
+        //              CANCEL SCHEDULING
         Tool::new(
             "cancel_power",
             "Cancels the currently scheduled power action if one exists.",
         ),
+        // ________________________________________
+        //              GET STATUS
         Tool::new(
             "get_power_status",
             "Returns the currently scheduled power action and its execution time, if any.",
@@ -60,7 +66,7 @@ pub async fn handle_schedule_power(tx: Sender<Bytes>, action: PowerAction) -> Re
             );
 
             info!("{msg}");
-            tx.send(Chunk::answer(msg))?;
+            tx.send(Event::answer(msg))?;
             Ok(())
         }
 
@@ -76,7 +82,7 @@ pub async fn handle_cancel_power(tx: Sender<Bytes>) -> Result<()> {
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg))?;
+    tx.send(Event::answer(msg))?;
     Ok(())
 }
 
@@ -98,6 +104,6 @@ pub async fn handle_power_status(tx: Sender<Bytes>) -> Result<()> {
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg))?;
+    tx.send(Event::answer(msg))?;
     Ok(())
 }

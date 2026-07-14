@@ -2,8 +2,12 @@ use crate::prelude::*;
 use anylm::{Schema, Tool};
 use music_index::{MusicIndexer, SearchIntent};
 
+static MUSIC_INDEX: State<Option<MusicIndexer>> = State::default();
+
 pub fn tools_list() -> Vec<Tool> {
     vec![
+        // ________________________________________
+        //              SEARCH MUSIC
         Tool::new(
             "search_music",
             "Searches the local music library without starting playback.",
@@ -16,6 +20,8 @@ pub fn tools_list() -> Vec<Tool> {
         .optional_property("album", Schema::string("Album title."))
         .optional_property("track", Schema::string("Track title."))
         .optional_property("genre", Schema::string("Music genre.")),
+        // ________________________________________
+        //              PLAY MUSIC
         Tool::new(
             "play_music",
             "Searches the local music library and immediately starts playback.",
@@ -30,8 +36,6 @@ pub fn tools_list() -> Vec<Tool> {
         .optional_property("genre", Schema::string("Music genre.")),
     ]
 }
-
-static MUSIC_INDEX: State<Option<MusicIndexer>> = State::default();
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MusicAction {
@@ -56,11 +60,17 @@ async fn music_index() -> Result<MusicIndexer> {
 }
 
 #[log(skip_all, fields(action))]
-pub async fn handle_search_music(tx: Sender<Bytes>, action: MusicAction) -> Result<()> {
+pub async fn handle_search_music(tx: Sender<Bytes>, mut action: MusicAction) -> Result<()> {
     let music_index = music_index().await?;
 
     let intent = if let Some(query) = action.query {
         SearchIntent::Global(query)
+    } else if action.band.is_none()
+        && action.album.is_none()
+        && action.genre.is_none()
+        && action.track.is_some()
+    {
+        SearchIntent::Global(action.track.take().unwrap())
     } else {
         SearchIntent::Targeted {
             band: action.band,
@@ -80,17 +90,23 @@ pub async fn handle_search_music(tx: Sender<Bytes>, action: MusicAction) -> Resu
     };
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg))?;
+    tx.send(Event::answer(msg))?;
 
     Ok(())
 }
 
 #[log(skip_all, fields(action))]
-pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result<()> {
+pub async fn handle_play_music(tx: Sender<Bytes>, mut action: MusicAction) -> Result<()> {
     let music_index = music_index().await?;
 
     let intent = if let Some(query) = action.query {
         SearchIntent::Global(query)
+    } else if action.band.is_none()
+        && action.album.is_none()
+        && action.genre.is_none()
+        && action.track.is_some()
+    {
+        SearchIntent::Global(action.track.take().unwrap())
     } else {
         SearchIntent::Targeted {
             band: action.band,
@@ -106,7 +122,7 @@ pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result
     if tracks.is_empty() {
         let msg = str!("No matching music was found.");
         info!("{msg}");
-        tx.send(Chunk::answer(msg))?;
+        tx.send(Event::answer(msg))?;
         return Ok(());
     }
 
@@ -120,7 +136,7 @@ pub async fn handle_play_music(tx: Sender<Bytes>, action: MusicAction) -> Result
     );
 
     info!("{msg}");
-    tx.send(Chunk::answer(msg))?;
+    tx.send(Event::answer(msg))?;
 
     Ok(())
 }

@@ -1,7 +1,7 @@
 use super::Manager;
 use crate::prelude::*;
 
-use ovsy_share::AgentInfo;
+use ovsy_share::AgentMetadata;
 use pearce::Client;
 use std::{
     process::Stdio,
@@ -21,7 +21,7 @@ pub struct Agent {
     pub dir: PathBuf,
     pub exec_path: PathBuf,
     pub sock_path: PathBuf,
-    pub info: AgentInfo,
+    pub metadata: AgentMetadata,
     _started: Option<SystemTime>,
     _child: Arc<Mutex<Option<Child>>>,
 }
@@ -80,15 +80,15 @@ impl Agent {
         let client = Client::ipc(&sock_path.to_string_lossy());
         let mut attempts = 0;
 
-        let info = loop {
+        let metadata = loop {
             attempts += 1;
 
             let request_result =
-                time::timeout(Duration::from_millis(100), client.post("/info").send()).await;
+                time::timeout(Duration::from_millis(100), client.post("/init").send()).await;
 
             match request_result {
                 Ok(Ok(response)) => {
-                    break response.json::<AgentInfo>().await;
+                    break response.json::<AgentMetadata>().await;
                 }
                 _ => {
                     if attempts >= 50 {
@@ -109,7 +109,7 @@ impl Agent {
             dir,
             exec_path,
             sock_path,
-            info,
+            metadata,
             _started: Some(SystemTime::now()),
             _child: arc_mutex!(Some(child)),
         };

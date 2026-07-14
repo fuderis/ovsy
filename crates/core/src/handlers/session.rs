@@ -1,6 +1,6 @@
 use crate::{Session, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages};
-use ovsy_share::{Chunk, CompactQuery, SessionId, SessionInfo};
+use ovsy_share::{CompactQuery, Event, SessionId, SessionInfo};
 
 /// Initializes the user session and returns its messages
 #[log(skip_all, fields(sid = %sid.0))]
@@ -65,7 +65,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
             let Some(session_shared) = Session::get(&session_id) else {
                 let err_msg = format!("Undefined session id `{session_id}`");
                 error!("{err_msg}");
-                tx.send(Chunk::error(err_msg)).ok();
+                tx.send(Event::error(err_msg)).ok();
                 return;
             };
 
@@ -74,7 +74,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                 Ok(msgs) => msgs,
                 Err(e) => {
                     error!("Failed to read messages for compression: {e}");
-                    tx.send(Chunk::error(e.to_string())).ok();
+                    tx.send(Event::error(e.to_string())).ok();
                     return;
                 }
             };
@@ -82,7 +82,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
             let compress_count = db_messages.len();
             if compress_count == 0 {
                 warn!("Nothing to compress, skip");
-                tx.send(Chunk::finish()).ok();
+                tx.send(Event::finish()).ok();
                 return;
             }
 
@@ -100,13 +100,13 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                     Ok(res) => res,
                     Err(e) => {
                         error!("Failed to send compression request to LLM: {e}");
-                        tx.send(Chunk::error(e.to_string())).ok();
+                        tx.send(Event::error(e.to_string())).ok();
                         return;
                     }
                 },
                 Err(e) => {
                     error!("Failed to prepare LLM completions config: {e}");
-                    tx.send(Chunk::error(e.to_string())).ok();
+                    tx.send(Event::error(e.to_string())).ok();
                     return;
                 }
             };
@@ -117,7 +117,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
             while let Some(chunk) = response.next().await {
                 match chunk {
                     Ok(AiChunk::Text(text_part)) => {
-                        if tx.send(Chunk::answer(text_part.clone())).is_err() {
+                        if tx.send(Event::answer(text_part.clone())).is_err() {
                             warn!("Stream receiver dropped by client, aborting compression");
                             return;
                         }
@@ -126,7 +126,7 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                     Ok(_) => {}
                     Err(e) => {
                         error!("Error during LLM streaming: {e}");
-                        tx.send(Chunk::error(e.to_string())).ok();
+                        tx.send(Event::error(e.to_string())).ok();
                         return;
                     }
                 }
@@ -141,12 +141,12 @@ pub async fn handle_compact(sid: Paths<SessionId>, data: Json<CompactQuery>) -> 
                 .await
             {
                 error!("Failed to update DB with compressed history: {e}");
-                tx.send(Chunk::error(e.to_string())).ok();
+                tx.send(Event::error(e.to_string())).ok();
                 return;
             }
 
             // successful finish the stream
-            tx.send(Chunk::finish()).ok();
+            tx.send(Event::finish()).ok();
             info!("Compression finished successfully for session {session_id}");
         }
         .instrument(current)

@@ -1,6 +1,6 @@
 #![allow(unused_imports)]
 pub use crate::{error::Error, settings::Settings};
-pub use ovsy_share::{APP_NAME, APP_VERSION, Chunk, DynError, Result, StdResult};
+pub use ovsy_share::{APP_NAME, APP_VERSION, DynError, Event, Result, StdResult};
 
 pub use atoman::*;
 pub use macron::*;

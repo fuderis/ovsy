@@ -43,6 +43,9 @@ async fn main() -> Result<()> {
 
     // start server:
     Server::new()
+        //    HEALTH
+        .post("/status", hands::health::handle_status)
+        .post("/refresh", hands::health::handle_refresh)
         //    USERS
         .post("/users/{uid}/sessions", hands::user::handle_list)
         //    SESSIONS
@@ -52,9 +55,6 @@ async fn main() -> Result<()> {
         .post("/sessions/{sid}/clear", hands::session::handle_clear)
         //    QUERY
         .post("/sessions/{sid}/query", hands::query::handle_query)
-        //    HEALTH
-        .post("/status", hands::health::handle_status)
-        .post("/refresh", hands::health::handle_refresh)
         .run(Settings::get().server.port)
         .await?;
 

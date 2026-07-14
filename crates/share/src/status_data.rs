@@ -1,4 +1,4 @@
-use crate::AgentInfo;
+use crate::AgentMetadata;
 use serde::{Deserialize, Serialize};
 
 /// The /status response structure
@@ -6,5 +6,5 @@ use serde::{Deserialize, Serialize};
 #[serde(untagged)]
 pub enum StatusData {
     Error { error: String },
-    Success { agents: Vec<AgentInfo> },
+    Success { agents: Vec<AgentMetadata> },
 }

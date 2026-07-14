@@ -2,8 +2,9 @@ use crate::{Runtime, Session, manager::*, prelude::*};
 use anylm::{AiChunk, Completions, Message, Messages, ToolCall};
 use chrono::FixedOffset;
 use ovsy_share::{
-    AgentTask, Chunk, ChunkData, HandleQuery, SessionInfo, settings::AssistantOptions,
+    AgentTask, Event, EventKind, HandleQuery, SessionInfo, settings::AssistantOptions,
 };
+use std::collections::HashSet;
 
 /// API: The user message handler
 #[log(skip_all, fields(sid = %sid.0))]
@@ -21,14 +22,14 @@ pub async fn handle_query(sid: Paths<SessionId>, data: Json<HandleQuery>) -> Res
                 .await
             {
                 error!("{e}");
-                tx.send(Chunk::error(str!(e))).ok();
+                tx.send(Event::error(str!(e))).ok();
             }
         }
         .instrument(current)
     })
 }
 
-/// Handles the user query
+/// Handles the user query with self-healing on planning/generation level
 async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> Result<()> {
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
@@ -53,14 +54,10 @@ async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> R
         .message(message)
         .wrap();
 
-    // send request:
-    let mut response = Completions::try_from(options)?
-        .tools(Manager::basic_tools().await)
-        .send(messages.clone())
-        .await?;
-
     let mut tasks_list = vec![];
     let mut evals_list = vec![];
+    let mut retry_count = 0;
+    let max_retries = ai_conf.max_retries.max(1) as usize;
 
     #[derive(Deserialize)]
     struct EvalAction {
@@ -69,26 +66,106 @@ async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> R
         code: String,
     }
 
-    // read ai chunks:
-    while let Some(chunk) = response.next().await {
-        match chunk? {
-            AiChunk::Text(text_part) => tx.send(Chunk::answer(text_part))?,
-            AiChunk::Tool(tool_call) => match tool_call.func.name.as_ref() {
-                "handle_agent" => {
-                    let task: AgentTask = tool_call.parse_args()?;
-                    tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
+    // top-level generation cycle: task planning
+    loop {
+        tasks_list.clear();
+        evals_list.clear();
+        let mut text_response = str!();
+
+        let mut response = match Completions::try_from(options.clone())?
+            .tools(Manager::basic_tools().await)
+            .send(messages.clone())
+            .await
+        {
+            Ok(res) => res,
+            Err(e) => {
+                retry_count += 1;
+                if retry_count < max_retries {
+                    warn!(
+                        "Failed to send query completions request (attempt {retry_count}/{max_retries}): {e}"
+                    );
+                    messages.lock().await.add_user(vec![
+                        format!("An error occurred: {e}. Please try again to plan the task using the tools.").into()
+                    ]);
+                    continue;
+                } else {
+                    return Err(e.into());
+                }
+            }
+        };
+
+        // read ai chunks and collect tool calls
+        let mut chunk_error = None;
+        while let Some(chunk) = response.next().await {
+            match chunk {
+                Ok(AiChunk::Text(text_part)) => {
+                    text_response.push_str(&text_part);
+                    // streaming plain text to the user
+                    tx.send(Event::answer(text_part))?;
                 }
 
-                "javascript_eval" => {
-                    let eval: EvalAction = tool_call.parse_args()?;
-                    evals_list.push((tool_call.id, eval));
-                }
+                Ok(AiChunk::Tool(tool_call)) => match tool_call.func.name.as_ref() {
+                    "handle_agent" => match tool_call.parse_args::<AgentTask>() {
+                        Ok(task) => {
+                            tasks_list.push(task.sess_id(session_id).tool_id(tool_call.id));
+                        }
+                        Err(e) => {
+                            chunk_error = Some(str!("Failed to parse handle_agent: {e}").into());
+                            break;
+                        }
+                    },
+                    "javascript_eval" => match tool_call.parse_args::<EvalAction>() {
+                        Ok(eval) => {
+                            evals_list.push((tool_call.id, eval));
+                        }
+                        Err(e) => {
+                            chunk_error = Some(str!("Failed to parse javascript_eval: {e}").into());
+                            break;
+                        }
+                    },
+                    _ => {}
+                },
 
-                _ => {}
-            },
+                Err(e) => {
+                    chunk_error = Some(e.into());
+                    break;
+                }
+            }
         }
+
+        if let Some(err) = chunk_error {
+            retry_count += 1;
+            if retry_count < max_retries {
+                warn!("Stream error on planning level ({retry_count}/{max_retries}): {err}");
+                messages.lock().await.add_user(vec![
+                    format!("An error occurred during stream generation: {err}. Please try again to complete the request.").into()
+                ]);
+                continue;
+            } else {
+                return Err(err);
+            }
+        }
+
+        // hallucination check (if there is no text, no tasks, no JS calculations)
+        if tasks_list.is_empty() && evals_list.is_empty() && text_response.trim().is_empty() {
+            retry_count += 1;
+            if retry_count < max_retries {
+                warn!(
+                    "Model hallucinated: empty text response and no tool calls. Retrying ({retry_count}/{max_retries})..."
+                );
+                messages.lock().await.add_user(vec![
+                    "You returned an empty response. If you need to solve the task, delegate work to an agent (using handle_agent) or execute JS (using javascript_eval).".into()
+                ]);
+                continue;
+            } else {
+                return Err(str!("Model failed to plan tasks: returned empty response").into());
+            }
+        }
+
+        break;
     }
 
+    // performing JS calculations (if any)
     if !evals_list.is_empty() {
         let mut runtime = Runtime::new();
 
@@ -117,19 +194,12 @@ async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> R
                     task.task_query.push_str(&result);
                 }
             } else {
-                tx.send(Chunk::answer(format!("\n\n{result}")).task_info(AgentTask {
-                    task_id: 0,
-                    session_id,
-                    tool_call_id,
-                    task_query: str!(),
-                    wait_for: set![],
-                    agent_name: str!("js_eval"),
-                }))?;
+                tx.send(Event::answer(format!("\n\n{result}")).raw_task_info(0, tool_call_id))?;
             }
         }
     }
 
-    // save messages to db:
+    // launching an Agent task pool
     if !tasks_list.is_empty() {
         // remove broken dependencies:
         let active_ids: HashSet<i64> = tasks_list.iter().map(|task| task.task_id).collect();
@@ -141,7 +211,7 @@ async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> R
         if let Some(msg) = (&*messages.lock().await).messages.last()
             && msg.role.is_assistant()
         {
-            tx.send(Chunk::tools(msg.tool_calls.clone()))?;
+            tx.send(Event::start(&msg.tool_calls))?;
         }
 
         // delegate tasks:
@@ -168,7 +238,7 @@ async fn handle(session_id: SessionId, tx: Sender<Bytes>, message: Message) -> R
             handle_task(task_id, tx.clone(), tasks.clone()).await;
         }
     } else {
-        tx.send(Chunk::finish())?;
+        tx.send(Event::finish())?;
         info!("The user request was processed without agent tasks");
 
         // save messages to database:
@@ -197,24 +267,36 @@ pub async fn handle_task(task_id: i64, tx: Sender<Bytes>, tasks: Arc<Mutex<Tasks
     let child = tokio::spawn(
         async move {
             let handle = Task {
-                task: arc!(task),
+                task_info: arc!(task),
                 tasks: tasks.clone(),
                 tx: tx.clone(),
             };
 
-            let session_id = handle.task.session_id;
+            let session_id = handle.task_info.session_id;
             let session = tasks.lock().await.session.clone();
+
             if let Err(e) = handle_agent(
-                handle.task.agent_name.clone(),
+                handle.task_info.agent_name.clone(),
                 session,
                 messages,
-                tx,
+                tx.clone(),
                 handle.clone(),
             )
             .await
             {
                 error!("[handle_agent{{sid={session_id}}} -> handle] {e}");
-                handle.tx.send(Chunk::error(str!("{e}"))).ok();
+                // send error to client
+                handle
+                    .tx
+                    .send(Event::error(str!("{e}")).task_info(&handle.task_info))
+                    .ok();
+
+                // guarantee that client will receive the task closure
+                handle
+                    .tx
+                    .send(Event::finish().task_info(&handle.task_info))
+                    .ok();
+
                 handle.finish_branch().await;
             }
         }
@@ -225,7 +307,7 @@ pub async fn handle_task(task_id: i64, tx: Sender<Bytes>, tasks: Arc<Mutex<Tasks
 }
 
 /// Handles the AI-agent
-#[log(skip_all, fields(agent = %agent_name))]
+#[log(skip_all, fields(agent = %agent_name, skills = %task.task_info.agent_skills.join(",")))]
 pub async fn handle_agent(
     agent_name: String,
     session: Arc<Mutex<Session>>,
@@ -233,11 +315,11 @@ pub async fn handle_agent(
     tx: Sender<Bytes>,
     task: Task,
 ) -> Result<()> {
-    let task_info = task.task.clone();
+    let task_info = task.task_info.clone();
     let arc_name = arc!(task_info.agent_name.clone());
 
-    // check agent for exists:
-    let (sock_path, prompt, tools) = match Manager::ensure_agent(&arc_name).await {
+    // check agent for existence:
+    let (sock_path, prompt, _skills) = match Manager::ensure_agent(&arc_name).await {
         Ok(Some(ops)) => ops,
         _ => {
             return Err(str!(
@@ -247,6 +329,17 @@ pub async fn handle_agent(
             .into());
         }
     };
+    let req_skills = &task.task_info.agent_skills;
+
+    // receive agent tools:
+    let client = Client::ipc(&sock_path.to_string_lossy());
+    let response = client
+        .post("/tools/list")
+        .header("Content-Type", "application/json")
+        .json(&json!({ "skills": req_skills }))
+        .send()
+        .await?;
+    let tools = response.json::<Vec<anylm::Tool>>().await?;
 
     // logging to thinking block:
     let log_query = task_info
@@ -261,11 +354,11 @@ pub async fn handle_agent(
         task_info.agent_name
     );
     tx.send(
-        Chunk::think(str!(
+        Event::think(str!(
             "**Handling `{}` agent:** *\"{log_query}...\"*",
             task_info.agent_name
         ))
-        .task_info(task_info.clone_minimal()),
+        .task_info(&task_info),
     )
     .ok();
     drop(log_query);
@@ -290,27 +383,133 @@ pub async fn handle_agent(
         .user(vec![task_info.task_query.clone().into()])
         .wrap();
 
-    // send request:
-    let mut response = Completions::try_from(options)?
-        .tools(tools)
-        .send(agent_messages.clone())
-        .await?;
-
-    // send request:
     let mut tool_calls = vec![];
+    let mut retry_count = 0;
 
-    // read ai chunks:
-    while let Some(chunk) = response.next().await {
-        match chunk? {
-            AiChunk::Text(text_part) => {
-                tx.send(Chunk::answer(text_part).task_info(task_info.clone_minimal()))?
+    let max_retries = Settings::get().assistant.max_retries.max(1) as usize;
+
+    // self-healing generation cycle in case of empty responses or API errors
+    loop {
+        tool_calls.clear();
+        let mut text_response = str!();
+
+        let response_res = Completions::try_from(options.clone())?
+            .tools(tools.clone())
+            .send(agent_messages.clone())
+            .await;
+
+        match response_res {
+            Ok(mut response) => {
+                let mut chunk_error = None;
+                while let Some(chunk) = response.next().await {
+                    match chunk {
+                        Ok(AiChunk::Text(text_part)) => {
+                            text_response.push_str(&text_part);
+                        }
+                        Ok(AiChunk::Tool(tool_call)) => {
+                            tool_calls.push(tool_call);
+                        }
+                        Err(e) => {
+                            chunk_error = Some(e);
+                            break;
+                        }
+                    }
+                }
+
+                if let Some(err) = chunk_error {
+                    retry_count += 1;
+                    if retry_count < max_retries {
+                        warn!(
+                            "Error reading stream from agent `{}`. Retrying ({retry_count}/{max_retries}): {err}",
+                            task_info.agent_name
+                        );
+                        tx.send(
+                            Event::think(str!(
+                                "Stream error. Healing and retrying `{}` agent execution...",
+                                task_info.agent_name
+                            ))
+                            .task_info(&task_info),
+                        )
+                        .ok();
+
+                        agent_messages.lock().await.add_user(vec![
+                            format!("An error occurred during output generation: {err}. Please try again and complete the task using the available tools.").into()
+                        ]);
+                        continue;
+                    } else {
+                        return Err(str!(
+                            "Agent `{}` failed after stream error: {err}",
+                            task_info.agent_name
+                        )
+                        .into());
+                    }
+                }
+
+                // if LLM returned an empty text and there are no tool calls:
+                if tool_calls.is_empty() && text_response.trim().is_empty() {
+                    retry_count += 1;
+                    if retry_count < max_retries {
+                        warn!(
+                            "Agent `{}` returned empty response and no tool calls. Retrying ({retry_count}/{max_retries})...",
+                            task_info.agent_name
+                        );
+                        tx.send(
+                            Event::think(str!(
+                                "Agent `{}` returned empty response. Self-healing task execution...",
+                                task_info.agent_name
+                            ))
+                            .task_info(&task_info),
+                        )
+                        .ok();
+
+                        agent_messages.lock().await.add_user(vec![
+                            "You did not call any tools. Please execute the requested task using the available tools now.".into()
+                        ]);
+                        continue;
+                    } else {
+                        return Err(str!(
+                            "Agent `{}` failed to execute task after {} retries: empty output",
+                            task_info.agent_name,
+                            max_retries
+                        )
+                        .into());
+                    }
+                }
             }
-            AiChunk::Tool(tool_call) => tool_calls.push(tool_call),
+            Err(e) => {
+                retry_count += 1;
+                if retry_count < max_retries {
+                    warn!(
+                        "Failed to send request to Completions for agent `{}`. Retrying ({retry_count}/{max_retries}): {e}",
+                        task_info.agent_name
+                    );
+                    tx.send(
+                        Event::think(str!(
+                            "Request error. Healing and retrying `{}` agent execution...",
+                            task_info.agent_name
+                        ))
+                        .task_info(&task_info),
+                    )
+                    .ok();
+
+                    agent_messages.lock().await.add_user(vec![
+                        format!("Failed to process request due to error: {e}. Please attempt to execute the task again using tools.").into()
+                    ]);
+                    continue;
+                } else {
+                    return Err(str!(
+                        "Agent `{}` failed sending completions request: {e}",
+                        task_info.agent_name
+                    )
+                    .into());
+                }
+            }
         }
+
+        break;
     }
 
     // handle tools:
-    let client = Client::ipc(&sock_path.to_string_lossy());
     for ToolCall { func, .. } in tool_calls {
         let log_json = func.json_str.replace("\n", "\\n");
         info!(
@@ -318,12 +517,12 @@ pub async fn handle_agent(
             task_info.agent_name, func.name
         );
         tx.send(
-            Chunk::think(str!(
+            Event::think(str!(
                 "Calling `{} -> {}` tool: {log_json}",
                 task_info.agent_name,
                 func.name
             ))
-            .task_info(task_info.clone_minimal()),
+            .task_info(&task_info),
         )
         .ok();
         drop(log_json);
@@ -336,7 +535,7 @@ pub async fn handle_agent(
             .post(&request_path)
             .header("Content-Type", "application/json")
             .json(&request_body)
-            .stream::<Chunk>()
+            .stream::<Event>()
             .await;
 
         if response.is_err() {
@@ -345,11 +544,11 @@ pub async fn handle_agent(
                 task_info.agent_name
             );
             tx.send(
-                Chunk::think(str!(
+                Event::think(str!(
                     "Connection lost. Restarting `{}` agent...",
                     task_info.agent_name
                 ))
-                .task_info(task_info.clone_minimal()),
+                .task_info(&task_info),
             )
             .ok();
 
@@ -360,7 +559,7 @@ pub async fn handle_agent(
                     .post(&request_path)
                     .header("Content-Type", "application/json")
                     .json(&request_body)
-                    .stream::<Chunk>()
+                    .stream::<Event>()
                     .await;
             }
         }
@@ -376,25 +575,47 @@ pub async fn handle_agent(
             }
         };
 
-        // read stream chunks:
+        // read stream chunks and accumulate tool outputs to full_text:
         let mut full_text = str!();
         info!("Trying to receive chunks..");
-        while let Some(chunk) = stream.recv().await? {
-            info!("{chunk:?}");
-
-            match &chunk {
-                Chunk {
-                    data: ChunkData::Answer(answer),
-                    ..
-                } => {
-                    full_text.push_str(answer);
-                }
-                _ => {}
+        while let Some(event) = stream.recv().await? {
+            match event.kind {
+                EventKind::Answer => full_text.push_str(&event.text),
+                EventKind::Finish => {}
+                _ => tx.send(event.task_info(&task_info))?,
             }
-            tx.send(chunk.task_info(task_info.clone_minimal()))?;
         }
 
+        // Save tool's accumulated result into message history:
         agent_messages.lock().await.push_content(None, full_text);
+    }
+
+    // control request to LLM (Response Synthesis) ---
+    agent_messages
+        .lock()
+        .await
+        .add_user(vec![
+            "Based on the steps performed above and the data received, prepare a final coherent response for the user.".into()
+        ]);
+
+    info!(
+        "Sending synthesising final request for agent `{}`",
+        task_info.agent_name
+    );
+    let mut final_response = Completions::try_from(options)?
+        .send(agent_messages.clone())
+        .await?;
+
+    while let Some(chunk) = final_response.next().await {
+        match chunk? {
+            AiChunk::Text(text_part) => {
+                // stream the final human-readable response to the client
+                tx.send(Event::answer(text_part).task_info(&task_info))?;
+            }
+            AiChunk::Tool(_) => {
+                // ignoring tool calls at the synthesis stage
+            }
+        }
     }
 
     let mut lock = messages.lock().await;
@@ -405,7 +626,7 @@ pub async fn handle_agent(
             .last()
             .map(|m| {
                 for cnt in m.content.clone() {
-                    lock.push_content(Some(&task.task.tool_call_id), cnt);
+                    lock.push_content(Some(&task.task_info.tool_call_id), cnt);
                 }
 
                 m.content.clone()
@@ -414,14 +635,14 @@ pub async fn handle_agent(
     };
     drop(lock);
 
-    // finish agent handling:
-    tx.send(Chunk::finish().task_info(task.task.clone_minimal()))
-        .ok();
+    // finish agent handling successfully:
+    tx.send(Event::finish().task_info(&task.task_info)).ok();
 
     // finish query cycle:
     if task.is_last().await {
         info!("The last task was completed, saving the session");
-        tx.send(Chunk::finish()).ok();
+        tx.send(Event::finish().task_info(&task.task_info)).ok();
+        tx.send(Event::finish()).ok();
 
         // save messages to database:
         let to_save = messages.lock().await.slice(-1);

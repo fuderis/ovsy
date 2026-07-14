@@ -13,11 +13,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
+pub mod error;
+pub mod prelude;
+pub mod settings;
+
+pub mod handlers;
+pub mod skills;
+pub mod tools;
+
 use pearce::Server;
-use system_agent::{handlers, prelude::*};
+use prelude::*;
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    use handlers as hands;
+
     #[cfg(target_os = "macos")]
     {
         tokio::spawn(async {
@@ -39,11 +49,12 @@ async fn main() -> Result<()> {
     .await?;
 
     // start server:
-    let sock = path!("$temp$/uds/{}.sock", Settings::get().agent.name);
+    let sock = path!("$temp$/uds/{}.sock", Settings::get().metadata.name);
     Server::new()
-        .post("/ping", handlers::handle_ping)
-        .post("/info", handlers::handle_info)
-        .post("/tools/call/{tool}", handlers::handle_tool_call)
+        .post("/ping", hands::init::handle_ping)
+        .post("/init", hands::init::handle_init)
+        .post("/tools/list", hands::tools::handle_tools_list)
+        .post("/tools/call/{tool}", hands::tools::handle_tool_call)
         .run(sock)
         .await
 }

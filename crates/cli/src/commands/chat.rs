@@ -5,11 +5,11 @@ use crate::{
 
 use anylm::{Message, Messages};
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEventKind},
+    event::{self, Event as CrosstermEvent, KeyCode, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use ovsy_share::{Chunk, ChunkData, CompactQuery, HandleQuery, SessionId, UserSessionsQuery};
+use ovsy_share::{CompactQuery, Event, EventKind, HandleQuery, SessionId, UserSessionsQuery};
 use ratatui::{
     Terminal,
     backend::{Backend, CrosstermBackend},
@@ -27,7 +27,7 @@ pub async fn handle_chat() -> Result<()> {
 
     // check server:
     let client = Client::tcp();
-    let status_url = str!("http://127.0.0.1:{port}/update");
+    let status_url = str!("http://127.0.0.1:{port}/refresh");
 
     if client.get(&status_url).send().await.is_err() {
         let bin_path = path!("$/ovsy-core{}", if cfg!(windows) { "exe" } else { "" });
@@ -55,7 +55,7 @@ pub async fn handle_chat() -> Result<()> {
 
     // init channels:
     let (input_tx, input_rx) = mpsc::unbounded_channel::<ChatAction>();
-    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Chunk>();
+    let (ui_tx, mut ui_rx) = mpsc::unbounded_channel::<Event>();
 
     // load last session or create new:
     let mut session_id = SessionId::new(USER_ID);
@@ -118,7 +118,7 @@ pub async fn handle_chat() -> Result<()> {
 async fn run_app<B: Backend>(
     terminal: &mut Terminal<B>,
     app: &mut AppState,
-    ui_rx: &mut mpsc::UnboundedReceiver<Chunk>,
+    ui_rx: &mut mpsc::UnboundedReceiver<Event>,
 ) -> Result<()> {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |panic_info| {
@@ -148,7 +148,7 @@ async fn run_app<B: Backend>(
             while start.elapsed() < FRAME_TIME {
                 match ui_rx.try_recv() {
                     Ok(chunk) => {
-                        handle_chunk(app, &mut msgs, chunk).await;
+                        handle_event(app, &mut msgs, chunk).await;
                     }
                     Err(_) => break,
                 }
@@ -157,7 +157,7 @@ async fn run_app<B: Backend>(
 
         // handling terminal event:
         if event::poll(Duration::from_millis(16))? {
-            if handle_event(app, event::read()?).await? {
+            if handle_terminal_event(app, event::read()?).await? {
                 break;
             }
         }
@@ -167,9 +167,9 @@ async fn run_app<B: Backend>(
 
 /// Process input drivers and keyboard hooks
 /// (returns true if application should terminate)
-async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
+async fn handle_terminal_event(app: &mut AppState, event: CrosstermEvent) -> Result<bool> {
     match event {
-        Event::Mouse(mouse_event) => {
+        CrosstermEvent::Mouse(mouse_event) => {
             let pos = (mouse_event.column, mouse_event.row).into();
             match mouse_event.kind {
                 event::MouseEventKind::ScrollUp => {
@@ -190,7 +190,7 @@ async fn handle_event(app: &mut AppState, event: Event) -> Result<bool> {
             }
         }
 
-        Event::Key(key) if key.kind == KeyEventKind::Press => {
+        CrosstermEvent::Key(key) if key.kind == KeyEventKind::Press => {
             let has_shift = key.modifiers.contains(event::KeyModifiers::SHIFT);
 
             match key.code {
@@ -327,7 +327,7 @@ async fn handle_input(app: &mut AppState) {
 async fn chat_worker(
     session_id: Arc<State<SessionId>>,
     mut input_rx: mpsc::UnboundedReceiver<ChatAction>,
-    ui_tx: mpsc::UnboundedSender<Chunk>,
+    ui_tx: mpsc::UnboundedSender<Event>,
     messages: Arc<State<Messages>>,
 ) {
     let port = Settings::get().server.port;
@@ -367,10 +367,7 @@ async fn chat_worker(
             ChatAction::Cancel => {
                 if let Some(task) = current_task.take() {
                     task.abort();
-                    let _ = ui_tx.send(Chunk {
-                        data: ChunkData::Finish,
-                        agent: None,
-                    });
+                    let _ = ui_tx.send(Event::finish());
                 }
                 continue;
             }
@@ -404,10 +401,7 @@ async fn chat_worker(
                                 .send()
                                 .await;
 
-                            let _ = ui_tx.send(Chunk {
-                                data: ChunkData::Finish,
-                                agent: None,
-                            });
+                            let _ = ui_tx.send(Event::finish());
                         }
 
                         "/clear" | "/clean" => {
@@ -425,17 +419,14 @@ async fn chat_worker(
                                     messages.set(Messages::new()).await;
                                 }
                                 Err(e) => {
-                                    let _ = ui_tx.send(Chunk::error(str!(
+                                    let _ = ui_tx.send(Event::error(str!(
                                         "Failed to clear remote history: {}",
                                         e
                                     )));
                                 }
                             }
 
-                            let _ = ui_tx.send(Chunk {
-                                data: ChunkData::Finish,
-                                agent: None,
-                            });
+                            let _ = ui_tx.send(Event::finish());
                         }
 
                         "/compact" | "/compress" => {
@@ -445,7 +436,7 @@ async fn chat_worker(
                             let session_id = session_id.clone();
 
                             current_task = Some(tokio::spawn(async move {
-                                let _ = ui_tx.send(Chunk::think("Compressing context..."));
+                                let _ = ui_tx.send(Event::think("Compressing context..."));
 
                                 let preserve = args
                                     .get(1)
@@ -455,7 +446,7 @@ async fn chat_worker(
                                 let res = Client::tcp()
                                     .post(&str!("{base_url}/sessions/{session_id}/compact"))
                                     .json(&CompactQuery::new(preserve))
-                                    .stream::<Chunk>()
+                                    .stream::<Event>()
                                     .await;
 
                                 match res {
@@ -467,11 +458,11 @@ async fn chat_worker(
                                         msgs.messages = preserved_messages;
                                         msgs.count_tokens();
 
-                                        while let Ok(Some(chunk)) = stream.recv().await {
-                                            if let ChunkData::Answer(ref text) = chunk.data {
-                                                msgs.push_str(None, text);
+                                        while let Ok(Some(event)) = stream.recv().await {
+                                            if event.kind == EventKind::Answer {
+                                                msgs.push_str(None, &event.text);
                                             }
-                                            let _ = ui_tx.send(chunk);
+                                            let _ = ui_tx.send(event);
                                             msgs.sync_n(2);
                                         }
 
@@ -485,23 +476,17 @@ async fn chat_worker(
                                     }
                                     Err(e) => {
                                         let _ = ui_tx
-                                            .send(Chunk::error(str!("Compression failed: {}", e)));
+                                            .send(Event::error(str!("Compression failed: {}", e)));
                                     }
                                 }
 
-                                let _ = ui_tx.send(Chunk {
-                                    data: ChunkData::Finish,
-                                    agent: None,
-                                });
+                                let _ = ui_tx.send(Event::finish());
                             }));
                         }
                         _ => {}
                     }
 
-                    let _ = ui_tx.send(Chunk {
-                        data: ChunkData::Finish,
-                        agent: None,
-                    });
+                    let _ = ui_tx.send(Event::finish());
                     continue;
                 }
 
@@ -521,7 +506,7 @@ async fn chat_worker(
                         let res = Client::tcp()
                             .post(&str!("{base_url}/sessions/{session_id}/query"))
                             .json(&HandleQuery::new(msg))
-                            .stream::<Chunk>()
+                            .stream::<Event>()
                             .await;
 
                         match res {
@@ -531,9 +516,11 @@ async fn chat_worker(
                                 }
                             }
                             Err(e) => {
-                                let _ = ui_tx.send(Chunk::error(str!("Connection error: {}", e)));
+                                let _ = ui_tx.send(Event::error(str!("Connection error: {}", e)));
                             }
                         }
+
+                        let _ = ui_tx.send(Event::finish());
                     }));
                 }
             }
@@ -542,19 +529,20 @@ async fn chat_worker(
 }
 
 /// Process backend runtime text chunks
-async fn handle_chunk(app: &mut AppState, msgs: &mut StateGuard<Messages>, chunk: Chunk) {
-    match chunk {
-        Chunk {
-            data: ChunkData::Thinking(think),
-            ..
-        } => {
-            app.status.replace(think);
+async fn handle_event(app: &mut AppState, msgs: &mut StateGuard<Messages>, event: Event) {
+    let Event {
+        kind,
+        task_info,
+        text,
+    } = event;
+
+    match kind {
+        EventKind::Thinking => {
+            app.status.replace(text);
         }
 
-        Chunk {
-            data: ChunkData::Tools(tool_calls),
-            ..
-        } => {
+        EventKind::Start => {
+            let tool_calls: Vec<anylm::ToolCall> = serde_json::from_str(&text).unwrap();
             if let Some(msg) = msgs.messages.get_mut(app.response_index) {
                 msg.tool_calls.extend(tool_calls);
                 msg.count_tokens();
@@ -562,21 +550,15 @@ async fn handle_chunk(app: &mut AppState, msgs: &mut StateGuard<Messages>, chunk
             }
         }
 
-        Chunk {
-            agent,
-            data: ChunkData::Answer(answer),
-        } => {
-            let id_str = agent.as_ref().map(|task| task.tool_call_id.as_str());
+        EventKind::Answer => {
+            let id_str = task_info.as_ref().map(|task| task.tool_call_id.as_str());
 
             // push answer part into last message:
-            msgs.push_str(id_str, &answer);
+            msgs.push_str(id_str, &text);
             app.chat_scroll = u16::MAX;
         }
 
-        Chunk {
-            data: ChunkData::Finish,
-            agent,
-        } => {
+        EventKind::Finish => {
             let idx = app.response_index;
             if idx < msgs.messages.len() && !msgs.messages[idx].tool_calls.is_empty() {
                 let ordered_ids: Vec<String> = msgs.messages[idx]
@@ -602,76 +584,26 @@ async fn handle_chunk(app: &mut AppState, msgs: &mut StateGuard<Messages>, chunk
                 msgs.count_tokens();
             }
 
-            if agent.is_none() {
+            if task_info.is_none() {
                 app.status.take();
-
-                // do control query:
-                if app.cycles <= Settings::get().assistant.max_cycles {
-                    if let Some(last_msg) = msgs.messages.last()
-                        && last_msg.role.is_tool()
-                    {
-                        let tx = app.tx.clone();
-                        let messages = app.messages.clone();
-                        app.response_index = msgs.messages.len() + 1;
-                        app.cycles += 1;
-
-                        tokio::spawn(async move {
-                            handle_control_query(tx, messages).await;
-                        });
-                    } else {
-                        app.is_busy = false;
-                    }
-                }
+                app.is_busy = false;
             }
         }
 
-        Chunk {
-            data: ChunkData::Error(error),
-            agent,
-        } => {
-            let err_msg = str!("Error: {error}");
+        EventKind::Error => {
+            let err_msg = str!("Error: {text}");
 
-            if let Some(task) = agent {
+            if let Some(task) = task_info {
                 let current_tool_id = task.tool_call_id.clone();
 
                 // push error to last message:
                 msgs.push_str(Some(&current_tool_id), &format!("\n{}", err_msg));
                 app.chat_scroll = u16::MAX;
-
-                // trying to fix error:
-                if app.cycles <= Settings::get().assistant.max_cycles {
-                    if !app.is_canceled {
-                        let tx = app.tx.clone();
-                        let messages = app.messages.clone();
-                        app.response_index = msgs.messages.len() + 1;
-                        app.cycles += 1;
-
-                        tokio::spawn(async move {
-                            handle_control_query(tx, messages).await;
-                        });
-                    }
-                }
             } else {
                 app.is_busy = false;
                 app.status.take();
-                msgs.add_message(Message::system(vec![
-                    str!("Critical Error: {error}").into(),
-                ]));
+                msgs.add_message(Message::system(vec![str!("Critical Error: {text}").into()]));
             }
         }
     }
-}
-
-/// Handles the control query
-async fn handle_control_query(
-    tx: mpsc::UnboundedSender<ChatAction>,
-    messages: Arc<State<Messages>>,
-) {
-    {
-        let mut msgs = messages.lock().await;
-        msgs.add_message(Message::user(vec!["This is a follow-up step. Review the results of all tool calls from the previous response. If the user's request has already been completed, provide the final answer. Otherwise, determine what remains to be done and continue by calling additional tools if necessary.".into()]));
-        msgs.add_message(Message::assistant(vec![], vec![]));
-    }
-
-    let _ = tx.send(ChatAction::Query(str!()));
 }

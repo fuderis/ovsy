@@ -20,7 +20,7 @@ resolver = "3"
 
 [workspace.dependencies]
 ovsy-share = { path = "crates/share" }
-macron = { version = "0.3.0", features = ["full"] }
+macron = { version = "0.4.1", features = ["full"] }
 atoman = { version = "0.4.2", features = ["full"] }
 pearce = { version = "0.3.2", features = ["full"] }
 anylm = "0.1.25"

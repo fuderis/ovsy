@@ -9,7 +9,7 @@ pub use task::Task;
 
 use crate::prelude::*;
 use anylm::{Schema, Tool};
-use ovsy_share::AgentInfo;
+use ovsy_share::{AgentMetadata, Skill};
 use std::fmt::Write;
 use tokio::task::JoinSet;
 
@@ -72,6 +72,11 @@ impl Manager {
             Schema::string("The name of the agent to handle this task."),
         )
         .required_property(
+            "agent_skills",
+            Schema::array("The agent skills required to complete the task.")
+                .items(Schema::string("The skill identifier."))
+        )
+        .required_property(
             "task_id",
             Schema::integer("An unique identifier for the task (starting from 1, and should not be repeated)."),
         )
@@ -114,7 +119,7 @@ Do not wrap the code in markdown or use console.log() as output.",
     }
 
     /// Ensures the agent is running and healthy, spawning it if necessary
-    pub async fn ensure_agent(name: &Arc<String>) -> Result<Option<(PathBuf, String, Vec<Tool>)>> {
+    pub async fn ensure_agent(name: &Arc<String>) -> Result<Option<(PathBuf, String, Vec<Skill>)>> {
         let needs_start = {
             let guard = MANAGER.get().await;
             if let Some(agent) = guard.agents.get(name) {
@@ -154,7 +159,7 @@ Do not wrap the code in markdown or use console.log() as output.",
         );
 
         if let Some(agent) = Agent::run(path.clone()).await? {
-            let name = arc!(agent.info.name.clone());
+            let name = arc!(agent.metadata.name.clone());
             let mut lock = MANAGER.lock().await;
 
             if !lock.agents.contains_key(&name) {
@@ -223,9 +228,16 @@ Do not wrap the code in markdown or use console.log() as output.",
         for agent in guard.agents.values() {
             let _ = writeln!(
                 doc_builder,
-                "* Agent `{}`: {}",
-                agent.info.name,
-                agent.info.description.trim()
+                "* Agent `{}`: \n  Description: \"{}\"\n  Skills: {}",
+                agent.metadata.name,
+                agent.metadata.description.trim().replace("\n", ""),
+                agent
+                    .metadata
+                    .skills
+                    .iter()
+                    .map(|s| str!("    * `{}`: {}", s.name, s.description))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             );
         }
 
@@ -238,15 +250,15 @@ Do not wrap the code in markdown or use console.log() as output.",
     }
 
     /// Returns the all agents list
-    pub async fn agents_list() -> Vec<AgentInfo> {
+    pub async fn agents_list() -> Vec<AgentMetadata> {
         MANAGER
             .get()
             .await
             .agents
             .iter()
-            .map(|(_, agent)| AgentInfo {
-                name: agent.info.name.clone(),
-                description: agent.info.description.clone(),
+            .map(|(_, agent)| AgentMetadata {
+                name: agent.metadata.name.clone(),
+                description: agent.metadata.description.clone(),
                 ..Default::default()
             })
             .collect()
@@ -274,26 +286,35 @@ Do not wrap the code in markdown or use console.log() as output.",
             .await
             .agents
             .get(name)
-            .map(|agent| agent.info.prompt.clone())
+            .map(|agent| agent.metadata.prompt.clone())
     }
 
     /// Returns the agent tools list
-    pub async fn agent_tools(name: &Arc<String>) -> Option<Vec<Tool>> {
-        MANAGER
-            .get()
-            .await
-            .agents
-            .get(name)
-            .map(|agent| agent.info.tools.clone())
+    pub async fn agent_tools(name: &Arc<String>, skill: Option<&str>) -> Result<Option<Vec<Tool>>> {
+        let mngr = MANAGER.get().await;
+        let Some(agent) = mngr.agents.get(name) else {
+            return Ok(None);
+        };
+
+        let client = Client::ipc(&agent.sock_path.to_string_lossy());
+
+        let mut request = client.post("/tools/list");
+        if let Some(skill) = skill {
+            request = request.json(&json!({ "skill": skill }));
+        }
+
+        let tools = request.send().await?.json().await?;
+
+        Ok(Some(tools))
     }
 
     /// Returns the agent options (port, prompt, tools)
-    pub async fn agent_options(name: &Arc<String>) -> Option<(PathBuf, String, Vec<Tool>)> {
+    pub async fn agent_options(name: &Arc<String>) -> Option<(PathBuf, String, Vec<Skill>)> {
         MANAGER.get().await.agents.get(name).map(|agent| {
             (
                 agent.sock_path.clone(),
-                agent.info.prompt.clone(),
-                agent.info.tools.clone(),
+                agent.metadata.prompt.clone(),
+                agent.metadata.skills.clone(),
             )
         })
     }

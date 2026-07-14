@@ -121,10 +121,6 @@ fn render_chat(f: &mut Frame, area: Rect, app: &mut AppState, msgs: &Arc<Message
             for line in msg_lines {
                 history.push(line.style(Style::default().dim()));
             }
-        } else if msg.role.is_tool() {
-            for line in msg_lines {
-                history.push(line.style(Style::default().dim()));
-            }
         } else {
             history.extend(msg_lines);
         }

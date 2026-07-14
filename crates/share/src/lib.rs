@@ -14,7 +14,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub const APP_NAME: &str = "ovsy";
-pub const APP_VERSION: &str = "0.12.1";
+pub const APP_VERSION: &str = "0.13.0";
 
 pub mod result;
 pub use result::{DynError, Result, StdResult};
@@ -28,14 +28,17 @@ pub use session_id::SessionId;
 pub mod session_info;
 pub use session_info::SessionInfo;
 
-pub mod chunk;
-pub use chunk::{Chunk, ChunkData};
+pub mod skill;
+pub use skill::Skill;
 
-pub mod query;
-pub use query::{CompactQuery, HandleQuery, UserSessionsQuery};
+pub mod event;
+pub use event::{Event, EventKind, EventTaskInfo};
 
-pub mod agent_info;
-pub use agent_info::AgentInfo;
+pub mod user_query;
+pub use user_query::{CompactQuery, HandleQuery, UserSessionsQuery};
+
+pub mod agent_metadata;
+pub use agent_metadata::AgentMetadata;
 
 pub mod agent_task;
 pub use agent_task::AgentTask;

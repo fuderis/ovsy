@@ -11,6 +11,7 @@ pub struct AgentTask {
     #[serde(default)]
     pub session_id: SessionId,
     pub agent_name: String,
+    pub agent_skills: Vec<String>,
     #[serde(default = "AgentTask::random_id")]
     pub task_id: i64,
     pub task_query: String,
@@ -39,14 +40,5 @@ impl AgentTask {
     pub fn tool_id(mut self, id: impl Into<String>) -> Self {
         self.tool_call_id = id.into();
         self
-    }
-
-    /// Returns the agent task clone (without query)
-    pub fn clone_minimal(&self) -> Self {
-        Self {
-            task_query: String::new(),
-            wait_for: HashSet::new(),
-            ..self.clone()
-        }
     }
 }

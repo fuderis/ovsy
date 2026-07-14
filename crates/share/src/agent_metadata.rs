@@ -1,11 +1,12 @@
-use anylm::Tool;
+use crate::Skill;
 use serde::{Deserialize, Serialize};
 
-/// The AI agent info
+/// The agent metadata
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
-pub struct AgentInfo {
+pub struct AgentMetadata {
     pub name: String,
     pub description: String,
+    pub version: String,
     pub prompt: String,
-    pub tools: Vec<Tool>,
+    pub skills: Vec<Skill>,
 }

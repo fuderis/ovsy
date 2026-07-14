@@ -26,31 +26,55 @@ by a central execution loop (**handle_task**).
 1. **Task Evaluation and Execution**
 
 When a user submits a query, the orchestrator determines if background tasks are required:
-  * **Parallel Execution:** The engine builds a dependency graph of the required actions. Tasks without active upstream dependencies bypass sequential queues
-    and are instantly spawned across separate threads. This allows multiple agents or tools to execute concurrently during a single generation cycle.
-  * **Context Isolation:** To prevent token bloat and reduce latency, agents do not receive the entire conversation history. Instead,
-    context is strictly limited to the specific task description and the exact output payloads of any dependent upstream tasks.
-    Every agent maintains its own isolated system prompt and configuration (AgentInfo).
 
-2. **Embedded Self-Healing Loop**
+* **Parallel Execution:** The engine builds a dependency graph of the required actions.
+  Tasks without active upstream dependencies bypass sequential queues and are instantly spawned across separate threads.
+  This allows multiple agents or tools to execute concurrently during a single generation cycle.
 
-If a running agent encounters an error during execution, the orchestrator initiates a recursive cycle to attempt an automatic fix.
-  * **Configurable Iteration Cap:** To prevent execution traps, the maximum number of recursive
-    self-healing attempts is strictly bounded by a limit defined in the system configuration file (`~/.config/ovsy/settings.toml`).
-  * **Critical Failure Bypass:** For critical infrastructure errors—such as a complete network failure
-    when connecting to an external LLM provider—the engine immediately halts the loop, bypassing recursion entirely
-    to conserve computing resources.
+* **Context Isolation:** To prevent token bloat and reduce latency, agents do not receive the entire conversation history.
+  Instead, context is strictly limited to the specific task description and the exact output payloads of any dependent upstream tasks.
+  Every agent maintains its own isolated system prompt and configuration.
 
-3. **Embedded JavaScript Interpreter**
+2. **Modularity via Skills & Context Optimization**
+
+To prevent massive token bloat and reduce model cognitive load, Ovsy replaces monolithic agent definitions with a dynamic Skill-based architecture.
+
+* **Granular Tool Grouping:** Agents no longer expose a flat, undivided list of tools to the orchestrator.
+  Instead, capabilities are logically grouped into Skills (e.g., SystemInfo, AudioControl, MusicPlayback, PowerManagement).
+* **Dynamic Loading (/tools/list):** When preparing to execute an AgentTask, the orchestrator checks the required agent_skills array.
+  Instead of injecting the agent's entire toolset into the LLM context, the kernel issues a filtered request to the agent’s /tools/list endpoint,
+  fetching only the tool definitions corresponding to the active skills required for the task.
+* **Metadata-Only Cache:** The kernel's ensure_agent routine operates on lightweight AgentMetadata rather than full tool schemas,
+  drastically lowering idle memory usage and improving startup time.
+
+3. **Deep Self-Healing Loop**
+
+The orchestrator embeds a robust Self-Healing Loop to recover from model failures, transmission anomalies, or execution exceptions in real time.
+
+* **Empty Output & Hallucination Recovery:** If the LLM generates an empty text response or fails to call a necessary tool when expected, the loop intercepts the anomaly.
+  The orchestrator automatically appends a corrective prompt (e.g., "You returned an empty response.
+  If you need to resolve this, delegate tasks to the appropriate agents...") and triggers a retry.
+* **Execution & Parsing Resiliency:** If a downstream tool execution fails, or if the agent returns corrupted JSON arguments during a Tool/JS execution,
+  the error is captured, converted into system context, and fed back into the next generation attempt.
+* **Response Synthesis:** Upon successful tool execution, rather than directly outputting raw data payloads,
+  the orchestrator routes the aggregated tool outputs through a final LLM synthesis pass, generating a clean, human-friendly response.
+* **Strict Loop Bounds:**
+    * **Configurable Retry Cap:** The recursion is strictly bounded by max_retries defined in the CLI configurations (AssistantOptions),
+      replacing the older flat loop bounds (max_cycles).
+    * **Critical Failure Bypass:** Fatal infrastructure exceptions (such as network failure or database lockouts) immediately break the execution loop,
+      avoiding redundant calls and protecting computing resources.
+
+4. **Embedded JavaScript Interpreter**
 
 To eliminate unnecessary orchestration cycles, Ovsy embeds the **Boa Engine** JavaScript interpreter directly into the execution pipeline.
-  * **Inline Expression Evaluation:** Agents can execute arbitrary JavaScript snippets without spawning an external runtime,
-    allowing lightweight computations, data transformations, and conditional logic to be performed with minimal overhead.
-  * **Direct Task Routing:** Instead of returning the evaluation result to the orchestrator and triggering a new planning iteration,
-    the interpreter can immediately forward the produced value to another task by its `task_id`.
-    This enables dependent tasks to continue execution within the same orchestration cycle, reducing latency and avoiding redundant LLM generations.
-  * **Reduced Token Consumption:** Since intermediate results no longer need to be serialized into the conversation and reinterpreted during the next planning pass,
-    the assistant significantly decreases token usage while improving overall throughput.
+
+* **Inline Expression Evaluation:** Agents can execute arbitrary JavaScript snippets without spawning an external runtime,
+  allowing lightweight computations, data transformations, and conditional logic to be performed with minimal overhead.
+* **Direct Task Routing:** Instead of returning the evaluation result to the orchestrator and triggering a new planning iteration,
+  the interpreter can immediately forward the produced value to another task by its `task_id`.
+  This enables dependent tasks to continue execution within the same orchestration cycle, reducing latency and avoiding redundant LLM generations.
+* **Reduced Token Consumption:** Since intermediate results no longer need to be serialized into the conversation and reinterpreted during the next planning pass,
+  the assistant significantly decreases token usage while improving overall throughput.
 
 ## Process Lifecycle and Safety
 
@@ -106,10 +130,9 @@ Instead of utilizing traditional TCP loopback interfaces, the orchestrator and a
 
 The system utilizes a split-phase verification strategy to guarantee that an agent is fully prepared to accept workloads before it is exposed to the supervisor.
 
-* **Startup Polling Loop:** Upon process spawning, the manager enters a strict polling loop targeting
-  the agent's `/info` HTTP endpoint. To accommodate process spin-up times, heavy binary initialization,
-  or cold starts, the loop allows up to 50 attempts spaced out by 100ms intervals, granting the agent
-  a reliable 5-second window to warm up.
+* **Startup Polling Loop:** Upon process spawning, the manager enters a strict polling loop targeting the agent's /init HTTP endpoint.
+  To accommodate process spin-up times, heavy binary initialization, or cold starts, the loop allows up to 50 attempts spaced out by 100ms intervals,
+  granting the agent a reliable 5-second window to warm up.
 
 * **Deadlock Prevention:** The HTTP handshake is wrapped in a tight `tokio::time::timeout` guard (100ms per request).
   This critical safety boundary prevents the orchestrator from blocking indefinitely if the agent successfully binds
@@ -129,20 +152,26 @@ Agents within the **Ovsy** kernel function as independent, long-running servers 
 Rather than repeatedly spawning and destroying processes, they remain active in memory. If a configuration changes,
 an explicit control command (`ovsy update`) reloads only the modified targets without taking down the broader application network.
 
-Communication between the orchestrator and agents relies on a custom SSE protocol utilizing specialized data chunks (`Chunk`).
-The data payload is structured around a lightweight enum layout:
+Communication between the orchestrator and agents relies on a custom SSE protocol utilizing specialized events (`Event`).
+The data payload is structured around a lightweight layout:
 ```rust
-struct Chunk {
-    agent: Option<AgentTask>,
-    data: ChunkData,
+pub enum EventKind {
+    Start,
+    Thinking,
+    Answer,
+    Error,
+    Finish,
 }
 
-enum ChunkData {
-    Tools(Vec<ToolCall>),
-    Thinking(String),
-    Answer(String),
-    Error(String),
-    Finish,
+pub struct EventTaskInfo {
+    pub task_id: i64,
+    pub tool_call_id: String,
+}
+
+pub struct Event {
+    pub kind: EventKind,
+    pub task_info: Option<EventTaskInfo>,
+    pub text: String,
 }
 ```
 
@@ -153,49 +182,51 @@ the orchestrator provides a set of dedicated endpoints.
 
 > All requests are made using the POST method, and both request and response bodies expect JSON format.
 
+  * **POST `/status`** Returns the current state of the server along with a list of all currently running agents
+    (including their IDs, statuses, and workload).
+
+  * **POST `/refresh`**: Dynamically applies server configuration changes from the config file.
+    If necessary, it restarts outdated agents and initializes newly added,
+    non-running agents on the fly without a full server reboot.
+
   * **POST `/users/{uid}/sessions`**: Retrieves a list of all existing user sessions by their ID.
     * **limit (optional)**: Specifies the number of the most recent sessions to return.
 
   * **POST `/sessions/{sid}/get`**: Retrieves the message history for a specific session by its `SessionID`.
-  Used to restore the conversation context in the UI.
+    Used to restore the conversation context in the UI.
 
   * **POST `/sessions/{sid}/clear`**: Clears the session history by `SessionID`, deleting all associated messages
-  from the database. Allows resetting the context to start a fresh conversation.
+    from the database. Allows resetting the context to start a fresh conversation.
 
   * **POST `/sessions/{sid}/query`**: The primary endpoint for interacting with the system.
-  It receives a full user dialog (messages), routes it to the appropriate agents,
-  and returns the generated response as SSE.
+    It receives a full user dialog (messages), routes it to the appropriate agents,
+    and returns the generated response as SSE.
     * **message**: The new user message to be processed and appended to the conversation history.
   
   * **POST `/sessions/{sid}/compact`**: Utilizes AI to summarize (compress) the chat history.
-  This helps reduce token consumption while preserving the essential context of the conversation.
+    This helps reduce token consumption while preserving the essential context of the conversation.
     * **preserve (optional)**: The number of recent message pairs (User -> Assistant + Tool) to keep intact (uncompressed)
     at the end of the history.
-
-  * **POST `/status`** Returns the current state of the server along with a list of all currently running agents
-  (including their IDs, statuses, and workload).
-
-  * **POST `/refresh`**: Dynamically applies server configuration changes from the config file.
-  If necessary, it restarts outdated agents and initializes newly added,
-  non-running agents on the fly without a full server reboot.
-
+ 
 ### Agent Endpoints
 
 To keep routing overhead at an absolute minimum, each agent exposes an intentionally minimalist API surface.
 The endpoints are designed to handle initialization, tracking, and execution with zero computational waste.
 
-  * **POST `/tools/call/{tool}`:** Handles direct, isolated execution of a specific tool requested by the orchestrator.
-  By binding each execution to a dedicated, strict context, it minimizes the risk of model hallucinations
-  and ensures that the tool's payload is utilized to its maximum efficiency.
-
   * **POST `/ping`:** Used for real-time telemetry, health diagnostics, and log tracing.
-  Instead of a simple uptime signal, it returns structural metadata allowing the orchestrator
-  to instantly locate the agent's operational footprint.
+    Instead of a simple uptime signal, it returns structural metadata allowing the orchestrator
+    to instantly locate the agent's operational footprint.
 
-  * **POST `/info`:** Exposes the agent’s profile, system prompt, and capabilities.
-  This endpoint is invoked exclusively during the agent's initial bootstrap when the assistant starts,
-  as well as during hot-reloads via the `ovsy update` command.
-  
+  * **POST `/init`:** Exposes the agent’s profile, system prompt, and capabilities.
+    This endpoint is invoked exclusively during the agent's initial bootstrap when the assistant starts,
+    as well as during hot-reloads via the ovsy update command.
+
+  * **POST `/tools/list`:** Returns the catalog of tools exposed by the agent, along with their metadata, parameters, and associated skills.
+    Supports filtering by sending a payload of specific skills to retrieve only the subset of tools relevant to a particular task domain.
+
+  * **POST `/tools/call/{tool}`:** Handles direct, isolated execution of a specific tool requested by the orchestrator.
+    By binding each execution to a dedicated, strict context, it minimizes the risk of model hallucinations
+    and ensures that the tool's payload is utilized to its maximum efficiency.
 
 ### Architectural Rationale
 
@@ -211,7 +242,7 @@ universal standards introduce severe engineering compromises:
   it requires packaging and parsing bloated, generalized context objects.
   This approach fundamentally violates zero-copy principles and leads to unnecessary **RAM** consumption.
 
-  * **Control and Abstraction:** By utilizing a tailored, SSE-over-UDS chunking design, Ovsy eliminates the abstraction tax of generalized protocols.
+  * **Control and Abstraction:** By utilizing a tailored, SSE-over-UDS eventing design, Ovsy eliminates the abstraction tax of generalized protocols.
   The data pipeline is stripped down to native Unix domain communication, passing isolated streaming payloads directly to the Tokio execution threads
   with sub-millisecond coordination latency.
 

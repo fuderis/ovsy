@@ -10,7 +10,7 @@ use std::{num::ParseIntError, str::FromStr};
 pub struct SessionId {
     pub user_id: u128,
     pub timestamp: u128,
-    pub salt: u8,
+    pub salt: u16,
 }
 
 impl SessionId {
@@ -66,7 +66,7 @@ impl FromStr for SessionId {
             .parse::<u128>()
             .map_err(SessionIdError::InvalidTimestamp)?;
         let salt = salt_str
-            .parse::<u8>()
+            .parse::<u16>()
             .map_err(SessionIdError::InvalidSalt)?;
 
         Ok(Self {

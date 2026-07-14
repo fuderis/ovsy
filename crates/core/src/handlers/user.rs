@@ -5,10 +5,9 @@ use tokio::fs;
 /// Handles the user sessions list
 #[log(skip_all, fields(uid = %uid.0))]
 pub async fn handle_list(uid: Paths<u128>, data: Json<UserSessionsQuery>) -> Response {
-    let user_id = uid.0;
     let UserSessionsQuery { limit } = data.0;
 
-    match search_sessions(user_id, limit).await {
+    match search_sessions(uid.0, limit).await {
         Ok(sessions) => Response::ok().json(&sessions),
         Err(e) => {
             error!("{e}");
