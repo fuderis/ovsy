@@ -35,15 +35,11 @@ const SKILLS: &[Skill] = &[
         tools::info::tools_list,
     ),
     Skill::new(
-        SkillName::AudioControl,
-        "Audio volume and mute control.",
-        tools::audio::tools_list,
-    ),
-    Skill::new(
-        SkillName::MusicPlayback,
-        "Media playback and music library control.",
+        SkillName::MediaControl,
+        "Audio volume control, media playback (play/pause, stop, next/prev track) and search or play music.",
         || {
             let mut tools = tools::media::tools_list();
+            tools.extend(tools::audio::tools_list());
             tools.extend(tools::music::tools_list());
             tools
         },

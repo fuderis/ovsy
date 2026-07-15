@@ -6,8 +6,7 @@ use crate::prelude::*;
 #[display(rename = "snake_case")]
 pub enum SkillName {
     SystemInfo,
-    AudioControl,
-    MusicPlayback,
+    MediaControl,
     PowerManagement,
     ThemeSwitching,
 }

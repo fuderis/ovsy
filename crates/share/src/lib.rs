@@ -14,7 +14,7 @@
 // along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 pub const APP_NAME: &str = "ovsy";
-pub const APP_VERSION: &str = "0.13.0";
+pub const APP_VERSION: &str = "0.13.1";
 
 pub mod result;
 pub use result::{DynError, Result, StdResult};

@@ -329,6 +329,7 @@ pub async fn handle_agent(
             .into());
         }
     };
+    warn!("{:#?}", task.task_info);
     let req_skills = &task.task_info.agent_skills;
 
     // receive agent tools:
