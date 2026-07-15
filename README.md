@@ -1,4 +1,4 @@
-# Ovsy Assistant
+# Ovsy | AI Assistant Kernel
 
 ![Cover](/assets/cover.png)
 
