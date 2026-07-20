@@ -86,7 +86,7 @@ git clone https://github.com/fuderis/ovsy.git && cd ovsy
 bash build.sh
 ```
 
-2. Check the ecosystem status and connected IPC agents
+2. View all available CLI commands
 ```bash
 ovsy --help
 ```
