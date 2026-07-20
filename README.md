@@ -99,4 +99,4 @@ You can contact me via [GitHub](https://github.com/fuderis) or send a message to
 Contributions, bug reports, feature requests, and feedback are always welcome.<br>
 
 *We invite you to participate in testing, finding edge cases, and optimizing Unix IPC pipelines.<br>
-Pull Requests and Issues are highly welcome!*
+Pull Requests and Issues are greatly appreciated!*
