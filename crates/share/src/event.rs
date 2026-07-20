@@ -1,4 +1,3 @@
-use crate::AgentTask;
 use anylm::{Bytes, ToolCall};
 use serde::{Deserialize, Serialize};
 
@@ -38,7 +37,7 @@ impl Event {
     }
 
     /// Sets the event task info
-    pub fn task_info(mut self, task: &AgentTask) -> Self {
+    pub fn task_info(mut self, task: EventTaskInfo) -> Self {
         self.task_info.replace(EventTaskInfo {
             task_id: task.task_id,
             tool_call_id: task.tool_call_id.clone(),

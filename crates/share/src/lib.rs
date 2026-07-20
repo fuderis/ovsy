@@ -16,12 +16,6 @@
 pub const APP_NAME: &str = "ovsy";
 pub const APP_VERSION: &str = "0.13.1";
 
-pub mod result;
-pub use result::{DynError, Result, StdResult};
-
-pub mod settings;
-pub use settings::Settings;
-
 pub mod session_id;
 pub use session_id::SessionId;
 
@@ -40,11 +34,5 @@ pub use user_query::{CompactQuery, HandleQuery, UserSessionsQuery};
 pub mod agent_metadata;
 pub use agent_metadata::AgentMetadata;
 
-pub mod agent_task;
-pub use agent_task::AgentTask;
-
 pub mod status_data;
 pub use status_data::StatusData;
-
-pub mod ping_data;
-pub use ping_data::PingData;
