@@ -96,7 +96,7 @@ ovsy --help
 > This software is distributed under the [GPL 3.0](https://github.com/fuderis/ovsy/blob/main/LICENSE.md) license.
 
 You can contact me via [GitHub](https://github.com/fuderis) or send a message to my [E-Mail](mailto:synapdrake@ya.ru).
-Contributions, bug reports, feature requests, and feedback are always welcome.
+Contributions, bug reports, feature requests, and feedback are always welcome.<br>
 
-> We invite you to participate in testing, finding edge cases, and optimizing Unix IPC pipelines.<br>
-Pull Requests and Issues are highly welcome!
+*We invite you to participate in testing, finding edge cases, and optimizing Unix IPC pipelines.<br>
+Pull Requests and Issues are highly welcome!*
