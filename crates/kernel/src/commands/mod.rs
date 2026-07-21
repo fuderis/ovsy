@@ -1,8 +1,8 @@
 pub mod chat;
 pub mod health;
-pub mod system;
+pub mod server;
 
-use colored::*;
+use crossterm::style::Stylize;
 
 pub fn section(title: &str) {
     println!();
@@ -20,6 +20,22 @@ pub fn info(label: &str, message: &str) {
         );
     } else {
         println!("  {} {}", "•".cyan(), message);
+    }
+}
+
+pub fn item(label: &str, message: &str) {
+    let message = message.replace('\n', "\n     ");
+
+    if !label.is_empty() {
+        println!(
+            "  {} {}{} {}",
+            "└─".cyan(),
+            label.bold(),
+            ":".bold(),
+            message
+        );
+    } else {
+        println!("  {} {}", "└─".cyan(), message);
     }
 }
 

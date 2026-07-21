@@ -36,7 +36,7 @@ use pearce::Server;
 use prelude::*;
 
 pub const APP_NAME: &str = "ovsy";
-pub const APP_VERSION: &str = "0.14.2";
+pub const APP_VERSION: &str = "0.14.3";
 
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
@@ -98,9 +98,9 @@ async fn main() -> Result<()> {
     if let Err(e) = match cli.command.unwrap_or(Commands::Chat) {
         //     SYSTEM
         Commands::Serve => serve().await,
-        Commands::Start { lms } => cmds::system::handle_start(lms).await,
-        Commands::Stop { lms } => cmds::system::handle_stop(lms).await,
-        Commands::Restart { lms } => cmds::system::handle_restart(lms).await,
+        Commands::Start { lms } => cmds::server::handle_start(lms).await,
+        Commands::Stop { lms } => cmds::server::handle_stop(lms).await,
+        Commands::Restart { lms } => cmds::server::handle_restart(lms).await,
 
         //     HEALTH
         Commands::Status => cmds::health::handle_status().await,

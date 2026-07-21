@@ -108,15 +108,12 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
                         .await;
 
                     if status.map_or(false, |s| s.success()) {
-                        info("Model", &str!("{model} (Loaded)").green().to_string());
+                        item("", &str!("{model} (Loaded)").green().to_string());
                     } else {
                         warn(&format!("Failed to load model: {model}"));
                     }
                 } else {
-                    info(
-                        "Model",
-                        &str!("{model} (Already loaded)").dimmed().to_string(),
-                    );
+                    item("", &str!("{model} (Already loaded)").dim().to_string());
                 }
             }
         }

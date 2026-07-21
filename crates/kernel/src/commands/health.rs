@@ -72,7 +72,7 @@ pub async fn handle_status() -> Result<()> {
 
             match data {
                 StatusData::Success { agents } => {
-                    section("Loaded Agents");
+                    info("Agents", "");
 
                     if agents.is_empty() {
                         warn("No agents loaded");
@@ -81,7 +81,7 @@ pub async fn handle_status() -> Result<()> {
                             name, description, ..
                         } in agents
                         {
-                            info(&name, &description.trim());
+                            item(&name, &description.trim());
                         }
                     }
                 }
@@ -124,20 +124,24 @@ pub async fn handle_status() -> Result<()> {
 
         for line in lms_raw.lines() {
             let line = line.trim();
-            if line.contains("Loaded Models") {
+            if line.contains("Models") {
                 in_models_block = true;
                 continue;
             }
 
             if in_models_block && line.starts_with('·') {
                 if !found_any {
-                    println!();
-                    info("Loaded Models", "");
+                    info("Models", "");
                 }
 
                 found_any = true;
                 let model_info = line.trim_start_matches('·').trim();
-                info("", &model_info.dimmed().to_string());
+                if let Some((name, size)) = model_info.split_once(" - ") {
+                    let short = name.rsplit('/').next().unwrap_or(name);
+                    item("", &format!("{short} {}", size.dim()));
+                } else {
+                    item("", &model_info);
+                }
             }
         }
         if !found_any && in_models_block {
