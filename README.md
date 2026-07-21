@@ -3,7 +3,7 @@
 ![Cover](/assets/cover.png)
 
 **The high-density, low-latency multi-agent engine engineered for social networks, enterprise chat platforms, and private local AI assistants.**
-> Engineered to power millions of chat messages without burning your budget or server RAM.<br>
+*Engineered to power millions of chat messages without burning your budget or server RAM.*<br>
 
 Built in asynchronous Rust, Ovsy discards bulky network abstractions (MCP, JSON-RPC over TCP/HTTP) in favor of sub-millisecond local IPC.
 It is purpose-built to process thousands of concurrent chat queries instantly, drastically cut token expenditure, and run seamlessly on minimal hardware.
