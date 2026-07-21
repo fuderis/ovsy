@@ -42,7 +42,7 @@ The kernel coordinates user queries through a multi-stage orchestration engine g
 
 ## Key Architectural Advantages
 
-1. Two-Phase Agent CLI Lifecycle (Zero-Idle)
+### 1. Two-Phase Agent CLI Lifecycle (Zero-Idle)
 
 To eliminate initialization lags, the lazy /init endpoint has been completely deprecated. Inter-agent coordination has been refactored into a deterministic command-line interface (CLI) powered by clap:
 
@@ -52,7 +52,7 @@ To eliminate initialization lags, the lazy /init endpoint has been completely de
   * **serve Phase:** Upon task graph activation, the kernel executes the agent as a long-running IPC daemon,
   initializing a local socket in memory to begin processing data streams immediately.
 
-2. Concurrent Engine and Self-Healing Loop
+### 2. Concurrent Engine and Self-Healing Loop
 
   * **Parallel Queues:** The Orchestration Engine translates user prompts into a directed dependency tree.
   Tasks without upstream locks are parallelized instantly across isolated Tokio worker threads.
@@ -64,7 +64,7 @@ To eliminate initialization lags, the lazy /init endpoint has been completely de
   from downstream tools in real time. The error trace is wrapped back into the system context,
   triggering an immediate retry pass without bringing down the pipeline.
 
-3. Unix-Native IPC and Process Resilience
+### 3. Unix-Native IPC and Process Resilience
 
 The network loopback stack is fully bypassed to minimize system call overhead.
 
@@ -77,7 +77,7 @@ The network loopback stack is fully bypassed to minimize system call overhead.
     before execution. On macOS, a dedicated stdin monitor thread intercepts EOF events if the orchestrator terminates unexpectedly,
     ensuring clean socket removal from the filesystem.
 
-4. Inline Expression Evaluation (Boa Engine)
+### 4. Inline Expression Evaluation (Boa Engine)
 
 To offload minor calculation passes from the LLM, a native Rust JavaScript interpreter `Boa Engine` is embedded directly
 into the task loop. Deterministic algorithms (arithmetic, timestamps, string transformations) are evaluated
