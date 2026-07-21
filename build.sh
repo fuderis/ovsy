@@ -9,31 +9,28 @@ set -Eeuo pipefail
 INSTALL_DIR="/usr/local/bin"
 
 ###############################################################################
-# Colors
+# Output Style
 ###############################################################################
 
 NC=$'\033[0m'
 BOLD=$'\033[1m'
 
-BLUE=$'\033[38;5;33m'
-GREEN=$'\033[38;5;42m'
-RED=$'\033[38;5;196m'
-GRAY=$'\033[38;5;245m'
-
-###############################################################################
-# Output
-###############################################################################
+BLUE=$'\033[34m'
+CYAN=$'\033[1;36m'
+GREEN=$'\033[1;32m'
+RED=$'\033[1;31m'
+GRAY=$'\033[0;37m'
 
 section() {
-    printf "\n${BLUE}==>${NC} ${BOLD}%s${NC}\n\n" "$1"
+    printf "\n${CYAN}▶${NC} ${BOLD}%s${NC}\n" "$1"
 }
 
-field() {
+info() {
     printf "  ${GRAY}%-12s${NC} %s\n" "$1" "$2"
 }
 
 item() {
-    printf "  %-18s ${GRAY}→${NC} ${BLUE}%s${NC}\n" "$1" "$2"
+    printf "  ${GREEN}✓${NC} %s ${GRAY}→${NC} %s\n" "$1" "${BLUE}$2${NC}"
 }
 
 success() {
@@ -53,10 +50,19 @@ die() {
 # Requirements
 ###############################################################################
 
-command -v cargo >/dev/null || die "cargo not found"
-command -v jq >/dev/null || die "jq not found"
+section "Checking requirements"
 
-[[ -f Cargo.toml ]] || die "Cargo.toml not found"
+command -v cargo >/dev/null ||
+    die "cargo is not installed"
+
+command -v jq >/dev/null ||
+    die "jq is not installed"
+
+[[ -f Cargo.toml ]] ||
+    die "Cargo.toml not found"
+
+success "Environment ready"
+
 
 ###############################################################################
 # Metadata
@@ -74,7 +80,8 @@ mapfile -t PACKAGES < <(
     ' <<< "$METADATA"
 )
 
-[[ ${#PACKAGES[@]} -gt 0 ]] || die "No binaries found"
+[[ ${#PACKAGES[@]} -gt 0 ]] ||
+    die "No binaries found"
 
 declare -A BIN_MAP
 
@@ -109,18 +116,20 @@ else
     PROJECT_TYPE="Package"
 fi
 
-field "Type" "$PROJECT_TYPE"
-field "Packages" "${#PACKAGES[@]}"
-field "Binaries" "$TOTAL_BINARIES"
+info "Type" "$PROJECT_TYPE"
+info "Packages" "${#PACKAGES[@]}"
+info "Binaries" "$TOTAL_BINARIES"
 
 printf "\n"
 
 for package in "${PACKAGES[@]}"; do
+
     printf "  ${BOLD}%s${NC}\n" "$package"
 
     for binary in ${BIN_MAP[$package]}; do
-        printf "    └─ %s\n" "$binary"
+        printf "    ${GRAY}└─${NC} %s\n" "$binary"
     done
+
 done
 
 
@@ -144,17 +153,16 @@ for package in "${PACKAGES[@]}"; do
 done
 
 BUILD_CMD+=("$@")
-
 "${BUILD_CMD[@]}"
 
-success "Compilation successful"
+success "Compilation completed"
 
 
 ###############################################################################
 # Install
 ###############################################################################
 
-section "Installing"
+section "Installing binaries"
 
 if [[ -w "$INSTALL_DIR" ]]; then
     INSTALL=(install)
@@ -162,30 +170,29 @@ else
     INSTALL=(sudo install)
 fi
 
-
 for package in "${PACKAGES[@]}"; do
-
     for binary in ${BIN_MAP[$package]}; do
 
         SOURCE="target/release/$binary"
 
         [[ -f "$SOURCE" ]] ||
-            die "Binary not found: $SOURCE"
+            die "Binary missing: $SOURCE"
+
 
         "${INSTALL[@]}" \
             -m755 \
             "$SOURCE" \
             "$INSTALL_DIR/$binary"
 
+
         item "$binary" "$INSTALL_DIR/$binary"
-
     done
-
 done
 
 
 ###############################################################################
-# Done
+# Completed
 ###############################################################################
 
-printf "\n${GREEN}${BOLD}Done.${NC}\n"
+section "Completed"
+success "Installation finished"

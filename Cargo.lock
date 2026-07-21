@@ -2633,9 +2633,9 @@ dependencies = [
 
 [[package]]
 name = "macron"
-version = "0.4.1"
+version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a696adb858d28297e9dc74565c66a4898a1e7181cedab9df78a909ab66151eda"
+checksum = "d9199c3d4495ca7e0d0266d19f80c820623a9608a210810940e049608ee5e547"
 dependencies = [
  "async-recursion",
  "macron-collections",
@@ -2645,7 +2645,7 @@ dependencies = [
  "macron-impl-into 0.2.0",
  "macron-input",
  "macron-inputln",
- "macron-path 0.3.1",
+ "macron-path 0.3.2",
  "macron-regex",
  "macron-str",
 ]
@@ -2782,9 +2782,9 @@ dependencies = [
 
 [[package]]
 name = "macron-path"
-version = "0.3.1"
+version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "01f41aec3a5fa8ecddb5c84cf58b2aeeede29dc86509a9f05733d54efabdc0f7"
+checksum = "ef61103a4139333d8775ea33ac1672f81ee48fc886961b96a64f96a929a611ca"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3491,7 +3491,7 @@ dependencies = [
  "crossterm",
  "hyperrat",
  "libc",
- "macron 0.4.1",
+ "macron 0.4.2",
  "ovsy-share",
  "pearce",
  "ratatui",
@@ -3511,7 +3511,7 @@ dependencies = [
  "anylm",
  "atoman 0.4.2",
  "chrono",
- "macron 0.4.1",
+ "macron 0.4.2",
  "rand 0.10.1",
  "serde",
  "serde_json",
@@ -3526,7 +3526,7 @@ dependencies = [
  "atoman 0.4.2",
  "chrono",
  "clap",
- "macron 0.4.1",
+ "macron 0.4.2",
  "music-index",
  "ovsy-share",
  "pearce",
