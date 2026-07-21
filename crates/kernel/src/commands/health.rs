@@ -1,58 +1,49 @@
+use super::*;
 use crate::prelude::*;
-use colored::*;
+
 use ovsy_share::{AgentMetadata, StatusData};
-use std::io::{self, Write};
 use tokio::process::Command;
 
 /// API: Handles the server refreshing (hot-reload)
 pub async fn handle_refresh() -> Result<()> {
-    let dim = Color::AnsiColor(247);
     let port = Settings::get().server.port;
-
-    print!("{} ", "Updating Ovsy server...".bold());
-    io::stdout().flush().ok();
-
     let client = Client::tcp();
+
+    section("Refreshing Server");
+
     let res = client
-        .post(&str!("http://127.0.0.1:{port}/refresh"))
+        .get(&str!("http://127.0.0.1:{port}/refresh"))
         .send()
         .await;
 
     match res {
         Ok(response) => {
-            println!("{}", str!("Online (port {port})").green());
+            info("Status", &str!("Online (port {port})").green().to_string());
 
             let data: StatusData = response
                 .json()
                 .await
-                .map_err(|e| str!(str!("Failed to parse response: {e}")))?;
+                .map_err(|e| str!("Failed to parse response: {e}"))?;
 
             match data {
-                StatusData::Success { agents } => {
-                    if agents.is_empty() {
-                        println!("   {}", "No agents loaded".yellow().dimmed());
-                    } else {
-                        for AgentMetadata { name, .. } in agents {
-                            println!(" • {}", name.dimmed());
-                        }
-                    }
-
-                    println!("\n{}", "Settings synchronized.".bright_white());
+                StatusData::Success { .. } => {
+                    success("Settings synchronized.");
                 }
-                StatusData::Error { error } => {
-                    println!("   {} {}", "Error:".red().bold(), error.white());
+
+                StatusData::Error { error: err_msg } => {
+                    error(err_msg.into());
                 }
             }
         }
+
         Err(_) => {
-            println!("{}", "Offline".red());
-            return Err(str!("Server is not responding. Check if it's running.").into());
+            info("Server status", &"Offline".red().to_string());
+            warn("Server is not responding. Check if it's running.");
+            return Err(str!("Server is offline").into());
         }
     }
 
-    super::underline();
-    println!("{}\n", "Environment synchronized.".italic().color(dim));
-
+    println!();
     Ok(())
 }
 
@@ -60,6 +51,8 @@ pub async fn handle_refresh() -> Result<()> {
 pub async fn handle_status() -> Result<()> {
     let port = Settings::get().server.port;
     let client = Client::tcp();
+
+    section("Checking Server");
 
     // checking Ovsy server:
     let res = client
@@ -69,33 +62,41 @@ pub async fn handle_status() -> Result<()> {
 
     match res {
         Ok(response) => {
-            println!(
-                "Checking Ovsy server... {}",
-                str!("Online ({port})").green()
-            );
+            info("Status", &str!("Online (port {port})").green().to_string());
 
             // parsing agents list:
-            if let Ok(data) = response.json::<StatusData>().await {
-                match data {
-                    StatusData::Success { agents } => {
-                        if agents.is_empty() {
-                            println!("   {}", "No agents loaded".yellow().dimmed());
-                        } else {
-                            for AgentMetadata { name, .. } in agents {
-                                println!(" • {}", name.dimmed());
-                            }
+            let data: StatusData = response
+                .json()
+                .await
+                .map_err(|e| str!("Failed to parse response: {e}"))?;
+
+            match data {
+                StatusData::Success { agents } => {
+                    section("Loaded Agents");
+
+                    if agents.is_empty() {
+                        warn("No agents loaded");
+                    } else {
+                        for AgentMetadata {
+                            name, description, ..
+                        } in agents
+                        {
+                            info(&name, &description.trim());
                         }
                     }
-                    StatusData::Error { error } => {
-                        println!("   {} {}", "Error:".red(), error.dimmed());
-                    }
+                }
+
+                StatusData::Error { error: err_msg } => {
+                    error(format!("Server error: {err_msg}").into());
                 }
             }
         }
         Err(_) => {
-            println!("Checking Ovsy server... {}", "Offline".red());
+            info("Status", &"Offline".red().to_string());
         }
     }
+
+    section("Checking LMS Server");
 
     // checking LMS server:
     let lms_out = Command::new("lms").args(["status"]).output().await;
@@ -112,15 +113,12 @@ pub async fn handle_status() -> Result<()> {
         .map(|p| p.trim_matches(|c: char| !c.is_numeric()))
         .unwrap_or("unknown");
 
-    let lms_display = if lms_running {
-        str!("Online ({lms_port})").green()
-    } else {
-        "Offline".red()
-    };
-
-    println!("Checking LMS server... {}", lms_display);
-
     if lms_running {
+        info(
+            "Status",
+            &str!("Online (port {lms_port})").green().to_string(),
+        );
+
         let mut in_models_block = false;
         let mut found_any = false;
 
@@ -130,25 +128,35 @@ pub async fn handle_status() -> Result<()> {
                 in_models_block = true;
                 continue;
             }
+
             if in_models_block && line.starts_with('·') {
+                if !found_any {
+                    println!();
+                    info("Loaded Models", "");
+                }
+
                 found_any = true;
                 let model_info = line.trim_start_matches('·').trim();
-                println!(" ∟ {}", model_info.dimmed());
+                info("", &model_info.dimmed().to_string());
             }
         }
         if !found_any && in_models_block {
-            println!("   {}", "None".yellow().dimmed());
+            warn("No models currently loaded in LMS");
         }
+    } else {
+        info("Status", &"Offline".red().to_string());
     }
 
+    println!();
     Ok(())
 }
 
-/// API: Opens the config on the default editor
+/// API: Opens the config in the default editor
 pub async fn handle_config() -> Result<()> {
     let path = Settings::path();
 
-    println!("Opening config: {}", path.display().to_string().white());
+    section("Configuration");
+    info("Path", &path.display().to_string().white().to_string());
 
     #[cfg(target_os = "linux")]
     let opener = "xdg-open";
@@ -157,10 +165,11 @@ pub async fn handle_config() -> Result<()> {
     let opener = "open";
 
     #[cfg(any(target_os = "linux", target_os = "macos"))]
-    Command::new(opener)
-        .arg(path)
-        .spawn()
-        .map_err(|e| str!("Failed to open config: {e}"))?;
+    match Command::new(opener).arg(&path).spawn() {
+        Ok(_) => success("Config file opened in default editor."),
+        Err(e) => error(str!("Failed to open config: {e}").into()),
+    }
 
+    println!();
     Ok(())
 }

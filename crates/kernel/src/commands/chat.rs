@@ -1,3 +1,4 @@
+use super::{error, info, success};
 use crate::{
     chat::{self, AppState, ChatAction},
     prelude::*,
@@ -104,15 +105,15 @@ pub async fn handle_chat() -> Result<()> {
     execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
 
     // GRACEFUL SHUTDOWN: Closing the session on the backend
-    println!("Flushing DB records and closing session cleanly...");
+    info("", "Flushing DB records and closing session cleanly...");
 
     let finish_url = format!("http://127.0.0.1:{port}/sessions/{}/finish", app.session_id);
     let client = Client::tcp();
 
     if let Err(e) = client.post(&finish_url).send().await {
-        eprintln!("Warning: Failed to finish session cleanly on backend: {e}");
+        error(str!("Warning: Failed to finish session cleanly on backend: {e}").into());
     } else {
-        println!("Ovsy session closed successfully.");
+        success("Session closed successfully.");
     }
 
     res

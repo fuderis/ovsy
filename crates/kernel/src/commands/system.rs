@@ -1,40 +1,35 @@
+use super::*;
 use crate::prelude::*;
+
 use anylm::ApiKind;
-use colored::*;
-use std::{
-    io::{self, Write},
-    net::TcpListener,
-    process::Stdio,
-};
+use std::{net::TcpListener, process::Stdio, time::Duration};
 use tokio::{process::Command, time::sleep};
 
 /// API: Handles the server launching
 pub async fn handle_start(start_lms: bool) -> Result<()> {
-    // running Ovsy server:
-    let port = Settings::get().server.port;
-    print!("Starting Ovsy server... ");
-    io::stdout().flush().ok();
+    section("Starting Services");
 
-    // check port for busy:
+    // 1. Ovsy Server
+    let port = Settings::get().server.port;
     let is_port_free = TcpListener::bind(str!("127.0.0.1:{port}")).is_ok();
+
     if is_port_free {
         Command::new(path!("$"))
             .arg("serve")
             .current_dir(path!("$/"))
             .kill_on_drop(false)
             .spawn()?;
+        info("Ovsy Server", &"Online".green().to_string());
+    } else {
+        warn(&format!("Ovsy Server: Port {port} is already in use"));
     }
-    println!("{}", "Online".green());
 
-    // running LMS server:
+    // 2. LMS Server
     let ai_conf = &Settings::get().assistant;
     if start_lms
         && (ai_conf.completions.kind == ApiKind::LmStudio
             || ai_conf.embeddings.kind == ApiKind::LmStudio)
     {
-        print!("Starting LMS server... ");
-        io::stdout().flush().ok();
-
         let is_running = match Command::new("lms").args(["status"]).output().await {
             Ok(out) => String::from_utf8_lossy(&out.stdout).contains("ON"),
             _ => false,
@@ -50,7 +45,7 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
                 Ok(_child) => {
                     let mut is_ok = false;
 
-                    // 100 tries * 100 мс = 10 seconds to start:
+                    // 100 tries * 100 ms = 10 seconds to start:
                     for _ in 0..100 {
                         sleep(Duration::from_millis(100)).await;
 
@@ -65,20 +60,21 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
                     }
 
                     if is_ok {
-                        println!("{}", "Online".green());
+                        info("LMS Server", &"Online".green().to_string());
                     } else {
-                        println!("{}", "Failed".red());
+                        info("LMS Server", &"Failed to start".red().to_string());
                     }
                 }
                 Err(e) => {
-                    error!("[lms_spawn] Сбой запуска процесса: {e}");
-                    println!("{}", "Failed".red());
+                    error(format!("Failed to spawn LMS process: {e}").into());
+                    info("LMS Server", &"Failed".red().to_string());
                 }
             }
         } else {
-            println!("{}", "Online".green());
+            info("LMS Server", &"Online".green().to_string());
         }
 
+        // 3. Loading Models
         let loaded_models = Command::new("lms")
             .args(["ps"])
             .output()
@@ -101,39 +97,45 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
         }
 
         for model in models {
-            print!(" ∟ Loading model {}... ", model.dimmed());
-            io::stdout().flush().ok();
-
             if !model.is_empty() {
                 if !loaded_models.contains(model) {
-                    Command::new("lms")
+                    let status = Command::new("lms")
                         .args(["load", model])
                         .stdout(Stdio::null())
                         .stderr(Stdio::null())
                         .stdin(Stdio::null())
                         .status()
-                        .await
-                        .ok();
+                        .await;
+
+                    if status.map_or(false, |s| s.success()) {
+                        info("Model", &str!("{model} (Loaded)").green().to_string());
+                    } else {
+                        warn(&format!("Failed to load model: {model}"));
+                    }
+                } else {
+                    info(
+                        "Model",
+                        &str!("{model} (Already loaded)").dimmed().to_string(),
+                    );
                 }
-                println!("{}", "Loaded".green());
             }
         }
     }
 
-    super::underline();
-    println!("{}\n", "Ready for requests!".italic().dimmed());
+    println!();
+    success("Ready for requests!");
+    println!();
 
     Ok(())
 }
 
-/// API: Handles the server shutdouwn
+/// API: Handles the server shutdown
 pub async fn handle_stop(stop_lms: bool) -> Result<()> {
+    section("Stopping Services");
+
     let port = Settings::get().server.port;
 
-    // stop Ovsy server:
-    print!("Shutting down Ovsy Server... ");
-    io::stdout().flush().ok();
-
+    // 1. Stop Ovsy server
     #[cfg(unix)]
     {
         let _ = Command::new("sh")
@@ -149,16 +151,17 @@ pub async fn handle_stop(stop_lms: bool) -> Result<()> {
         );
         let _ = Command::new("cmd").args(["/C", &cmd]).output().await;
     }
-    println!("{}", "Offline".red());
+    info("Ovsy Server", &"Offline".red().to_string());
 
-    // stop LMS server:
+    // 2. Stop LMS server
     let ai_conf = &Settings::get().assistant;
     if stop_lms
         && (ai_conf.completions.kind == ApiKind::LmStudio
             || ai_conf.embeddings.kind == ApiKind::LmStudio)
     {
-        print!("Shutting down LMS server... ");
-        io::stdout().flush().ok();
+        // Unload models first
+        let _ = Command::new("lms").args(["unload", "--all"]).output().await;
+        info("LMS Models", &"Unloaded".red().to_string());
 
         Command::new("lms")
             .args(["server", "stop"])
@@ -168,33 +171,20 @@ pub async fn handle_stop(stop_lms: bool) -> Result<()> {
             .status()
             .await
             .ok();
-        println!("{}", "Offline".red());
-
-        print!(" ∟ Unloading models... ");
-        io::stdout().flush().ok();
-
-        // unload all LM Studio models:
-        let _ = Command::new("lms").args(["unload", "--all"]).output().await;
-        println!("{}", "Unloaded".red());
+        info("LMS Server", &"Offline".red().to_string());
     }
 
-    super::underline();
-    println!(
-        " {}\n",
-        "Processes terminated."
-            .italic()
-            .color(Color::AnsiColor(247))
-    );
+    println!();
+    success("Processes terminated.");
+    println!();
+
     Ok(())
 }
 
 /// API: Handles the server restarting
 pub async fn handle_restart(restart_lms: bool) -> Result<()> {
-    // stop server:
     handle_stop(restart_lms).await?;
     sleep(Duration::from_millis(800)).await;
-
-    // starting away:
     handle_start(restart_lms).await?;
 
     Ok(())

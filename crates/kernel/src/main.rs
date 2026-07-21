@@ -32,12 +32,11 @@ pub mod handlers;
 pub mod chat;
 
 use clap::{Parser, Subcommand};
-use colored::*;
 use pearce::Server;
 use prelude::*;
 
 pub const APP_NAME: &str = "ovsy";
-pub const APP_VERSION: &str = "0.14.1";
+pub const APP_VERSION: &str = "0.14.2";
 
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
@@ -111,7 +110,7 @@ async fn main() -> Result<()> {
         //     CHAT
         Commands::Chat => cmds::chat::handle_chat().await,
     } {
-        eprintln!("\n{}: {}", "Error".red().bold(), e.to_string().white());
+        cmds::error(e);
         std::process::exit(1);
     }
 
@@ -128,8 +127,9 @@ async fn serve() -> Result<()> {
     // start server:
     Server::new()
         //    HEALTH
-        .post("/status", hands::health::handle_status)
-        .post("/refresh", hands::health::handle_refresh)
+        .get("/ping", hands::health::handle_ping)
+        .get("/status", hands::health::handle_status)
+        .get("/refresh", hands::health::handle_refresh)
         //    USERS
         .post("/users/{uid}/sessions", hands::user::handle_list)
         //    SESSIONS

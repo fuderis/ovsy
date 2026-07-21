@@ -91,7 +91,7 @@ impl Agent {
             attempts += 1;
 
             let request_result =
-                time::timeout(Duration::from_millis(100), client.post("/ping").send()).await;
+                time::timeout(Duration::from_millis(100), client.get("/ping").send()).await;
 
             match request_result {
                 Ok(Ok(response)) if response.status().is_success() => {

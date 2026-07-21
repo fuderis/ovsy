@@ -68,22 +68,14 @@ async fn main() -> Result<()> {
         }
 
         Commands::Serve => {
-            #[cfg(target_os = "macos")]
-            {
-                tokio::spawn(async {
-                    use tokio::io::AsyncReadExt;
-                    let mut std_in = tokio::io::stdin();
-                    let mut buf = [0; 1];
-                    if let Ok(0) = std_in.read(&mut buf).await {
-                        std::process::exit(0);
-                    }
-                });
-            }
+            ovsy_share::macos_protect();
 
             // start server:
             let sock = path!("$temp/ovsy/uds/{}.sock", Settings::get().metadata.name);
             Server::new()
-                .post("/ping", hands::net::handle_ping)
+                //    HEALTH
+                .get("/ping", hands::health::handle_ping)
+                //    TOOLS
                 .post("/tools/list", hands::tools::handle_tools_list)
                 .post("/tools/call/{tool}", hands::tools::handle_tool_call)
                 .run(sock)

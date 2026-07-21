@@ -1,14 +1,35 @@
-# Ovsy — Ultra-Fast AI Kernel (Experimental)
+# Ovsy — Ultra-Fast AI Assistant Kernel
 
 ![Cover](/assets/cover.png)
 
-Ovsy is a low-level, high-performance assistant kernel for multi-agent AI systems, engineered on top of the asynchronous Rust runtime.
-The project completely discards universal industry abstraction standards (such as the Model Context Protocol — MCP)
-and traditional network overhead (JSON-RPC over TCP/HTTP) in favor of sub-millisecond inter-process communication (IPC).<br>
+**The high-density, low-latency multi-agent engine engineered for social networks, enterprise chat platforms, and private local AI assistants.**
+> Engineered to power millions of chat messages without burning your budget or server RAM.<br>
 
-> **WARNING:** This project is currently undergoing intensive refactoring, deep testing, and experimental development.
-Kernel interfaces and IPC protocol specifications are subject to breaking changes.
-It is not recommended for production environments without prior source code auditing.
+Built in asynchronous Rust, Ovsy discards bulky network abstractions (MCP, JSON-RPC over TCP/HTTP) in favor of sub-millisecond local IPC.
+It is purpose-built to process thousands of concurrent chat queries instantly, drastically cut token expenditure, and run seamlessly on minimal hardware.
+
+> **⚠️ EXPERIMENTAL:** Ovsy is undergoing rapid architectural evolution. Interfaces and IPC contracts may break between commits.
+Source audit is recommended before production deployment.
+
+## Key Features
+
+* **Sub-Millisecond Response Latency:** Powered by pure Unix Domain Sockets (`AF_UNIX`).
+  Eliminates loopback network stacks to stream responses to chat clients with zero delay.
+
+* **Extreme Token & Cost Savings:** Subagents receive isolated, surgical subtask context instead of bloated histories.
+  Combined with an embedded JS engine (`Boa`) for local math/parsing, Ovsy slashes your LLM API bills.
+
+* **Zero Attention Decay (No Hallucinations):** Strict context isolation ensures subagents never get lost in massive chat logs,
+  keeping automated bot responses precise, reliable, and deterministic.
+
+* **0 MB Idle Footprint:** Thanks to a 2-phase CLI lifecycle (`metadata` ➔ `serve`), background agents consume **zero RAM when idle**.
+  Spin up thousands of subagents without frying server resources.
+
+* **Self-Healing Stream Engine:** Auto-recovers from stream breaks, LLM output errors, or malformed JSON arguments in real time,
+  guaranteeing uninterrupted chat streams for users.
+
+* **Enterprise-Grade Isolation & Safety:** Native OS-level process management (`PR_SET_PDEATHSIG`, RAII drops) guarantees zero zombie processes
+  and isolated memory boundaries for custom subagent workflows.
 
 ## Orchestration Architecture
 
@@ -75,12 +96,32 @@ The core kernel externalizes infrastructural operations into specialized, zero-o
 Ovsy offers developers and stakeholders a clean, enterprise-ready AI assistant environment optimized for speed,
 predictability, and structural safety.
 
-## Quick Test Drive
+## Requirements
 
-Compilation and deployment utilize standard Cargo toolchains. Windows environments are not supported.
-Bash
+* **Supported OS:** Unix-like operating systems  (`Linux`, `macOS`, `BSD`).
+* **Rust toolchain:** `cargo` and `rustc` (2024 edition or newer)
+* **JSON processor:** `jq` (required by `build.sh`)
 
-1. Clone and automatically build the release using the script
+1. Installing Rust
+
+```bash
+# 1. Install rustup
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+
+# 2. Install and set nightly toolchain
+rustup toolchain install nightly
+rustup default nightly
+```
+
+2. Installing JQ
+
+* **Arch Linux:** `sudo pacman -S jq`
+* **Ubuntu / Debian:** `sudo apt install -y jq`
+* **macOS:** `brew install jq`
+
+## Installation
+
+1. Clone the repository and run the build script:
 ```bash
 git clone https://github.com/fuderis/ovsy.git && cd ovsy
 bash build.sh

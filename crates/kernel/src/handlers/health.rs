@@ -1,6 +1,11 @@
 use crate::{Manager, prelude::*};
 use ovsy_share::StatusData;
 
+/// API: Handles the server ping
+pub async fn handle_ping() -> Response {
+    Response::ok().text("pong")
+}
+
 /// Returns the server status & agents list
 pub async fn handle_status() -> Response {
     let agents = Manager::agents_list().await;

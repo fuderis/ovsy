@@ -201,9 +201,9 @@ dependencies = [
 
 [[package]]
 name = "atoman"
-version = "0.4.2"
+version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84dd822820ed59257cdd0327143cf3187d09c1f07b340c5cc50e94a28da223f7"
+checksum = "e492566a905cd4cc67852b6b399c883dfa36472fd1d7b4611f7cf67279c2f92e"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -3482,7 +3482,7 @@ name = "ovsy"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman 0.4.2",
+ "atoman 0.4.4",
  "boa_engine",
  "chrono",
  "cistern",
@@ -3509,7 +3509,7 @@ name = "ovsy-share"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman 0.4.2",
+ "atoman 0.4.4",
  "chrono",
  "macron 0.4.2",
  "rand 0.10.1",
@@ -3523,7 +3523,7 @@ name = "ovsy-system-agent"
 version = "0.0.0"
 dependencies = [
  "anylm",
- "atoman 0.4.2",
+ "atoman 0.4.4",
  "chrono",
  "clap",
  "macron 0.4.2",
@@ -3628,7 +3628,7 @@ version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8e426dc971123fa21e8e23fb5c8fe6fda7131f4f7f33f5915f665029094f99d2"
 dependencies = [
- "atoman 0.4.2",
+ "atoman 0.4.4",
  "axum",
  "bytes",
  "futures",
@@ -4966,7 +4966,7 @@ version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f52718270ac77c7359c32d3fbc42c83fc78b151664bc69afffc2a4c4d14bcc3d"
 dependencies = [
- "atoman 0.4.2",
+ "atoman 0.4.4",
  "battery",
  "chrono",
  "cpal",
