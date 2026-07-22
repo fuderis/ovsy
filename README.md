@@ -4,104 +4,200 @@
 
 <h2 align="center">Ovsy Kernel</h2>
 <p align="center">
-  <strong>The multi-agent kernel for chat platforms, social networks, and private local assistants.</strong><br>
-  Lightweight, low-latency, and built in Rust.
+  <strong>A Unix-native orchestration kernel for lightweight AI assistants.</strong><br>
+  Built in Rust with a focus on predictable execution, low latency, and efficient LLM orchestration.
 </p>
 
 ---
 
 <img src="https://raw.githubusercontent.com/fuderis/ovsy/main/assets/cover.png" alt="Cover" width="100%" />
 
-Ovsy discards bulky network abstractions (MCP, JSON-RPC over TCP/HTTP) in favor of sub-millisecond local IPC.
-It is purpose-built to process thousands of concurrent chat queries instantly, drastically cut token expenditure, and run seamlessly on minimal hardware.
+Ovsy is an orchestration kernel for local and server-side AI assistants.<br>
+
+Instead of building on top of HTTP, JSON-RPC, or heavyweight orchestration frameworks, Ovsy uses native Unix IPC,
+centralized task scheduling, and isolated worker processes to execute AI workflows with minimal overhead.<br>
+
+The result is a system optimized for predictable execution, low latency, and efficient LLM usage instead of unrestricted orchestration flexibility.<br>
 
 > **⚠️ EXPERIMENTAL:** Ovsy is undergoing rapid architectural evolution. Interfaces and IPC contracts may break between commits.
 Source audit is recommended before production deployment.
 
-## Key Features
 
-* **Sub-Millisecond Response Latency:** Powered by pure Unix Domain Sockets (`AF_UNIX`).
-  Eliminates loopback network stacks to stream responses to chat clients with zero delay.
+## Design Principles
 
-* **Extreme Token & Cost Savings:** Subagents receive isolated, surgical subtask context instead of bloated histories.
-  Combined with an embedded JS engine (`Boa`) for local math/parsing, Ovsy slashes your LLM API bills.
+### 1. Kernel-owned orchestration
 
-* **Zero Attention Decay (No Hallucinations):** Strict context isolation ensures subagents never get lost in massive chat logs,
-  keeping automated bot responses precise, reliable, and deterministic.
+**The kernel is the only component responsible for planning and scheduling work.**<br>
 
-* **0 MB Idle Footprint:** Thanks to a 2-phase CLI lifecycle (`metadata` ➔ `serve`), background agents consume **zero RAM when idle**.
-  Spin up thousands of subagents without frying server resources.
 
-* **Self-Healing Stream Engine:** Auto-recovers from stream breaks, LLM output errors, or malformed JSON arguments in real time,
-  guaranteeing uninterrupted chat streams for users.
+Agents never communicate directly with each other. They only receive their own task description and the outputs of dependent tasks,
+making execution deterministic and easier to reason about.
 
-* **Enterprise-Grade Isolation & Safety:** Native OS-level process management (`PR_SET_PDEATHSIG`, RAII drops) guarantees zero zombie processes
-  and isolated memory boundaries for custom subagent workflows.
+### 2. Task-scoped context
 
-## Orchestration Architecture
+**Each agent receives only the context required for its task instead of the complete conversation history.**<br>
+
+This reduces prompt size, keeps responsibilities isolated, and avoids unnecessary context propagation between independent tasks.
+
+### 3. Persistent IPC workers
+
+**Agents run as long-lived Unix IPC services.**<br>
+
+Once activated, workers remain alive as IPC services instead of being spawned for every request.
+This removes repeated process startup overhead and keeps request latency consistent under sustained load.
+
+### 4. Minimal LLM orchestration
+
+**Ovsy intentionally minimizes orchestration calls.**<br>
+
+A typical request requires only:
+
+  1. planning the task graph;
+  2. executing the graph;
+  3. aggregating results and deciding whether another iteration is necessary.
+
+Additional model invocations occur only during bounded self-healing retries.
+
+### 5. Native process lifecycle
+
+**The kernel owns the lifecycle of every worker process.**<br>
+
+Child workers are attached to the kernel process. Unexpected worker failures can be recovered independently,
+while kernel termination automatically cleans up all child processes, preventing orphaned services and zombie processes.<br>
+
+* If a worker exits unexpectedly, it can be restarted independently.
+* If the kernel terminates, all child processes terminate with it, preventing orphaned background services.
+
+### 6. Unix-native IPC
+
+**Communication happens through Unix Domain Sockets instead of network protocols whenever all components run on the same machine.**<br>
+
+This removes unnecessary networking layers and avoids unnecessary networking and serialization overhead.
+
+
+## Architecture
 
 <img src="https://raw.githubusercontent.com/fuderis/ovsy/main/assets/scheme.png" alt="Scheme" width="100%" />
 
-The kernel coordinates user queries through a multi-stage orchestration engine governed by a central execution loop (handle_query).
+Ovsy follows a centralized orchestration model.
 
 > `User Query` ➔ `Orchestrator Evaluation` ➔ `Concurrent Task Spawning` ➔ `Self-Healing Loop / Resolution`
 
-## Key Architectural Advantages
+The kernel evaluates the user request, builds a dependency graph, schedules independent tasks concurrently, aggregates their outputs,
+and decides whether another execution cycle is required.<br>
 
-### 1. Two-Phase Agent CLI Lifecycle (Zero-Idle)
+Agents are treated as isolated workers rather than autonomous decision-makers.
 
-To eliminate initialization lags, the lazy /init endpoint has been completely deprecated. Inter-agent coordination has been refactored into a deterministic command-line interface (CLI) powered by clap:
 
-  * **metadata Phase:** The kernel invokes the agent binary once. The agent instantly dumps its configuration,
-  system prompt, and skill tree into stdout (JSON format) and exits immediately. In idle mode, memory consumption is exactly 0 MB RAM.
+### Architectural Decisions
 
-  * **serve Phase:** Upon task graph activation, the kernel executes the agent as a long-running IPC daemon,
-  initializing a local socket in memory to begin processing data streams immediately.
+#### 1. Two-phase lifecycle
 
-### 2. Concurrent Engine and Self-Healing Loop
+**Problem:** Keeping every agent running wastes memory.<br>
+**Solution:** The metadata phase extracts static information once. The serve phase starts only when the kernel activates the worker.
 
-  * **Parallel Queues:** The Orchestration Engine translates user prompts into a directed dependency tree.
-  Tasks without upstream locks are parallelized instantly across isolated Tokio worker threads.
+#### 2. Centralized orchestration
 
-  * **Context Isolation:** To prevent model attention decay, background agents receive only the localized description
-  of their subtask and the precise payload results from parent nodes in the dependency graph.
+**Problem:** Recursive agent communication quickly becomes expensive and difficult to control.<br>
+**Solution:** The kernel exclusively owns orchestration. Workers never coordinate directly.
 
-  * **Self-Healing Loop:** The kernel runtime intercepts empty LLM responses, hallucinations, or malformed JSON arguments
-  from downstream tools in real time. The error trace is wrapped back into the system context,
-  triggering an immediate retry pass without bringing down the pipeline.
+#### 3. Self-healing execution
 
-### 3. Unix-Native IPC and Process Resilience
+**Problem:** LLMs occasionally produce malformed tool arguments or incomplete responses.<br>
+**Solution:** The runtime retries failed execution with structured error feedback up to a configurable retry limit instead of aborting the pipeline.
 
-The network loopback stack is fully bypassed to minimize system call overhead.
+#### 4. Native IPC
 
-  * **Socket Security:** Communication is routed exclusively through local Unix Domain Sockets (AF_UNIX)
-    located at /tmp/ovsy/uds/*.sock, with access control managed via POSIX file permissions.
+**Problem:** Loopback networking introduces unnecessary serialization and system-call overhead for local assistants.<br>
+**Solution:** Workers communicate through Unix Domain Sockets.
 
-  * **Anti-Zombie Guarantees:** Agent processes utilize RAII concepts and are bound to the kernel with kill_on_drop(true).
+#### 5. Embedded expression engine
 
-  * **Low-Level OS Hooks:** On Linux, the kernel applies PR_SET_PDEATHSIG combined with SIGKILL via a libc::prctl abstraction
-    before execution. On macOS, a dedicated stdin monitor thread intercepts EOF events if the orchestrator terminates unexpectedly,
-    ensuring clean socket removal from the filesystem.
+**Problem:** Simple deterministic work should not require an LLM.<br>
+**Solution:** JavaScript runtime evaluates expressions locally.
 
-### 4. Inline Expression Evaluation (Boa Engine)
+#### 6. Process lifecycle
 
-To offload minor calculation passes from the LLM, a native Rust JavaScript interpreter `Boa Engine` is embedded directly
-into the task loop. Deterministic algorithms (arithmetic, timestamps, string transformations) are evaluated
-instantly in-memory and routed directly to dependent nodes by their task_id,
-significantly reducing unnecessary LLM generation cycles.
+**Problem:** Worker processes must not outlive the orchestrator.<br>
+**Solution:** Workers are tied to the kernel lifecycle through native operating system primitives, ensuring deterministic cleanup and recovery.
+
+#### 7. Long-lived workers
+
+**Problem:** Launching a process for every request introduces unnecessary latency.<br>
+**Solution:** Workers become persistent IPC services after activation and immediately accept new requests without repeated initialization.
+
+
+## Scope
+
+### Designed for
+
+Ovsy is built for lightweight AI assistants and automation workflows:
+
+* Local desktop assistants
+* Chat platforms and bots
+* Slack integrations
+* API automation
+* Computer control
+* Server-side assistant orchestration
+
+### Design Model
+
+Ovsy uses centralized orchestration.<br>
+
+Agents are isolated task executors managed by the kernel. They do not communicate directly with each other or create new agents.
+All planning, scheduling, and context distribution are controlled by the kernel.
+
+### Not a Generic Agent Runtime
+
+Ovsy is not designed to run existing autonomous agent frameworks or MCP agents without adaptation.<br>
+
+It intentionally favors predictable execution, low latency, reduced context size, and lower operational overhead over unrestricted agent autonomy.
+
+
+## Roadmap
+
+The following features are planned for the next development cycle (approximately the next 2–3 months).
+
+### Long-term Memory (RAG)
+
+Persistent user memory with dynamic fact storage, editing, and retrieval.
+Integrated directly into the orchestrator rather than implemented as a standalone agent.
+
+### Personal Context
+
+Per-user persistent configuration managed by the orchestrator.<br>
+
+**Planned capabilities include:**
+
+  * custom system prompts
+  * optional user profile information (e.g. location, timezone, preferences)
+  * dynamic long-term memory (RAG)
+  * personal task management (TODOs and reminders)
+
+All data will be isolated per user and injected into execution only when relevant.
+
+### Web Search
+
+Native web search powered by the lightweight **Obscure** browser.
+Search will be available as a built-in orchestrator capability instead of an external agent.
+
+### CLI Improvements
+
+A complete rewrite of the interactive CLI chat experience to improve usability and reliability.
+
 
 ## Ecosystem Components
 
-The core kernel externalizes infrastructural operations into specialized, zero-overhead crates:
+The core kernel externalizes infrastructural operations into specialized crates:
 
   * **Atoman:** Thread-safe asynchronous state and core kernel configuration management.
   * **AnyLM:** A unified SDK abstraction layer routing inference to cloud APIs or local execution nodes (such as LM Studio).
   * **Pearce:** An ultra-lean asynchronous HTTP/IPC routing framework built on top of Axum.
   * **Cistern:** High-performance vector retrieval (LanceDB) paired with a transactional Key-Value engine (Sled).
 
-> By keeping the core architecture slim and offloading specialized tasks to this robust underlying stack,
-Ovsy offers developers and stakeholders a clean, enterprise-ready AI assistant environment optimized for speed,
-predictability, and structural safety.
+> Ovsy keeps the orchestration kernel intentionally small. Infrastructure concerns such as inference, storage, routing,
+and state management are implemented as independent crates that can evolve without increasing kernel complexity.
+
 
 ## Requirements
 
@@ -125,6 +221,7 @@ rustup default nightly
 * **Arch Linux:** `sudo pacman -S jq`
 * **Ubuntu / Debian:** `sudo apt install -y jq`
 * **macOS:** `brew install jq`
+
 
 ## Installation
 
