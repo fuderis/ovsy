@@ -36,7 +36,7 @@ use pearce::Server;
 use prelude::*;
 
 pub const APP_NAME: &str = "ovsy";
-pub const APP_VERSION: &str = "0.14.3";
+pub const APP_VERSION: &str = "0.14.4";
 
 /// The Ovsy CLI commands parser
 #[derive(Parser)]
