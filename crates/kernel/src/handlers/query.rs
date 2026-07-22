@@ -321,7 +321,7 @@ pub async fn handle_agent(
 ) -> Result<()> {
     let arc_name = arc!(task.agent.clone());
 
-    // 1. Проверка агента на существование
+    // 1. Checking the agent for existence
     let (sock_path, prompt, _skills) = match Manager::ensure_agent(&arc_name).await {
         Ok(Some(ops)) => ops,
         _ => {
@@ -329,7 +329,7 @@ pub async fn handle_agent(
         }
     };
 
-    // 2. Получение инструментов через IPC
+    // 2. Getting tools via IPC
     let client = Client::ipc(&sock_path.to_string_lossy());
     let response = client
         .post("/tools/list")
@@ -339,7 +339,7 @@ pub async fn handle_agent(
         .await?;
     let tools = response.json::<Vec<anylm::Tool>>().await?;
 
-    // Логирование и отправка события начала работы
+    // logging and sending the start event
     let log_query = task
         .query
         .chars()
@@ -361,21 +361,27 @@ pub async fn handle_agent(
     let ai_conf = &Settings::get().assistant;
     let options = ai_conf.completions.clone();
 
-    // 3. Формирование локального контекста для генерации
+    // 3. Creating a local context for generating
     let system_pr = system_prompt(&session.lock().await.info, &ai_conf);
+
+    // collect the context in a text block for the system prompt
+    let context_items = task
+        .context()
+        .await
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>();
+    let context_str = if !context_items.is_empty() {
+        str!("Prior Context / Task Results:\n{:?}", context_items)
+    } else {
+        String::new()
+    };
+
     let agent_messages = Messages::new()
         .system(vec![
-            system_pr.into(),
+            format!("{}{}", system_pr, context_str).into(),
             prompt.trim().into(),
         ])
-        .assistant(
-            task.context()
-                .await
-                .into_iter()
-                .flatten()
-                .collect::<Vec<_>>(),
-            vec![],
-        )
         .user(vec![
             str!("{prompt}\n\n{query}",
                 prompt = "For the following request, you MUST use the provided tools and MUST NOT answer from your own knowledge. If no suitable tool is available, return an error explaining that the required tool does not exist. Never invent or assume tools that were not provided.",
@@ -388,7 +394,7 @@ pub async fn handle_agent(
     let mut retry_count = 0;
     let max_retries = Settings::get().assistant.max_retries.max(1) as usize;
 
-    // --- ОСНОВНОЙ ЦИКЛ ВЗАИМОДЕЙСТВИЯ С LLM ---
+    // the self-healing cycle
     loop {
         tool_calls = vec![];
         let mut text_response = str!();
@@ -407,9 +413,11 @@ pub async fn handle_agent(
                             text_response.push_str(&text_part);
                             tx.send(Event::answer(text_part).task_info(task.info()))?;
                         }
+
                         Ok(AiChunk::Tool(tool_call)) => {
                             tool_calls.push(tool_call);
                         }
+
                         Err(e) => {
                             chunk_error = Some(e);
                             break;
@@ -417,7 +425,7 @@ pub async fn handle_agent(
                     }
                 }
 
-                // Самовосстановление при ошибке стрима
+                // self-healing in case of a stream error
                 if let Some(err) = chunk_error {
                     retry_count += 1;
                     if retry_count < max_retries {
@@ -446,7 +454,7 @@ pub async fn handle_agent(
                     }
                 }
 
-                // Самовосстановление при пустом ответе без вызова инструментов
+                // self-healing with an empty response without calling tools
                 if tool_calls.is_empty() && text_response.trim().is_empty() {
                     retry_count += 1;
                     if retry_count < max_retries {
@@ -469,6 +477,7 @@ pub async fn handle_agent(
                     }
                 }
             }
+
             Err(e) => {
                 retry_count += 1;
                 if retry_count < max_retries {
@@ -498,12 +507,12 @@ pub async fn handle_agent(
             }
         }
 
-        // Если инструментов для вызова нет — выходим из цикла генерации
+        // if there are no tools to call - exit the generation cycle
         if tool_calls.is_empty() {
             break;
         }
 
-        // --- ПАРАЛЛЕЛЬНОЕ ВЫПОЛНЕНИЕ ВЫЗОВОВ ИНСТРУМЕНТОВ ---
+        // parallel execution of tool calls
         let mut workers = JoinSet::new();
 
         for tool_call in tool_calls {
@@ -516,8 +525,8 @@ pub async fn handle_agent(
             workers.spawn(async move {
                 let func = tool_call.func;
                 let log_json = func.json_str.replace("\n", "\\n");
-                info!("Calling `{}.{}` tool: {log_json}", task.agent, func.name);
 
+                info!("Calling `{} -> {}` tool: {log_json}", task.agent, func.name);
                 tx.send(
                     Event::think(str!(
                         "Calling `{} -> {}` tool: {log_json}",
@@ -529,11 +538,9 @@ pub async fn handle_agent(
                 .ok();
 
                 let request_path = format!("/tools/call/{}", func.name);
-
-                // Исправление E0277/E0308: явно маппим ошибку парсинга в Box
                 let request_body = func.parse_args::<JsonValue>()?;
 
-                // Отправка запроса на сервер агента
+                // sending a request to the agent's server
                 let mut response = client
                     .post(&request_path)
                     .header("Content-Type", "application/json")
@@ -541,7 +548,7 @@ pub async fn handle_agent(
                     .stream::<Event>()
                     .await;
 
-                // Тактический рестарт
+                // tactical restart
                 if response.is_err() {
                     warn!(
                         "Agent `{}` didn't respond. Attempting tactical restart...",
@@ -568,7 +575,6 @@ pub async fn handle_agent(
                     }
                 }
 
-                // Исправление E0277: кастуем ошибку креша в нужный Box тип
                 let mut stream = match response {
                     Ok(res) => res,
                     Err(e) => {
@@ -581,7 +587,7 @@ pub async fn handle_agent(
                 };
 
                 let mut full_text = str!();
-                // Исправление E0277: маппим ошибку стрима
+
                 while let Some(event) = stream.recv().await? {
                     // TODO: Перехват интерактивных событий подтверждения (Confirmation events)
                     // TODO: Обработка событий ввода доп. данных (User input injects)
@@ -589,7 +595,6 @@ pub async fn handle_agent(
                     match event.kind {
                         EventKind::Answer => {
                             full_text.push_str(&event.text);
-                            // Исправление E0277: маппим ошибку отправки в tx
                             tx.send(Event::answer(event.text).task_info(task.info()))?;
                         }
                         EventKind::Finish => {}
@@ -599,35 +604,34 @@ pub async fn handle_agent(
                     }
                 }
 
-                // Явно возвращаем Result с сигнатурой Box<dyn...>
                 Ok::<String, DynError>(full_text)
             });
         }
 
-        // Сбор результатов по мере их завершения и моментальная запись в истории
+        // collecting the results as they are completed and instantly recording them in the history
         while let Some(worker_result) = workers.join_next().await {
-            // Исправление E0282: Явно пишем String тип для full_text, чтобы .into() ниже отработал однозначно
             let full_text: String =
                 worker_result.map_err(|e| str!("Worker task panicked: {e}"))??;
             let content_item: Content = full_text.into();
 
-            // Точечно пишем в локальный контекст для продолжения генерации в loop
+            // write pointwise to the local context to continue generation in the loop
             agent_messages
                 .lock()
                 .await
                 .push_content(None, content_item.clone());
 
-            // СРАЗУ сохраняем промежуточный этап в глобальную историю сообщений основного чата
+            // save the intermediate stage to the global message history of the main chat
             messages
                 .lock()
                 .await
                 .push_content(Some(&task.tool_call_id), content_item);
         }
+
+        // cycle has completed without errors, stopping it
+        break;
     }
 
-    // --- ОПТИМИЗИРОВАННОЕ ЗАВЕРШЕНИЕ РАБОТЫ АГЕНТА ---
-
-    // Забираем накопленные результаты без оверхеда на клонирование строк
+    // take the accumulated results
     let agent_contents = {
         let mut local_lock = agent_messages.lock().await;
         std::mem::take(&mut local_lock.messages)
@@ -637,21 +641,15 @@ pub async fn handle_agent(
             .collect::<Vec<Content>>()
     };
 
-    // Завершаем задачу в клиенте и пуле
+    // completing the task in the client and pool
     tx.send(Event::finish().task_info(task.info())).ok();
     task.finish(agent_contents).await;
 
-    // --- ЦИКЛ САМОПРОВЕРКИ (Self-Correction Loop) ---
+    // send control query (self-correction loop)
     if task.is_last().await {
-        info!("All parallel tasks completed. Launching verification cycle...");
+        info!("All parallel tasks completed. Launching control query...");
 
-        let verification_msg = Message::user(vec![
-            "Check the results of the completed tasks and announce them. \
-            If an error occurs or the results do not match the user's expectation, \
-            try to run them again with the changed parameters. \
-            If everything is completed successfully and the goal is achieved, print the final coherent response for the user.".into(),
-        ]);
-
+        let control_msg = Message::user(vec![ai_conf.control_prompt.as_str().into()]);
         let sid = session.lock().await.id;
 
         if let Err(e) = handle_query(
@@ -659,7 +657,7 @@ pub async fn handle_agent(
             tx.clone(),
             session.clone(),
             messages.clone(),
-            verification_msg,
+            control_msg,
         )
         .await
         {

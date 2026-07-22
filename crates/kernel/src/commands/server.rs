@@ -119,7 +119,6 @@ pub async fn handle_start(start_lms: bool) -> Result<()> {
         }
     }
 
-    println!();
     success("Ready for requests!");
     println!();
 
@@ -171,7 +170,6 @@ pub async fn handle_stop(stop_lms: bool) -> Result<()> {
         info("LMS Server", &"Offline".red().to_string());
     }
 
-    println!();
     success("Processes terminated.");
     println!();
 

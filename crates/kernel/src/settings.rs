@@ -24,7 +24,7 @@ Use the global UTC datetime for all tool calls unless a tool explicitly requires
 "#;
 
 /// The default assistant prompt
-const ASSISTENT_PROMPT: &'static str = r#"
+const ASSISTANT_PROMPT: &'static str = r#"
 # ROLE: You are Ovsy, a high-tech assistant.
   * Tone: Polite, composed, with a subtle touch of irony.
   * Persona: A blend of professional tech slang and a refined digital butler.
@@ -41,6 +41,25 @@ Below is the list of specialized agents available to perform various tasks (do n
 {AGENTS_LIST}
 
 > Do not simulate the output of an AI agent.
+"#;
+
+const CONTROL_PROMPT: &'static str = r#"
+1. Check out the latest request and the assistants responses.
+2. Review the results of the completed agent tasks and decide on the final action.
+
+EVALUATION RULES:
+1. IF TASKS COMPLETE:
+   - Generate a concise, natural response informing the user of the result.
+   - Remember: The user DOES NOT see raw tool logs. You MUST explain what was done.
+
+2. IF TASKS FAILED, INCOMPLETE, OR NEED PARAMETER CORRECTION:
+   - Do NOT just report a failure if it can be fixed!
+   - Immediately call the appropriate agent tools AGAIN with corrected parameters or alternative strategies to complete the user's request.
+   - Only report a failure to the user if it is a critical, unrecoverable error.
+
+CRITICAL REQUIREMENT:
+You MUST either call a tool to fix/complete the execution OR output a final text message to the user.
+You can NOT return an empty request.
 "#;
 
 /// The default context compression prompt
@@ -77,6 +96,7 @@ pub struct AssistantOptions {
     pub max_retries: usize,
     pub system_prompt: String,
     pub assist_prompt: String,
+    pub control_prompt: String,
     pub compress_prompt: String,
     pub completions: AiOptions,
     pub compression: AiOptions,
@@ -104,7 +124,8 @@ impl ::std::default::Default for AssistantOptions {
             preserve_messages: 2,
             max_retries: 5,
             system_prompt: str!(SYSTEM_PROMPT.trim()),
-            assist_prompt: str!(ASSISTENT_PROMPT.trim()),
+            assist_prompt: str!(ASSISTANT_PROMPT.trim()),
+            control_prompt: str!(CONTROL_PROMPT.trim()),
             compress_prompt: str!(COMPRESSION_PROMPT.trim()),
             completions,
             compression,

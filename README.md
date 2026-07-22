@@ -1,12 +1,18 @@
-# Ovsy — Ultra-Fast AI Assistant Kernel
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fuderis/ovsy/main/assets/logo.png" alt="Ovsy" width="80" />
+</p>
 
-![Cover](/assets/cover.png)
+<h2 align="center">Ovsy Kernel</h2>
+<p align="center">
+  <strong>The multi-agent kernel for chat platforms, social networks, and private local assistants.</strong><br>
+  Lightweight, low-latency, and built in Rust.
+</p>
 
-**The high-density, low-latency multi-agent engine engineered for social networks, enterprise chat platforms, and private local AI assistants.**<br>
+---
 
-*Engineered to power millions of chat messages without burning your budget or server RAM.*<br>
+<img src="https://raw.githubusercontent.com/fuderis/ovsy/main/assets/cover.png" alt="Cover" width="100%" />
 
-Built in asynchronous Rust, Ovsy discards bulky network abstractions (MCP, JSON-RPC over TCP/HTTP) in favor of sub-millisecond local IPC.
+Ovsy discards bulky network abstractions (MCP, JSON-RPC over TCP/HTTP) in favor of sub-millisecond local IPC.
 It is purpose-built to process thousands of concurrent chat queries instantly, drastically cut token expenditure, and run seamlessly on minimal hardware.
 
 > **⚠️ EXPERIMENTAL:** Ovsy is undergoing rapid architectural evolution. Interfaces and IPC contracts may break between commits.
@@ -34,7 +40,7 @@ Source audit is recommended before production deployment.
 
 ## Orchestration Architecture
 
-![Scheme](/assets/scheme.png)
+<img src="https://raw.githubusercontent.com/fuderis/ovsy/main/assets/scheme.png" alt="Scheme" width="100%" />
 
 The kernel coordinates user queries through a multi-stage orchestration engine governed by a central execution loop (handle_query).
 
